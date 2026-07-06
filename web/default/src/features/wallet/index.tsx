@@ -30,6 +30,7 @@ import { CreemConfirmDialog } from './components/dialogs/creem-confirm-dialog'
 import { PaymentConfirmDialog } from './components/dialogs/payment-confirm-dialog'
 import { TransferDialog } from './components/dialogs/transfer-dialog'
 import { RechargeFormCard } from './components/recharge-form-card'
+import { RedemptionCard } from './components/redemption-card'
 import { SubscriptionPlansCard } from './components/subscription-plans-card'
 import { WalletStatsCard } from './components/wallet-stats-card'
 import { DEFAULT_DISCOUNT_RATE } from './constants'
@@ -75,6 +76,9 @@ export function Wallet(props: WalletProps) {
   const [selectedCreemProduct, setSelectedCreemProduct] =
     useState<CreemProduct | null>(null)
   const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(true)
+  // Which tier card is mid-request; the RechargeFormCard row uses this to
+  // spinner the right button while the Pancake handoff is in flight.
+  const [tierPickLoading, setTierPickLoading] = useState<string | null>(null)
 
   const { status } = useStatus()
   const { currency } = useSystemConfig()
@@ -236,6 +240,20 @@ export function Wallet(props: WalletProps) {
     }
   }
 
+  // Tier quick pick: bypasses the amount input and payment-method chooser
+  // and sends the user straight to Pancake with the fixed tier amount.
+  // Cumulative donation is what determines the final tier server-side —
+  // see topup.go / TierForDonation.
+  const handleTierQuickPick = async (amount: number, tier: string) => {
+    setTierPickLoading(tier)
+    try {
+      const success = await processWaffoPancakePayment(amount)
+      if (success) await fetchUser()
+    } finally {
+      setTierPickLoading(null)
+    }
+  }
+
   const handleWaffoMethodSelect = async (_method: unknown, index: number) => {
     const loadingKey = `waffo-${index}`
     setPaymentLoading(loadingKey)
@@ -286,11 +304,6 @@ export function Wallet(props: WalletProps) {
                   calculating={calculating}
                   onPaymentMethodSelect={handlePaymentMethodSelect}
                   paymentLoading={paymentLoading}
-                  redemptionCode={redemptionCode}
-                  onRedemptionCodeChange={setRedemptionCode}
-                  onRedeem={handleRedeem}
-                  redeeming={redeeming}
-                  topupLink={topupInfo?.topup_link}
                   loading={topupLoading}
                   priceRatio={(status?.price as number) || 1}
                   usdExchangeRate={effectiveUsdExchangeRate}
@@ -305,6 +318,14 @@ export function Wallet(props: WalletProps) {
                   enableWaffoPancakeTopup={
                     topupInfo?.enable_waffo_pancake_topup
                   }
+                  enableTierCardsInRecharge={
+                    topupInfo?.enable_tier_cards_in_recharge
+                  }
+                  enableCustomTopup={topupInfo?.enable_custom_topup}
+                  tierCards={topupInfo?.tier_cards}
+                  currentTier={user?.group}
+                  onSelectTier={handleTierQuickPick}
+                  loadingTier={tierPickLoading}
                 />
               </div>
 
@@ -315,6 +336,16 @@ export function Wallet(props: WalletProps) {
                 onPurchaseSuccess={fetchUser}
               />
             </div>
+
+            <RedemptionCard
+              redemptionEnabled={topupInfo?.enable_redemption !== false}
+              redemptionCode={redemptionCode}
+              onRedemptionCodeChange={setRedemptionCode}
+              onRedeem={handleRedeem}
+              redeeming={redeeming}
+              topupLink={topupInfo?.topup_link}
+              loading={topupLoading}
+            />
 
             <AffiliateRewardsCard
               user={user}

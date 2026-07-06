@@ -179,6 +179,9 @@ const paymentSchema = z.object({
   // TokenSheep additions — see setting/payment_waffo_pancake.go.
   WaffoPancakeApplyUSDExchangeRate: z.boolean(),
   WaffoPancakeSurchargePercent: z.string(),
+  // TokenSheep wallet UX toggles (see setting/tokensheep_setting/wallet_ui.go).
+  EnableTierCardsInRecharge: z.boolean(),
+  EnableCustomTopup: z.boolean(),
 })
 
 type PaymentFormValues = z.infer<typeof paymentSchema>
@@ -462,6 +465,8 @@ export function PaymentSettingsSection({
       ),
       WaffoPancakeApplyUSDExchangeRate: values.WaffoPancakeApplyUSDExchangeRate,
       WaffoPancakeSurchargePercent: values.WaffoPancakeSurchargePercent.trim(),
+      EnableTierCardsInRecharge: values.EnableTierCardsInRecharge,
+      EnableCustomTopup: values.EnableCustomTopup,
     }
 
     const initial = {
@@ -513,6 +518,8 @@ export function PaymentSettingsSection({
         initialRef.current.WaffoPancakeApplyUSDExchangeRate,
       WaffoPancakeSurchargePercent:
         initialRef.current.WaffoPancakeSurchargePercent.trim(),
+      EnableTierCardsInRecharge: initialRef.current.EnableTierCardsInRecharge,
+      EnableCustomTopup: initialRef.current.EnableCustomTopup,
     }
 
     const updates: Array<{ key: string; value: string | number | boolean }> = []
@@ -730,6 +737,20 @@ export function PaymentSettingsSection({
       updates.push({
         key: 'WaffoPancakeSurchargePercent',
         value: sanitized.WaffoPancakeSurchargePercent,
+      })
+    }
+    if (
+      sanitized.EnableTierCardsInRecharge !== initial.EnableTierCardsInRecharge
+    ) {
+      updates.push({
+        key: 'EnableTierCardsInRecharge',
+        value: sanitized.EnableTierCardsInRecharge,
+      })
+    }
+    if (sanitized.EnableCustomTopup !== initial.EnableCustomTopup) {
+      updates.push({
+        key: 'EnableCustomTopup',
+        value: sanitized.EnableCustomTopup,
       })
     }
 
@@ -1150,6 +1171,60 @@ export function PaymentSettingsSection({
                           {t('Discount map by recharge amount (JSON object)')}
                         </FormDescription>
                         <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                {/* TokenSheep wallet UX toggles — see
+                    setting/tokensheep_setting/wallet_ui.go. Global across
+                    all payment gateways so they live in the General tab. */}
+                <div className='grid gap-4 md:grid-cols-2'>
+                  <FormField
+                    control={form.control}
+                    name='EnableTierCardsInRecharge'
+                    render={({ field }) => (
+                      <FormItem className='flex flex-row items-center justify-between rounded-lg border p-3'>
+                        <div className='space-y-0.5'>
+                          <FormLabel>
+                            {t('Show tier cards in Add Funds')}
+                          </FormLabel>
+                          <FormDescription>
+                            {t(
+                              'Render the tier upgrade shortcuts ($10 / $50 / ...) inside the wallet Add Funds card. Tier list comes from the tokensheep_economy TierThresholds map.'
+                            )}
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name='EnableCustomTopup'
+                    render={({ field }) => (
+                      <FormItem className='flex flex-row items-center justify-between rounded-lg border p-3'>
+                        <div className='space-y-0.5'>
+                          <FormLabel>
+                            {t('Show custom amount section')}
+                          </FormLabel>
+                          <FormDescription>
+                            {t(
+                              'Render preset amounts + custom amount input + payment methods inside the wallet Add Funds card. Turn off for a tier-only wallet UI.'
+                            )}
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
                       </FormItem>
                     )}
                   />

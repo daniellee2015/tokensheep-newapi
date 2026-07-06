@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Gift, ExternalLink, Loader2, Receipt, WalletCards } from 'lucide-react'
+import { Loader2, Receipt, WalletCards } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -51,6 +51,7 @@ import type {
   WaffoPayMethod,
 } from '../types'
 import { CreemProductsSection } from './creem-products-section'
+import { TokensheepTierCards } from './tokensheep-tier-cards'
 
 const PRESET_AMOUNT_SKELETON_KEYS = [
   'preset-a',
@@ -75,11 +76,6 @@ interface RechargeFormCardProps {
   calculating: boolean
   onPaymentMethodSelect: (method: PaymentMethod) => void
   paymentLoading: string | null
-  redemptionCode: string
-  onRedemptionCodeChange: (code: string) => void
-  onRedeem: () => void
-  redeeming: boolean
-  topupLink?: string
   loading?: boolean
   priceRatio?: number
   usdExchangeRate?: number
@@ -92,6 +88,21 @@ interface RechargeFormCardProps {
   waffoMinTopup?: number
   onWaffoMethodSelect?: (method: WaffoPayMethod, index: number) => void
   enableWaffoPancakeTopup?: boolean
+  // TokenSheep additions — driven by tokensheep_setting.EnableTierCardsInRecharge
+  // and EnableCustomTopup (see setting/tokensheep_setting/wallet_ui.go). Tier
+  // list itself is not hardcoded here: `tierCards` comes from the /topup/info
+  // response and is sourced from the tokensheep_economy option map so ops can
+  // add/remove tiers in the admin panel without a code change.
+  enableTierCardsInRecharge?: boolean
+  enableCustomTopup?: boolean
+  tierCards?: Array<{
+    tier: string
+    amount: number
+    featured?: boolean
+  }>
+  currentTier?: string
+  onSelectTier?: (amount: number, tier: string) => void
+  loadingTier?: string | null
 }
 
 export function RechargeFormCard({
@@ -103,11 +114,6 @@ export function RechargeFormCard({
   onTopupAmountChange,
   onPaymentMethodSelect,
   paymentLoading,
-  redemptionCode,
-  onRedemptionCodeChange,
-  onRedeem,
-  redeeming,
-  topupLink,
   loading,
   priceRatio = 1,
   usdExchangeRate = 1,
@@ -120,6 +126,12 @@ export function RechargeFormCard({
   waffoMinTopup,
   onWaffoMethodSelect,
   enableWaffoPancakeTopup,
+  enableTierCardsInRecharge = true,
+  enableCustomTopup = true,
+  tierCards,
+  currentTier,
+  onSelectTier,
+  loadingTier,
 }: RechargeFormCardProps) {
   const { t } = useTranslation()
   const [localAmount, setLocalAmount] = useState(topupAmount.toString())
@@ -149,7 +161,6 @@ export function RechargeFormCard({
   const showNoStandardPaymentAlert =
     !hasStandardPaymentMethods && !hasWaffoPaymentMethods
   const minTopup = getMinTopupAmount(topupInfo)
-  const redemptionEnabled = topupInfo?.enable_redemption !== false
 
   if (loading) {
     return (
@@ -221,8 +232,27 @@ export function RechargeFormCard({
       }
       contentClassName='space-y-4 sm:space-y-6'
     >
-      {/* Online Topup Section */}
-      {hasAnyTopup ? (
+      {/* TokenSheep tier cards — driven by tokensheep_setting.EnableTierCardsInRecharge.
+          Tier list itself comes from the /topup/info tier_cards array so
+          admin edits to TierThresholds propagate here with no code change.
+          The component ships its own card chrome (title + subtitle), so it
+          renders as a distinct block inside the Add Funds card. */}
+      {enableTierCardsInRecharge &&
+        Array.isArray(tierCards) &&
+        tierCards.length > 0 &&
+        onSelectTier && (
+          <TokensheepTierCards
+            tiers={tierCards}
+            currentTier={currentTier}
+            onSelect={onSelectTier}
+            loadingTier={loadingTier}
+          />
+        )}
+
+      {/* Preset / Custom / Payment methods — hidden entirely via
+          tokensheep_setting.EnableCustomTopup when the operator wants a
+          tier-only checkout experience. */}
+      {enableCustomTopup && hasAnyTopup && (
         <div className='space-y-4 sm:space-y-6'>
           {hasConfigurableTopup && (
             <>
@@ -472,18 +502,12 @@ export function RechargeFormCard({
             </>
           )}
         </div>
-      ) : (
-        <Alert>
-          <AlertDescription>
-            {t(
-              'Online topup is not enabled. Please use redemption code or contact administrator.'
-            )}
-          </AlertDescription>
-        </Alert>
       )}
 
-      {/* Creem Products Section */}
-      {enableCreemTopup &&
+      {/* Creem Products Section — same "custom topup" family, so it also
+          collapses when EnableCustomTopup is off. */}
+      {enableCustomTopup &&
+        enableCreemTopup &&
         Array.isArray(creemProducts) &&
         creemProducts.length > 0 &&
         onCreemProductSelect && (
@@ -498,60 +522,6 @@ export function RechargeFormCard({
           </div>
         )}
 
-      {/* Redemption Code Section */}
-      {redemptionEnabled ? (
-        <div className='space-y-2.5 border-t pt-4 sm:space-y-3 sm:pt-6'>
-          <div className='flex items-center gap-2'>
-            <Gift className='text-muted-foreground h-4 w-4' />
-            <Label
-              htmlFor='redemption-code'
-              className='text-muted-foreground text-xs font-medium tracking-wider uppercase'
-            >
-              {t('Have a Code?')}
-            </Label>
-          </div>
-          <div className='grid grid-cols-[minmax(0,1fr)_auto] gap-2'>
-            <Input
-              id='redemption-code'
-              value={redemptionCode}
-              onChange={(e) => onRedemptionCodeChange(e.target.value)}
-              placeholder={t('Enter your redemption code')}
-              className='h-9 min-w-0'
-            />
-            <Button
-              onClick={onRedeem}
-              disabled={redeeming}
-              variant='outline'
-              className='h-9 px-4'
-            >
-              {redeeming && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
-              {t('Redeem')}
-            </Button>
-          </div>
-          {topupLink && (
-            <p className='text-muted-foreground text-xs'>
-              {t('Need a redemption code?')}{' '}
-              <a
-                href={topupLink}
-                target='_blank'
-                rel='noopener noreferrer'
-                className='inline-flex items-center gap-1 underline-offset-4 hover:underline'
-              >
-                {t('Get one here')}
-                <ExternalLink className='h-3 w-3' />
-              </a>
-            </p>
-          )}
-        </div>
-      ) : (
-        <Alert className='border-t'>
-          <AlertDescription>
-            {t(
-              'Redemption codes are disabled until the administrator confirms compliance terms.'
-            )}
-          </AlertDescription>
-        </Alert>
-      )}
     </TitledCard>
   )
 }

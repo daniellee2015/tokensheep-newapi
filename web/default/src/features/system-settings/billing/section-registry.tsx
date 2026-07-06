@@ -152,6 +152,10 @@ const BILLING_SECTIONS = [
           CreemWebhookSecret: settings.CreemWebhookSecret,
           CreemTestMode: settings.CreemTestMode,
           CreemProducts: settings.CreemProducts,
+          // TokenSheep wallet UX toggles (setting/tokensheep_setting/wallet_ui.go).
+          EnableTierCardsInRecharge:
+            settings.EnableTierCardsInRecharge ?? true,
+          EnableCustomTopup: settings.EnableCustomTopup ?? true,
         }}
         waffoDefaultValues={{
           WaffoEnabled: settings.WaffoEnabled ?? false,

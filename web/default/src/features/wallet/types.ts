@@ -156,6 +156,19 @@ export interface TopupInfo {
    * "provider fee +X%".
    */
   waffo_pancake_surcharge_percent?: number
+  /** Show TokensheepTierCards row inside the Add Funds card. */
+  enable_tier_cards_in_recharge?: boolean
+  /** Show preset amounts + custom amount + payment methods inside the Add Funds card. */
+  enable_custom_topup?: boolean
+  /**
+   * Tier upgrade cards (sourced from TierThresholds map, ascending by amount).
+   * Empty when no tiers are configured on the server side.
+   */
+  tier_cards?: Array<{
+    tier: string
+    amount: number
+  }>
+
   /** Whether redemption code usage is enabled */
   enable_redemption?: boolean
   /** Whether compliance confirmation has been completed */

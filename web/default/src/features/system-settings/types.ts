@@ -326,6 +326,9 @@ export type BillingSettings = {
   // TokenSheep additions — see setting/payment_waffo_pancake.go for defaults.
   WaffoPancakeApplyUSDExchangeRate: boolean
   WaffoPancakeSurchargePercent: string
+  // TokenSheep wallet UX toggles — see setting/tokensheep_setting/wallet_ui.go.
+  EnableTierCardsInRecharge: boolean
+  EnableCustomTopup: boolean
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number

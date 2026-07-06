@@ -341,7 +341,7 @@ export function CheckinCalendarCard({
               <Button
                 size='sm'
                 className='w-full shrink-0 sm:w-auto'
-                render={<Link to='/contribute' />}
+                render={<Link to='/wallet' />}
               >
                 {t('checkin.tierGate.cta')}
               </Button>

@@ -9,6 +9,7 @@
 package tokensheep_setting
 
 import (
+	"sort"
 	"sync"
 
 	"github.com/QuantumNous/new-api/common"
@@ -86,6 +87,50 @@ func SessionLimit(group string) int {
 
 func init() {
 	config.GlobalConfig.Register("tokensheep_economy", &economySetting)
+}
+
+// TierCard is the wallet-facing shape for a single tier upgrade option.
+// Amount is expressed in station dollars (unit = 1 = $1), converted from
+// the TierThresholds map's quota-cent values.
+type TierCard struct {
+	Tier   string `json:"tier"`
+	Amount int    `json:"amount"`
+}
+
+// TierCardsSorted materializes the currently-configured TierThresholds map
+// as a slice sorted by amount (ascending). Threshold values are quota cents
+// so we divide by QuotaPerUnit-worth (500000 = $1 by default across
+// tokensheep) — mirroring the same conversion the wallet UI already does.
+//
+// Thresholds <= 0 are excluded (they signify "free tier" or admin-cleared
+// rows). This keeps the wallet Tier row responsive to admin panel edits
+// with no code change.
+func TierCardsSorted() []TierCard {
+	economyMu.RLock()
+	rawThresholds := make(map[string]int, len(economySetting.TierThresholds))
+	for k, v := range economySetting.TierThresholds {
+		rawThresholds[k] = v
+	}
+	economyMu.RUnlock()
+
+	// $1 station = 500,000 quota cents (matches common.QuotaPerUnit). Kept
+	// as a local constant to avoid importing common from setting/.
+	const quotaCentsPerDollar = 500_000
+
+	cards := make([]TierCard, 0, len(rawThresholds))
+	for tier, cents := range rawThresholds {
+		if cents <= 0 {
+			continue
+		}
+		cards = append(cards, TierCard{
+			Tier:   tier,
+			Amount: cents / quotaCentsPerDollar,
+		})
+	}
+	sort.Slice(cards, func(i, j int) bool {
+		return cards[i].Amount < cards[j].Amount
+	})
+	return cards
 }
 
 // GetEconomySetting returns a snapshot of the current economy config. Values

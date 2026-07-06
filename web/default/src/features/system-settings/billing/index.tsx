@@ -103,6 +103,8 @@ const defaultBillingSettings: BillingSettings = {
   WaffoPancakeProductID: '',
   WaffoPancakeApplyUSDExchangeRate: true,
   WaffoPancakeSurchargePercent: '0.5',
+  EnableTierCardsInRecharge: true,
+  EnableCustomTopup: true,
   'checkin_setting.enabled': false,
   'checkin_setting.min_quota': 1000,
   'checkin_setting.max_quota': 10000,

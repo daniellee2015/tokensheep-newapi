@@ -16,77 +16,66 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-// TokenSheep tier upgrade cards — three quick-pick amounts backed by a single
-// Pancake product (see docs/spec/economy-model.md §7.2). One click sends the
-// user to Pancake with the corresponding amount; cumulative donation total
-// determines the tier they land in (§2.2). Rendered on the dedicated
-// contribution page only when the operator has enabled the Pancake channel.
+// TokenSheep tier upgrade cards. Rendered inside the wallet Add Funds card
+// when the operator has EnableTierCardsInRecharge on. Every card triggers
+// the same Pancake checkout as the "Custom Amount" section — this is a
+// UX shortcut, not a separate payment path.
+//
+// The tier list is NOT hardcoded here. It comes from /api/user/topup/info
+// under `tier_cards`, which the server materializes from the operator-
+// editable `TierThresholds` map (see setting/tokensheep_setting/economy.go).
+// Adding, renaming or removing a tier from the admin panel makes this row
+// update on the next page load with zero code changes.
+//
+// Per-tier copy (perks description, "featured" ribbon) is looked up in
+// i18n locale files, keyed by the tier name — so a new tier "whale" only
+// needs a locale entry `wallet.tierCards.whale.perks` to render nicely;
+// missing entries fall back to a generic tier + amount label.
 import { Check, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Card, CardContent } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
-interface TierOption {
-  /** Tier key matching the backend user_group name */
-  tier: 'supporter' | 'fan' | 'bestie'
-  /** In-station amount (station unit = $1, see WaffoPancakeUnitPrice=1.0) */
+interface TierCardEntry {
+  /** Tier key matching the backend user_group name (e.g. "supporter"). */
+  tier: string
+  /** Station-side dollar amount that lands the user in this tier. */
   amount: number
-  /** Whether to render the featured/Popular ribbon */
-  featured?: boolean
 }
-
-const TIER_OPTIONS: TierOption[] = [
-  { tier: 'supporter', amount: 10 },
-  { tier: 'fan', amount: 50, featured: true },
-  { tier: 'bestie', amount: 100 },
-]
-const TIER_SKELETON_KEYS = ['supporter', 'fan', 'bestie']
 
 interface TokensheepTierCardsProps {
-  /** Backend flag: Pancake channel is provisioned and enabled */
-  enabled?: boolean
-  /** Current user tier (server truth); used to hide already-reached options */
+  /** Tier options sourced from `/api/user/topup/info#tier_cards`. */
+  tiers: TierCardEntry[]
+  /** Current user tier (server truth); used to badge already-reached options. */
   currentTier?: string
-  /** Fires when the user picks a card — parent triggers Pancake checkout */
-  onSelect: (amount: number, tier: TierOption['tier']) => void
-  /** Which tier's card is currently mid-request; disables the whole row */
-  loadingTier?: TierOption['tier'] | null
-  /** Skeleton while topup info loads */
-  loading?: boolean
-}
-
-const TIER_ORDER: Record<string, number> = {
-  free: 0,
-  supporter: 1,
-  fan: 2,
-  bestie: 3,
-  vip: 4,
+  /** Fires when the user picks a card — parent triggers Pancake checkout. */
+  onSelect: (amount: number, tier: string) => void
+  /** Which tier's card is currently mid-request; disables the whole row. */
+  loadingTier?: string | null
 }
 
 export function TokensheepTierCards({
-  enabled,
+  tiers,
   currentTier,
   onSelect,
   loadingTier,
-  loading,
 }: TokensheepTierCardsProps) {
   const { t } = useTranslation()
 
-  if (loading) {
-    return (
-      <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
-        {TIER_SKELETON_KEYS.map((key) => (
-          <Skeleton key={key} className='h-40 rounded-2xl' />
-        ))}
-      </div>
-    )
-  }
+  if (!tiers || tiers.length === 0) return null
 
-  if (!enabled) return null
+  // Rank tiers by their configured amount so "reached" logic is purely
+  // amount-driven — no hardcoded ordering table. Same-rank ties (unlikely
+  // in practice) fall through as "not reached" for that tier.
+  const reachedAmount = currentTier
+    ? tiers.find((t) => t.tier === currentTier)?.amount
+    : undefined
 
-  const currentRank = TIER_ORDER[currentTier ?? 'free'] ?? 0
+  // Middle card visually "featured". If tiers.length is even we bias to
+  // the lower-middle so a $10/$50/$100/$500 array still highlights $50.
+  const featuredIndex =
+    tiers.length >= 2 ? Math.floor((tiers.length - 1) / 2) : -1
 
   return (
     <Card data-card-hover='false' className='overflow-hidden'>
@@ -101,18 +90,28 @@ export function TokensheepTierCards({
           </p>
         </div>
 
-        <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
-          {TIER_OPTIONS.map((option) => {
-            const reached = TIER_ORDER[option.tier] <= currentRank
-            const isLoading = loadingTier === option.tier
+        <div
+          className={cn(
+            'grid grid-cols-1 gap-3',
+            tiers.length === 2 && 'sm:grid-cols-2',
+            tiers.length === 3 && 'sm:grid-cols-3',
+            tiers.length >= 4 && 'sm:grid-cols-2 lg:grid-cols-4'
+          )}
+        >
+          {tiers.map((entry, index) => {
+            const reached =
+              reachedAmount !== undefined && entry.amount <= reachedAmount
+            const isLoading = loadingTier === entry.tier
+            const featured = index === featuredIndex
             return (
               <TierCard
-                key={option.tier}
-                option={option}
+                key={entry.tier}
+                entry={entry}
+                featured={featured}
                 reached={reached}
                 loading={isLoading}
                 disabled={!!loadingTier && !isLoading}
-                onSelect={() => onSelect(option.amount, option.tier)}
+                onSelect={() => onSelect(entry.amount, entry.tier)}
               />
             )
           })}
@@ -123,7 +122,8 @@ export function TokensheepTierCards({
 }
 
 interface TierCardProps {
-  option: TierOption
+  entry: TierCardEntry
+  featured: boolean
   reached: boolean
   loading: boolean
   disabled: boolean
@@ -131,13 +131,31 @@ interface TierCardProps {
 }
 
 function TierCard({
-  option,
+  entry,
+  featured,
   reached,
   loading,
   disabled,
   onSelect,
 }: TierCardProps) {
   const { t } = useTranslation()
+
+  // Prefer tier-specific copy from i18n locales; fall back to a generic
+  // "Unlock <tier>" label. New tiers ship with the tier name showing until
+  // ops add the locale entry.
+  const badgeKey = `wallet.tierCards.${entry.tier}.badge`
+  const nameKey = `wallet.tierCards.${entry.tier}.name`
+  const perksKey = `wallet.tierCards.${entry.tier}.perks`
+
+  const badge = t(badgeKey, { defaultValue: entry.tier })
+  const name = t(nameKey, {
+    defaultValue: t('wallet.tierCards.unlockDefault', {
+      defaultValue: `Unlock ${entry.tier}`,
+      tier: entry.tier,
+    }),
+  })
+  const perks = t(perksKey, { defaultValue: '' })
+
   let actionLabel = t('wallet.tierCards.contribute')
   if (loading) {
     actionLabel = t('wallet.tierCards.processing')
@@ -153,12 +171,12 @@ function TierCard({
       className={cn(
         'group relative flex flex-col gap-3 rounded-2xl border p-4 text-left transition-all',
         'hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none',
-        option.featured
+        featured
           ? 'border-fuchsia-500/40 bg-card shadow-md shadow-fuchsia-500/[0.08]'
           : 'border-border/60 bg-card'
       )}
     >
-      {option.featured && (
+      {featured && (
         <span className='absolute -top-2 right-3 rounded-full bg-fuchsia-500 px-2 py-0.5 text-[10px] font-semibold tracking-wider text-white uppercase'>
           {t('wallet.tierCards.popular')}
         </span>
@@ -166,7 +184,7 @@ function TierCard({
 
       <div className='flex items-center justify-between'>
         <span className='text-muted-foreground text-[11px] font-medium tracking-wider uppercase'>
-          {t(`wallet.tierCards.${option.tier}.badge`)}
+          {badge}
         </span>
         {reached && (
           <span className='inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400'>
@@ -178,14 +196,12 @@ function TierCard({
 
       <div className='space-y-0.5'>
         <div className='text-foreground font-mono text-2xl font-bold tracking-tight tabular-nums'>
-          ${option.amount}
+          ${entry.amount}
         </div>
-        <div className='text-foreground text-sm font-semibold'>
-          {t(`wallet.tierCards.${option.tier}.name`)}
-        </div>
-        <div className='text-muted-foreground text-xs'>
-          {t(`wallet.tierCards.${option.tier}.perks`)}
-        </div>
+        <div className='text-foreground text-sm font-semibold'>{name}</div>
+        {perks && (
+          <div className='text-muted-foreground text-xs'>{perks}</div>
+        )}
       </div>
 
       <div className='text-primary flex items-center gap-1 text-xs font-medium'>

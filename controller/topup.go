@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/tokensheep_setting"
 
 	"github.com/Calcium-Ion/go-epay/epay"
 	"github.com/gin-gonic/gin"
@@ -117,6 +118,9 @@ func GetTopUpInfo(c *gin.Context) {
 		"waffo_min_topup":         setting.WaffoMinTopUp,
 		"waffo_pancake_min_topup":         setting.WaffoPancakeMinTopUp,
 		"waffo_pancake_surcharge_percent": setting.WaffoPancakeSurchargePercent,
+		"enable_tier_cards_in_recharge":   tokensheep_setting.EnableTierCardsInRecharge,
+		"enable_custom_topup":             tokensheep_setting.EnableCustomTopup,
+		"tier_cards":                      tokensheep_setting.TierCardsSorted(),
 		"amount_options":          operation_setting.GetPaymentSetting().AmountOptions,
 		"discount":                operation_setting.GetPaymentSetting().AmountDiscount,
 		"topup_link":              common.TopUpLink,
