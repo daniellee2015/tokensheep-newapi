@@ -67,8 +67,11 @@ func GetPricing(c *gin.Context) {
 			}
 		}
 		// Surface the promo group's usable channel set so all its models
-		// stay visible in the plaza regardless of who's looking.
+		// stay visible in the plaza regardless of who's looking. Drop the
+		// promo group's own key — it's a display-only pseudo-group, never a
+		// selectable channel group, so it shouldn't show as a filter chip.
 		usableGroup = service.GetUserUsableGroups(promoGroup)
+		delete(usableGroup, promoGroup)
 	} else {
 		usableGroup = service.GetUserUsableGroups(group)
 	}
