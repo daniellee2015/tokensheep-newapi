@@ -22,6 +22,7 @@ import { CheckinSettingsSection } from '../general/checkin-settings-section'
 import { PricingSection } from '../general/pricing-section'
 import { QuotaSettingsSection } from '../general/quota-settings-section'
 import { PaymentSettingsSection } from '../integrations/payment-settings-section'
+import { TokensheepEconomySection } from '../integrations/tokensheep-economy-section'
 import { RatioSettingsCard } from '../models/ratio-settings-card'
 import type { BillingSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
@@ -207,22 +208,6 @@ const BILLING_SECTIONS = [
         }}
         waffoPancakeProvisionedStoreID={settings.WaffoPancakeStoreID ?? ''}
         waffoPancakeProvisionedProductID={settings.WaffoPancakeProductID ?? ''}
-        tokensheepEconomyDefaultValues={{
-          TierThresholds: parseJsonObjectMap(
-            settings['tokensheep_economy.tier_thresholds']
-          ),
-          CheckinAwardByGroup: parseJsonObjectMap(
-            settings['tokensheep_economy.checkin_award_by_group']
-          ),
-          SessionLimits: parseJsonObjectMap(
-            settings['tokensheep_economy.session_limits']
-          ),
-          GiftPoolCap: Number(settings['tokensheep_economy.gift_pool_cap']) || 0,
-          GiftPoolInactiveDays:
-            Number(settings['tokensheep_economy.gift_pool_inactive_days']) || 30,
-          DowngradeInactiveDays:
-            Number(settings['tokensheep_economy.downgrade_inactive_days']) || 30,
-        }}
         complianceDefaults={{
           confirmed: settings['payment_setting.compliance_confirmed'] ?? false,
           termsVersion:
@@ -242,6 +227,33 @@ const BILLING_SECTIONS = [
           enabled: settings['checkin_setting.enabled'],
           minQuota: settings['checkin_setting.min_quota'],
           maxQuota: settings['checkin_setting.max_quota'],
+        }}
+      />
+    ),
+  },
+  {
+    id: 'tokensheep',
+    titleKey: 'TokenSheep Economy',
+    build: (settings: BillingSettings) => (
+      <TokensheepEconomySection
+        defaultValues={{
+          TierThresholds: parseJsonObjectMap(
+            settings['tokensheep_economy.tier_thresholds']
+          ),
+          CheckinAwardByGroup: parseJsonObjectMap(
+            settings['tokensheep_economy.checkin_award_by_group']
+          ),
+          SessionLimits: parseJsonObjectMap(
+            settings['tokensheep_economy.session_limits']
+          ),
+          GiftPoolCap:
+            Number(settings['tokensheep_economy.gift_pool_cap']) || 0,
+          GiftPoolInactiveDays:
+            Number(settings['tokensheep_economy.gift_pool_inactive_days']) ||
+            30,
+          DowngradeInactiveDays:
+            Number(settings['tokensheep_economy.downgrade_inactive_days']) ||
+            30,
         }}
       />
     ),

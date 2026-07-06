@@ -758,6 +758,7 @@
     "Check resolved IPs against IP filters even when accessing by domain": "即使通过域名访问，也对照 IP 过滤器检查解析的 IP",
     "Check-in failed": "签到失败",
     "Check-in Rewards": "签到奖励",
+    "TokenSheep Economy": "TokenSheep 经济",
     "Check-in Settings": "签到设置",
     "Check-in successful! Received": "签到成功！获得",
     "Checked in": "已签到",
