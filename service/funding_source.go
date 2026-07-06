@@ -28,7 +28,7 @@ type FundingSource interface {
 
 type WalletFunding struct {
 	userId   int
-	consumed int // 实际预扣的用户额度
+	consumed model.QuotaDebit // 实际预扣的用户额度
 }
 
 func (w *WalletFunding) Source() string { return BillingSourceWallet }
@@ -37,10 +37,11 @@ func (w *WalletFunding) PreConsume(amount int) error {
 	if amount <= 0 {
 		return nil
 	}
-	if err := model.DecreaseUserQuota(w.userId, amount, false); err != nil {
+	debit, err := model.DecreaseUserQuotaDetailed(w.userId, amount, false)
+	if err != nil {
 		return err
 	}
-	w.consumed = amount
+	w.addDebit(debit)
 	return nil
 }
 
@@ -49,18 +50,58 @@ func (w *WalletFunding) Settle(delta int) error {
 		return nil
 	}
 	if delta > 0 {
-		return model.DecreaseUserQuota(w.userId, delta, false)
+		debit, err := model.DecreaseUserQuotaDetailed(w.userId, delta, false)
+		if err != nil {
+			return err
+		}
+		w.addDebit(debit)
+		return nil
 	}
-	return model.IncreaseUserQuota(w.userId, -delta, false)
+	return w.refundAmount(-delta)
 }
 
 func (w *WalletFunding) Refund() error {
-	if w.consumed <= 0 {
+	if w.consumed.Total() <= 0 {
 		return nil
 	}
-	// IncreaseUserQuota 是 quota += N 的非幂等操作，不能重试，否则会多退额度。
+	// RefundUserQuotaDebit 是非幂等操作，不能重试，否则会多退额度。
 	// 订阅的 RefundSubscriptionPreConsume 有 requestId 幂等保护所以可以重试。
-	return model.IncreaseUserQuota(w.userId, w.consumed, false)
+	debit := w.consumed
+	if err := model.RefundUserQuotaDebit(w.userId, debit); err != nil {
+		return err
+	}
+	w.consumed = model.QuotaDebit{}
+	return nil
+}
+
+func (w *WalletFunding) addDebit(debit model.QuotaDebit) {
+	w.consumed.Gift += debit.Gift
+	w.consumed.Paid += debit.Paid
+}
+
+func (w *WalletFunding) refundAmount(amount int) error {
+	if amount <= 0 {
+		return nil
+	}
+	debit := model.QuotaDebit{}
+	debit.Paid = amount
+	if debit.Paid > w.consumed.Paid {
+		debit.Paid = w.consumed.Paid
+	}
+	remaining := amount - debit.Paid
+	debit.Gift = remaining
+	if debit.Gift > w.consumed.Gift {
+		debit.Gift = w.consumed.Gift
+	}
+	if debit.Total() == 0 {
+		return nil
+	}
+	if err := model.RefundUserQuotaDebit(w.userId, debit); err != nil {
+		return err
+	}
+	w.consumed.Paid -= debit.Paid
+	w.consumed.Gift -= debit.Gift
+	return nil
 }
 
 // ---------------------------------------------------------------------------

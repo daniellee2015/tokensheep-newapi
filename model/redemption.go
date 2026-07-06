@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/setting/tokensheep_setting"
 
 	"gorm.io/gorm"
 )
@@ -143,13 +144,9 @@ func Redeem(key string, userId int) (quota int, err error) {
 	}
 	redemption := &Redemption{}
 
-	keyCol := "`key`"
-	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
-		keyCol = `"key"`
-	}
 	common.RandomSleep()
 	err = DB.Transaction(func(tx *gorm.DB) error {
-		err := tx.Set("gorm:query_option", "FOR UPDATE").Where(keyCol+" = ?", key).First(redemption).Error
+		err := tx.Set("gorm:query_option", "FOR UPDATE").Where(commonKeyColumn()+" = ?", key).First(redemption).Error
 		if err != nil {
 			return errors.New("无效的兑换码")
 		}
@@ -159,7 +156,34 @@ func Redeem(key string, userId int) (quota int, err error) {
 		if redemption.ExpiredTime != 0 && redemption.ExpiredTime < common.GetTimestamp() {
 			return errors.New("该兑换码已过期")
 		}
-		err = tx.Model(&User{}).Where("id = ?", userId).Update("quota", gorm.Expr("quota + ?", redemption.Quota)).Error
+
+		var redeemedCount int64
+		if err := tx.Model(&Redemption{}).
+			Where("used_user_id = ? AND status = ?", userId, common.RedemptionCodeStatusUsed).
+			Count(&redeemedCount).Error; err != nil {
+			return err
+		}
+		if redeemedCount > 0 {
+			return errors.New("该账号已兑换过欢迎码")
+		}
+
+		var user User
+		if err := tx.Select("id, quota_gift").Where("id = ?", userId).First(&user).Error; err != nil {
+			return err
+		}
+		giftPoolCap := tokensheep_setting.GiftPoolCap()
+		if user.QuotaGift >= giftPoolCap {
+			return errors.New("赠送池已满,先消耗一部分再兑换")
+		}
+		quota = redemption.Quota
+		if remaining := giftPoolCap - user.QuotaGift; quota > remaining {
+			quota = remaining
+		}
+		if quota <= 0 {
+			return errors.New("无效的兑换额度")
+		}
+
+		err = tx.Model(&User{}).Where("id = ?", userId).Update("quota_gift", gorm.Expr("quota_gift + ?", quota)).Error
 		if err != nil {
 			return err
 		}
@@ -173,8 +197,13 @@ func Redeem(key string, userId int) (quota int, err error) {
 		common.SysError("redemption failed: " + err.Error())
 		return 0, ErrRedeemFailed
 	}
-	RecordLog(userId, LogTypeTopup, fmt.Sprintf("通过兑换码充值 %s，兑换码ID %d", logger.LogQuota(redemption.Quota), redemption.Id))
-	return redemption.Quota, nil
+	go func() {
+		if err := cacheIncrUserQuota(userId, int64(quota)); err != nil {
+			common.SysLog("failed to increase user quota cache after redemption: " + err.Error())
+		}
+	}()
+	RecordLog(userId, LogTypeTopup, fmt.Sprintf("通过欢迎码获得赠送额度 %s，兑换码ID %d", logger.LogQuota(quota), redemption.Id))
+	return quota, nil
 }
 
 func (redemption *Redemption) Insert() error {

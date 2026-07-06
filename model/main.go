@@ -50,6 +50,26 @@ func initCol() {
 	}
 }
 
+func commonGroupColumn() string {
+	if commonGroupCol != "" {
+		return commonGroupCol
+	}
+	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
+		return `"group"`
+	}
+	return "`group`"
+}
+
+func commonKeyColumn() string {
+	if commonKeyCol != "" {
+		return commonKeyCol
+	}
+	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
+		return `"key"`
+	}
+	return "`key`"
+}
+
 var DB *gorm.DB
 
 var LOG_DB *gorm.DB

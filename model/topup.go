@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -583,7 +584,7 @@ func RechargeWaffoPancake(tradeNo string) (err error) {
 		// cron would delay upgrade by up to a day for a paying user, which
 		// nobody wants. See docs/spec/economy-model.md §4.1.
 		var freshUser User
-		if err := tx.Select("id, \"group\", total_donated").
+		if err := tx.Select("id, "+commonGroupColumn()+", total_donated").
 			Where("id = ?", topUp.UserId).First(&freshUser).Error; err != nil {
 			return err
 		}
@@ -608,4 +609,108 @@ func RechargeWaffoPancake(tradeNo string) (err error) {
 	}
 
 	return nil
+}
+
+func ReverseWaffoPancakeTopUp(tradeNo string, targetStatus string, providerAmount string) (quotaRevoked int, err error) {
+	if tradeNo == "" {
+		return 0, errors.New("未提供支付单号")
+	}
+	if targetStatus != common.TopUpStatusRefunded && targetStatus != common.TopUpStatusDisputed {
+		return 0, errors.New("无效的退款状态")
+	}
+
+	topUp := &TopUp{}
+	refCol := "`trade_no`"
+	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
+		refCol = `"trade_no"`
+	}
+
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where(refCol+" = ?", tradeNo).First(topUp).Error; err != nil {
+			return errors.New("充值订单不存在")
+		}
+		if topUp.PaymentProvider != PaymentProviderWaffoPancake {
+			return ErrPaymentMethodMismatch
+		}
+		if topUp.Status == targetStatus || topUp.Status == common.TopUpStatusRefunded || topUp.Status == common.TopUpStatusDisputed {
+			return nil
+		}
+		if topUp.Status != common.TopUpStatusSuccess {
+			return ErrTopUpStatusInvalid
+		}
+
+		fullQuota := int(decimal.NewFromInt(topUp.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).IntPart())
+		if fullQuota <= 0 {
+			return errors.New("无效的退款额度")
+		}
+		quotaToRevoke := fullQuota
+		if amount, parseErr := decimal.NewFromString(strings.TrimSpace(providerAmount)); parseErr == nil && amount.GreaterThan(decimal.Zero) && topUp.Money > 0 {
+			paidAmount := decimal.NewFromFloat(topUp.Money)
+			if amount.LessThan(paidAmount) {
+				quotaToRevoke = int(decimal.NewFromInt(int64(fullQuota)).Mul(amount).Div(paidAmount).IntPart())
+				if quotaToRevoke <= 0 {
+					quotaToRevoke = 1
+				}
+			}
+		}
+		if quotaToRevoke > fullQuota {
+			quotaToRevoke = fullQuota
+		}
+		quotaRevoked = quotaToRevoke
+
+		topUp.Status = targetStatus
+		if err := tx.Save(topUp).Error; err != nil {
+			return err
+		}
+
+		var user User
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Select("id, quota, total_donated, "+commonGroupColumn()).
+			Where("id = ?", topUp.UserId).
+			First(&user).Error; err != nil {
+			return err
+		}
+
+		nextQuota := user.Quota - quotaToRevoke
+		if nextQuota < 0 {
+			nextQuota = 0
+		}
+		nextTotalDonated := user.TotalDonated - quotaToRevoke
+		if nextTotalDonated < 0 {
+			nextTotalDonated = 0
+		}
+
+		recentCutoff := common.GetTimestamp() - int64(tokensheep_setting.DowngradeInactiveDays())*86400
+		var recentSuccessfulTopUps int64
+		if err := tx.Model(&TopUp{}).
+			Where("user_id = ? AND status = ? AND complete_time >= ?", topUp.UserId, common.TopUpStatusSuccess, recentCutoff).
+			Count(&recentSuccessfulTopUps).Error; err != nil {
+			return err
+		}
+
+		nextGroup := "free"
+		if recentSuccessfulTopUps > 0 {
+			nextGroup = tokensheep_setting.TierForDonation(nextTotalDonated)
+		}
+
+		if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).Updates(map[string]interface{}{
+			"quota":         nextQuota,
+			"total_donated": nextTotalDonated,
+			"group":         nextGroup,
+		}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		common.SysError("waffo pancake reverse topup failed: " + err.Error())
+		return quotaRevoked, err
+	}
+	if quotaRevoked > 0 {
+		if err := invalidateUserCache(topUp.UserId); err != nil {
+			common.SysLog("failed to invalidate user cache after waffo pancake reverse topup: " + err.Error())
+		}
+		RecordLog(topUp.UserId, LogTypeTopup, fmt.Sprintf("Waffo Pancake订单%s，扣回自付额度 %v", targetStatus, logger.FormatQuota(quotaRevoked)))
+	}
+	return quotaRevoked, nil
 }

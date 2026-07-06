@@ -9,9 +9,9 @@
 package tokensheep_setting
 
 import (
-	"encoding/json"
 	"sync"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/config"
 )
 
@@ -21,15 +21,15 @@ import (
 //   - CheckinAwardByGroup: user_group -> quota cents credited on each check-in.
 //   - GiftPoolCap:         ceiling for quota_gift per account.
 //   - TierThresholds:      cumulative-donation cents that promote a user into
-//                          each tier. Applied together with the "donation in
-//                          last 30 days" liveness rule.
+//     each tier. Applied together with the "donation in
+//     last 30 days" liveness rule.
 //   - GiftPoolInactiveDays: after this many days without an API request the
-//                           daily zeroing cron wipes quota_gift.
+//     daily zeroing cron wipes quota_gift.
 //   - DowngradeInactiveDays: after this many days without a new donation the
-//                            downgrade cron drops the user back to `free`.
+//     downgrade cron drops the user back to `free`.
 //   - SessionLimits:       max simultaneous in-flight requests per user, keyed
-//                          by tier. Enforced by the session-concurrency
-//                          middleware (see middleware/session_concurrency.go).
+//     by tier. Enforced by the session-concurrency
+//     middleware (see middleware/session_concurrency.go).
 type EconomySetting struct {
 	CheckinAwardByGroup   map[string]int `json:"checkin_award_by_group"`
 	GiftPoolCap           int            `json:"gift_pool_cap"`
@@ -126,6 +126,25 @@ func CheckinAward(group string) int {
 	return economySetting.CheckinAwardByGroup[group]
 }
 
+// GiftDailyLimit returns the maximum quota_gift that may be spent today by a
+// user in `group`. It intentionally uses the same operator map as check-in
+// awards. Free users cannot check in, but welcome-code gift credit still needs
+// a small daily spend allowance.
+func GiftDailyLimit(group string) int {
+	economyMu.RLock()
+	defer economyMu.RUnlock()
+	if economySetting.CheckinAwardByGroup == nil {
+		return 0
+	}
+	if limit := economySetting.CheckinAwardByGroup[group]; limit > 0 {
+		return limit
+	}
+	if group == "free" {
+		return 50000
+	}
+	return 0
+}
+
 // GiftPoolCap returns the maximum quota_gift a user may accumulate.
 func GiftPoolCap() int {
 	economyMu.RLock()
@@ -195,7 +214,7 @@ func UpdateEconomySettingByJSONString(jsonStr string) error {
 	defer economyMu.Unlock()
 	// Copy so partial overwrites keep defaults for any omitted fields.
 	next := economySetting
-	if err := json.Unmarshal([]byte(jsonStr), &next); err != nil {
+	if err := common.Unmarshal([]byte(jsonStr), &next); err != nil {
 		return err
 	}
 	economySetting = next
@@ -206,7 +225,7 @@ func UpdateEconomySettingByJSONString(jsonStr string) error {
 func EconomySetting2JSONString() string {
 	economyMu.RLock()
 	defer economyMu.RUnlock()
-	b, err := json.Marshal(&economySetting)
+	b, err := common.Marshal(&economySetting)
 	if err != nil {
 		return "{}"
 	}

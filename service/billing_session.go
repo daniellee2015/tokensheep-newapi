@@ -137,6 +137,9 @@ func (s *BillingSession) needsRefundLocked() bool {
 	if s.tokenConsumed > 0 {
 		return true
 	}
+	if wallet, ok := s.funding.(*WalletFunding); ok && wallet.consumed.Total() > 0 {
+		return true
+	}
 	// 订阅可能在 tokenConsumed=0 时仍预扣了额度
 	if sub, ok := s.funding.(*SubscriptionFunding); ok && sub.preConsumed > 0 {
 		return true
@@ -162,11 +165,12 @@ func (s *BillingSession) Reserve(targetQuota int) error {
 		return nil
 	}
 
-	if err := s.reserveFunding(delta); err != nil {
+	debit, err := s.reserveFunding(delta)
+	if err != nil {
 		return err
 	}
 	if err := s.reserveToken(delta); err != nil {
-		s.rollbackFundingReserve(delta)
+		s.rollbackFundingReserve(debit, delta)
 		return err
 	}
 
@@ -229,17 +233,18 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 	return nil
 }
 
-func (s *BillingSession) reserveFunding(delta int) error {
+func (s *BillingSession) reserveFunding(delta int) (model.QuotaDebit, error) {
 	switch funding := s.funding.(type) {
 	case *WalletFunding:
-		if err := model.DecreaseUserQuota(funding.userId, delta, false); err != nil {
-			return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+		debit, err := model.DecreaseUserQuotaDetailed(funding.userId, delta, false)
+		if err != nil {
+			return model.QuotaDebit{}, types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 		}
-		funding.consumed += delta
-		return nil
+		funding.addDebit(debit)
+		return debit, nil
 	case *SubscriptionFunding:
 		if err := model.PostConsumeUserSubscriptionDelta(funding.subscriptionId, int64(delta)); err != nil {
-			return types.NewErrorWithStatusCode(
+			return model.QuotaDebit{}, types.NewErrorWithStatusCode(
 				fmt.Errorf("订阅额度不足或未配置订阅: %s", err.Error()),
 				types.ErrorCodeInsufficientUserQuota,
 				http.StatusForbidden,
@@ -247,19 +252,20 @@ func (s *BillingSession) reserveFunding(delta int) error {
 				types.ErrOptionWithNoRecordErrorLog(),
 			)
 		}
-		return nil
+		return model.QuotaDebit{}, nil
 	default:
-		return types.NewError(fmt.Errorf("unsupported funding source: %s", s.funding.Source()), types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+		return model.QuotaDebit{}, types.NewError(fmt.Errorf("unsupported funding source: %s", s.funding.Source()), types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 	}
 }
 
-func (s *BillingSession) rollbackFundingReserve(delta int) {
+func (s *BillingSession) rollbackFundingReserve(debit model.QuotaDebit, delta int) {
 	switch funding := s.funding.(type) {
 	case *WalletFunding:
-		if err := model.IncreaseUserQuota(funding.userId, delta, false); err != nil {
+		if err := model.RefundUserQuotaDebit(funding.userId, debit); err != nil {
 			common.SysLog("error rolling back wallet funding reserve: " + err.Error())
 		} else {
-			funding.consumed -= delta
+			funding.consumed.Gift -= debit.Gift
+			funding.consumed.Paid -= debit.Paid
 		}
 	case *SubscriptionFunding:
 		if err := model.PostConsumeUserSubscriptionDelta(funding.subscriptionId, -int64(delta)); err != nil {

@@ -70,7 +70,7 @@ func UserCheckin(userId int) (*Checkin, error) {
 	}
 
 	quotaAwarded := tokensheep_setting.CheckinAward(user.Group)
-	if quotaAwarded <= 0 {
+	if user.Group == "free" || quotaAwarded <= 0 {
 		// Free / unknown tier: not eligible. Rejected at API layer.
 		return nil, errors.New("升级 Tier 才能签到,前往贡献页解锁每日签到")
 	}
@@ -136,9 +136,11 @@ func userCheckinWithTransaction(checkin *Checkin, userId int, quotaAwarded int) 
 		return nil, err
 	}
 
-	// Check-in credit lands in the gift pool, which we don't currently cache,
-	// so no cacheIncrUserQuota() call here. If we start caching quota_gift too,
-	// mirror the pattern from cacheIncrUserQuota.
+	go func() {
+		if err := cacheIncrUserQuota(userId, int64(quotaAwarded)); err != nil {
+			common.SysLog("failed to increase user quota cache after check-in: " + err.Error())
+		}
+	}()
 
 	return checkin, nil
 }
@@ -158,6 +160,11 @@ func userCheckinWithoutTransaction(checkin *Checkin, userId int, quotaAwarded in
 		DB.Delete(checkin)
 		return nil, errors.New("签到失败：更新额度出错")
 	}
+	go func() {
+		if err := cacheIncrUserQuota(userId, int64(quotaAwarded)); err != nil {
+			common.SysLog("failed to increase user quota cache after check-in: " + err.Error())
+		}
+	}()
 
 	return checkin, nil
 }

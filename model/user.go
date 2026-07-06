@@ -6,14 +6,17 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/tokensheep_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const UserNameMaxLength = 20
@@ -21,37 +24,37 @@ const UserNameMaxLength = 20
 // User if you add sensitive fields, don't forget to clean them in setupLogin function.
 // Otherwise, the sensitive information will be saved on local storage in plain text!
 type User struct {
-	Id               int                        `json:"id"`
-	Username         string                     `json:"username" gorm:"unique;index" validate:"max=20"`
-	Password         string                     `json:"password" gorm:"not null;" validate:"min=8,max=20"`
-	OriginalPassword string                     `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
-	DisplayName      string                     `json:"display_name" gorm:"index" validate:"max=20"`
-	Role             int                        `json:"role" gorm:"type:int;default:1"`   // admin, common
-	Status           int                        `json:"status" gorm:"type:int;default:1"` // enabled, disabled
-	Email            string                     `json:"email" gorm:"index" validate:"max=50"`
-	GitHubId         string                     `json:"github_id" gorm:"column:github_id;index"`
-	DiscordId        string                     `json:"discord_id" gorm:"column:discord_id;index"`
-	OidcId           string                     `json:"oidc_id" gorm:"column:oidc_id;index"`
-	WeChatId         string                     `json:"wechat_id" gorm:"column:wechat_id;index"`
-	TelegramId       string                     `json:"telegram_id" gorm:"column:telegram_id;index"`
-	VerificationCode string                     `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
-	AccessToken      *string                    `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
-	Quota            int                        `json:"quota" gorm:"type:int;default:0"`
-	UsedQuota        int                        `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
-	RequestCount     int                        `json:"request_count" gorm:"type:int;default:0;"`               // request number
-	Group            string                     `json:"group" gorm:"type:varchar(64);default:'default'"`
-	AffCode          string                     `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
-	AffCount         int                        `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
-	AffQuota         int                        `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
-	AffHistoryQuota  int                        `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
-	InviterId        int                        `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
-	DeletedAt        gorm.DeletedAt             `gorm:"index"`
-	LinuxDOId        string                     `json:"linux_do_id" gorm:"column:linux_do_id;index"`
-	Setting          string                     `json:"setting" gorm:"type:text;column:setting"`
-	Remark           string                     `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
-	StripeCustomer   string                     `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
-	CreatedAt        int64                      `json:"created_at" gorm:"autoCreateTime;column:created_at"`
-	LastLoginAt      int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
+	Id               int            `json:"id"`
+	Username         string         `json:"username" gorm:"unique;index" validate:"max=20"`
+	Password         string         `json:"password" gorm:"not null;" validate:"min=8,max=20"`
+	OriginalPassword string         `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
+	DisplayName      string         `json:"display_name" gorm:"index" validate:"max=20"`
+	Role             int            `json:"role" gorm:"type:int;default:1"`   // admin, common
+	Status           int            `json:"status" gorm:"type:int;default:1"` // enabled, disabled
+	Email            string         `json:"email" gorm:"index" validate:"max=50"`
+	GitHubId         string         `json:"github_id" gorm:"column:github_id;index"`
+	DiscordId        string         `json:"discord_id" gorm:"column:discord_id;index"`
+	OidcId           string         `json:"oidc_id" gorm:"column:oidc_id;index"`
+	WeChatId         string         `json:"wechat_id" gorm:"column:wechat_id;index"`
+	TelegramId       string         `json:"telegram_id" gorm:"column:telegram_id;index"`
+	VerificationCode string         `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
+	AccessToken      *string        `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
+	Quota            int            `json:"quota" gorm:"type:int;default:0"`
+	UsedQuota        int            `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
+	RequestCount     int            `json:"request_count" gorm:"type:int;default:0;"`               // request number
+	Group            string         `json:"group" gorm:"type:varchar(64);default:'default'"`
+	AffCode          string         `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
+	AffCount         int            `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
+	AffQuota         int            `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
+	AffHistoryQuota  int            `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
+	InviterId        int            `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
+	DeletedAt        gorm.DeletedAt `gorm:"index"`
+	LinuxDOId        string         `json:"linux_do_id" gorm:"column:linux_do_id;index"`
+	Setting          string         `json:"setting" gorm:"type:text;column:setting"`
+	Remark           string         `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
+	StripeCustomer   string         `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
+	CreatedAt        int64          `json:"created_at" gorm:"autoCreateTime;column:created_at"`
+	LastLoginAt      int64          `json:"last_login_at" gorm:"default:0;column:last_login_at"`
 	// -------------------------------------------------------------------------
 	// TokenSheep economy fields (see docs/spec/economy-model.md)
 	//
@@ -64,17 +67,19 @@ type User struct {
 	// LastRequestAt  — unix ts of the users most recent API call. Consulted by
 	//                  the daily zeroing cron.
 	// -------------------------------------------------------------------------
-	QuotaGift        int                        `json:"quota_gift" gorm:"type:int;default:0;column:quota_gift"`
-	TotalDonated     int                        `json:"total_donated" gorm:"type:int;default:0;column:total_donated"`
-	LastRequestAt    int64                      `json:"last_request_at" gorm:"default:0;column:last_request_at"`
-	AdminPermissions map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
+	QuotaGift         int                        `json:"quota_gift" gorm:"type:int;default:0;column:quota_gift"`
+	TotalDonated      int                        `json:"total_donated" gorm:"type:int;default:0;column:total_donated"`
+	LastRequestAt     int64                      `json:"last_request_at" gorm:"default:0;column:last_request_at"`
+	GiftQuotaUsed     int                        `json:"gift_quota_used" gorm:"type:int;default:0;column:gift_quota_used"`
+	GiftQuotaUsedDate string                     `json:"gift_quota_used_date" gorm:"type:varchar(10);default:'';column:gift_quota_used_date"`
+	AdminPermissions  map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
 	cache := &UserBase{
 		Id:       user.Id,
 		Group:    user.Group,
-		Quota:    user.Quota,
+		Quota:    user.Quota + user.QuotaGift,
 		Status:   user.Status,
 		Username: user.Username,
 		Setting:  user.Setting,
@@ -862,7 +867,7 @@ func GetUserQuota(id int, fromDB bool) (quota int, err error) {
 		// Don't return error - fall through to DB
 	}
 	fromDB = true
-	err = DB.Model(&User{}).Where("id = ?", id).Select("quota").Find(&quota).Error
+	err = DB.Model(&User{}).Where("id = ?", id).Select("COALESCE(quota, 0) + COALESCE(quota_gift, 0)").Find(&quota).Error
 	if err != nil {
 		return 0, err
 	}
@@ -979,44 +984,147 @@ func increaseUserQuota(id int, quota int) (err error) {
 // The cache decrement still targets a single logical quota value so downstream
 // callers dont have to know about the split — the SQL fan-out below is where
 // the two columns are actually updated.
+type QuotaDebit struct {
+	Gift int
+	Paid int
+}
+
+func (d QuotaDebit) Total() int {
+	return d.Gift + d.Paid
+}
+
 func DecreaseUserQuota(id int, quota int, db bool) (err error) {
+	_, err = DecreaseUserQuotaDetailed(id, quota, db)
+	return err
+}
+
+func DecreaseUserQuotaDetailed(id int, quota int, db bool) (QuotaDebit, error) {
 	if quota < 0 {
-		return errors.New("quota 不能为负数！")
+		return QuotaDebit{}, errors.New("quota 不能为负数！")
+	}
+	debit, err := decreaseUserQuota(id, quota)
+	if err != nil {
+		return QuotaDebit{}, err
 	}
 	gopool.Go(func() {
-		err := cacheDecrUserQuota(id, int64(quota))
-		if err != nil {
-			common.SysLog("failed to decrease user quota: " + err.Error())
+		cacheErr := cacheDecrUserQuota(id, int64(debit.Total()))
+		if cacheErr != nil {
+			common.SysLog("failed to decrease user quota: " + cacheErr.Error())
 		}
 	})
-	if !db && common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeUserQuota, id, -quota)
-		return nil
-	}
-	return decreaseUserQuota(id, quota)
+	return debit, nil
 }
 
 // decreaseUserQuota debits `quota` from the user, spending from `quota_gift`
 // first and only touching `quota` for the remainder. This is atomic under the
-// PostgreSQL/MySQL row-level lock issued by GORMs `Update()` call, and safe on
-// SQLite because every request holds the writer lock exclusively.
-//
-// A single UPDATE with a raw SQL statement is used so both column expressions
-// see the SAME pre-update value of `quota_gift` — a plain `Updates(map)` would
-// let one column read the freshly-mutated `quota_gift` for the other, which is
-// wrong.
-func decreaseUserQuota(id int, quota int) (err error) {
+// PostgreSQL/MySQL row-level lock and safe on SQLite because writes are
+// serialized. It also enforces TokenSheep's per-day gift-pool spend ceiling.
+func decreaseUserQuota(id int, quota int) (QuotaDebit, error) {
 	if quota <= 0 {
+		return QuotaDebit{}, nil
+	}
+
+	var debit QuotaDebit
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		query := tx
+		if !common.UsingMainDatabase(common.DatabaseTypeSQLite) {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+
+		var user User
+		if err := query.
+			Select("id, quota, quota_gift, "+commonGroupColumn()+", gift_quota_used, gift_quota_used_date").
+			Where("id = ?", id).
+			First(&user).Error; err != nil {
+			return err
+		}
+
+		today := time.Now().Format("2006-01-02")
+		giftUsedToday := user.GiftQuotaUsed
+		if user.GiftQuotaUsedDate != today {
+			giftUsedToday = 0
+		}
+
+		giftAvailable := user.QuotaGift
+		if dailyLimit := tokensheep_setting.GiftDailyLimit(user.Group); dailyLimit > 0 {
+			dailyRemaining := dailyLimit - giftUsedToday
+			if dailyRemaining < 0 {
+				dailyRemaining = 0
+			}
+			if giftAvailable > dailyRemaining {
+				giftAvailable = dailyRemaining
+			}
+		} else {
+			giftAvailable = 0
+		}
+
+		debit.Gift = quota
+		if debit.Gift > giftAvailable {
+			debit.Gift = giftAvailable
+		}
+		debit.Paid = quota - debit.Gift
+		if user.Quota < debit.Paid {
+			return fmt.Errorf("用户额度不足, 剩余额度: %s, 需要扣费额度: %s", logger.FormatQuota(user.Quota+giftAvailable), logger.FormatQuota(quota))
+		}
+
+		updates := map[string]interface{}{
+			"quota":      gorm.Expr("quota - ?", debit.Paid),
+			"quota_gift": gorm.Expr("quota_gift - ?", debit.Gift),
+		}
+		if debit.Gift > 0 {
+			updates["gift_quota_used"] = giftUsedToday + debit.Gift
+			updates["gift_quota_used_date"] = today
+		}
+		return tx.Model(&User{}).Where("id = ?", id).Updates(updates).Error
+	})
+	return debit, err
+}
+
+func RefundUserQuotaDebit(id int, debit QuotaDebit) error {
+	if debit.Gift < 0 || debit.Paid < 0 {
+		return errors.New("quota 不能为负数！")
+	}
+	if debit.Total() == 0 {
 		return nil
 	}
-	err = DB.Exec(
-		`UPDATE users
-		    SET quota      = quota - GREATEST(? - quota_gift, 0),
-		        quota_gift = GREATEST(quota_gift - ?, 0)
-		  WHERE id = ?`,
-		quota, quota, id,
-	).Error
-	return err
+
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		query := tx
+		if !common.UsingMainDatabase(common.DatabaseTypeSQLite) {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+
+		var user User
+		if err := query.
+			Select("id, gift_quota_used, gift_quota_used_date").
+			Where("id = ?", id).
+			First(&user).Error; err != nil {
+			return err
+		}
+
+		updates := map[string]interface{}{
+			"quota":      gorm.Expr("quota + ?", debit.Paid),
+			"quota_gift": gorm.Expr("quota_gift + ?", debit.Gift),
+		}
+		if debit.Gift > 0 && user.GiftQuotaUsedDate == time.Now().Format("2006-01-02") {
+			used := user.GiftQuotaUsed - debit.Gift
+			if used < 0 {
+				used = 0
+			}
+			updates["gift_quota_used"] = used
+		}
+		return tx.Model(&User{}).Where("id = ?", id).Updates(updates).Error
+	})
+	if err != nil {
+		return err
+	}
+
+	gopool.Go(func() {
+		if err := cacheIncrUserQuota(id, int64(debit.Total())); err != nil {
+			common.SysLog("failed to refund user quota cache: " + err.Error())
+		}
+	})
+	return nil
 }
 
 func DeltaUpdateUserQuota(id int, delta int) (err error) {
@@ -1047,19 +1155,22 @@ func UpdateUserLastLoginAt(id int) {
 }
 
 func UpdateUserUsedQuotaAndRequestCount(id int, quota int) {
+	now := int(common.GetTimestamp())
 	if common.BatchUpdateEnabled {
 		addNewRecord(BatchUpdateTypeUsedQuota, id, quota)
 		addNewRecord(BatchUpdateTypeRequestCount, id, 1)
+		addNewRecord(BatchUpdateTypeLastRequestAt, id, now)
 		return
 	}
-	updateUserUsedQuotaAndRequestCount(id, quota, 1)
+	updateUserUsedQuotaAndRequestCount(id, quota, 1, now)
 }
 
-func updateUserUsedQuotaAndRequestCount(id int, quota int, count int) {
+func updateUserUsedQuotaAndRequestCount(id int, quota int, count int, lastRequestAt int) {
 	err := DB.Model(&User{}).Where("id = ?", id).Updates(
 		map[string]interface{}{
-			"used_quota":    gorm.Expr("used_quota + ?", quota),
-			"request_count": gorm.Expr("request_count + ?", count),
+			"used_quota":      gorm.Expr("used_quota + ?", quota),
+			"request_count":   gorm.Expr("request_count + ?", count),
+			"last_request_at": lastRequestAt,
 		},
 	).Error
 	if err != nil {
@@ -1073,18 +1184,21 @@ func updateUserUsedQuotaAndRequestCount(id int, quota int, count int) {
 	//}
 }
 
-func updateUserQuotaUsedQuotaAndRequestCount(id int, quota int, usedQuota int, requestCount int) {
-	if quota == 0 && usedQuota == 0 && requestCount == 0 {
+func updateUserQuotaUsedQuotaAndRequestCount(id int, quota int, usedQuota int, requestCount int, lastRequestAt int) {
+	if quota == 0 && usedQuota == 0 && requestCount == 0 && lastRequestAt == 0 {
 		return
 	}
 
-	err := DB.Model(&User{}).Where("id = ?", id).Updates(
-		map[string]interface{}{
-			"quota":         gorm.Expr("quota + ?", quota),
-			"used_quota":    gorm.Expr("used_quota + ?", usedQuota),
-			"request_count": gorm.Expr("request_count + ?", requestCount),
-		},
-	).Error
+	updates := map[string]interface{}{
+		"quota":         gorm.Expr("quota + ?", quota),
+		"used_quota":    gorm.Expr("used_quota + ?", usedQuota),
+		"request_count": gorm.Expr("request_count + ?", requestCount),
+	}
+	if lastRequestAt > 0 {
+		updates["last_request_at"] = lastRequestAt
+	}
+
+	err := DB.Model(&User{}).Where("id = ?", id).Updates(updates).Error
 	if err != nil {
 		common.SysLog("failed to batch update user quota, used quota and request count: " + err.Error())
 	}
@@ -1102,7 +1216,10 @@ func updateUserUsedQuota(id int, quota int) {
 }
 
 func updateUserRequestCount(id int, count int) {
-	err := DB.Model(&User{}).Where("id = ?", id).Update("request_count", gorm.Expr("request_count + ?", count)).Error
+	err := DB.Model(&User{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"request_count":   gorm.Expr("request_count + ?", count),
+		"last_request_at": common.GetTimestamp(),
+	}).Error
 	if err != nil {
 		common.SysLog("failed to update user request count: " + err.Error())
 	}

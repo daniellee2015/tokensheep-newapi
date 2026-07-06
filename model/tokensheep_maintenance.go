@@ -25,17 +25,29 @@ import (
 func RunTokenSheepDailyMaintenance(giftIdleCutoff int64, downgradeCutoff int64) (tierMutations int, giftZeroed int, err error) {
 	// 1) Gift-pool zeroing. Predicate applied server-side so we dont pull
 	//    the whole table over the wire.
+	giftIdleExpr := "CASE WHEN last_request_at > 0 THEN last_request_at ELSE created_at END"
+	var giftUserIds []int
+	if err := DB.Model(&User{}).
+		Where("quota_gift > 0 AND "+giftIdleExpr+" < ?", giftIdleCutoff).
+		Pluck("id", &giftUserIds).Error; err != nil {
+		return 0, 0, err
+	}
 	resZero := DB.Exec(
 		`UPDATE users
 		    SET quota_gift = 0
 		  WHERE quota_gift > 0
-		    AND last_request_at < ?`,
+		    AND CASE WHEN last_request_at > 0 THEN last_request_at ELSE created_at END < ?`,
 		giftIdleCutoff,
 	)
 	if resZero.Error != nil {
 		return 0, 0, resZero.Error
 	}
 	giftZeroed = int(resZero.RowsAffected)
+	for _, userId := range giftUserIds {
+		if err := invalidateUserCache(userId); err != nil {
+			common.SysLog("failed to invalidate user cache after gift zeroing: " + err.Error())
+		}
+	}
 
 	// 2) Tier recomputation. We only need the users whose current group is
 	//    a tokensheep tier — legacy `default` / admin groups are left alone.
@@ -46,8 +58,8 @@ func RunTokenSheepDailyMaintenance(giftIdleCutoff int64, downgradeCutoff int64) 
 		TotalDonated int    `gorm:"column:total_donated"`
 	}
 	err = DB.Table("users").
-		Select(`id, "group", total_donated`).
-		Where(`"group" IN (?)`, []string{"free", "supporter", "fan", "bestie", "vip"}).
+		Select("id, "+commonGroupColumn()+", total_donated").
+		Where(commonGroupColumn()+" IN ?", []string{"free", "supporter", "fan", "bestie", "vip"}).
 		Find(&users).Error
 	if err != nil {
 		return 0, giftZeroed, err
@@ -86,6 +98,9 @@ func RunTokenSheepDailyMaintenance(giftIdleCutoff int64, downgradeCutoff int64) 
 				Where("id = ?", u.Id).
 				Update("group", newGroup).Error; err != nil {
 				return tierMutations, giftZeroed, err
+			}
+			if err := invalidateUserCache(u.Id); err != nil {
+				common.SysLog("failed to invalidate user cache after tier maintenance: " + err.Error())
 			}
 			tierMutations++
 		}

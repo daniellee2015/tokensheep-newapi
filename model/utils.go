@@ -17,6 +17,7 @@ const (
 	BatchUpdateTypeUsedQuota
 	BatchUpdateTypeChannelUsedQuota
 	BatchUpdateTypeRequestCount
+	BatchUpdateTypeLastRequestAt
 	BatchUpdateTypeCount // if you add a new type, you need to add a new map and a new lock
 )
 
@@ -42,6 +43,12 @@ func InitBatchUpdater() {
 func addNewRecord(type_ int, id int, value int) {
 	batchUpdateLocks[type_].Lock()
 	defer batchUpdateLocks[type_].Unlock()
+	if type_ == BatchUpdateTypeLastRequestAt {
+		if current, ok := batchUpdateStores[type_][id]; !ok || value > current {
+			batchUpdateStores[type_][id] = value
+		}
+		return
+	}
 	if _, ok := batchUpdateStores[type_][id]; !ok {
 		batchUpdateStores[type_][id] = value
 	} else {
@@ -95,8 +102,9 @@ func batchUpdate() {
 	userQuotaStore := stores[BatchUpdateTypeUserQuota]
 	usedQuotaStore := stores[BatchUpdateTypeUsedQuota]
 	requestCountStore := stores[BatchUpdateTypeRequestCount]
+	lastRequestAtStore := stores[BatchUpdateTypeLastRequestAt]
 
-	userIDs := make(map[int]struct{}, len(userQuotaStore)+len(usedQuotaStore)+len(requestCountStore))
+	userIDs := make(map[int]struct{}, len(userQuotaStore)+len(usedQuotaStore)+len(requestCountStore)+len(lastRequestAtStore))
 	for key := range userQuotaStore {
 		userIDs[key] = struct{}{}
 	}
@@ -106,8 +114,11 @@ func batchUpdate() {
 	for key := range requestCountStore {
 		userIDs[key] = struct{}{}
 	}
+	for key := range lastRequestAtStore {
+		userIDs[key] = struct{}{}
+	}
 	for key := range userIDs {
-		updateUserQuotaUsedQuotaAndRequestCount(key, userQuotaStore[key], usedQuotaStore[key], requestCountStore[key])
+		updateUserQuotaUsedQuotaAndRequestCount(key, userQuotaStore[key], usedQuotaStore[key], requestCountStore[key], lastRequestAtStore[key])
 	}
 	common.SysLog("batch update finished")
 }
