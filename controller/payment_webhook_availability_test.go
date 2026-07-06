@@ -115,16 +115,30 @@ func TestWaffoWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {
 func TestWaffoPancakeWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {
 	confirmPaymentComplianceForTest(t)
 	originalMerchantID := setting.WaffoPancakeMerchantID
+	originalPrivateKey := setting.WaffoPancakePrivateKey
 	originalProductID := setting.WaffoPancakeProductID
 	t.Cleanup(func() {
 		setting.WaffoPancakeMerchantID = originalMerchantID
+		setting.WaffoPancakePrivateKey = originalPrivateKey
 		setting.WaffoPancakeProductID = originalProductID
 	})
 
-	// Pancake runtime checkout is disabled unless a non-persistent credential
-	// design is explicitly added. Admin settings must not persist the key.
-	setting.WaffoPancakeMerchantID = "merchant"
+	// Presence of all three credentials enables the gateway. Webhook public
+	// keys are bundled in the SDK and there is no separate Enabled toggle —
+	// clear any of the three fields to disable.
+	setting.WaffoPancakeMerchantID = ""
+	setting.WaffoPancakePrivateKey = "private"
 	setting.WaffoPancakeProductID = "product"
+	require.False(t, isWaffoPancakeWebhookEnabled())
+
+	setting.WaffoPancakeMerchantID = "merchant"
+	require.True(t, isWaffoPancakeWebhookEnabled())
+
+	setting.WaffoPancakeProductID = ""
+	require.False(t, isWaffoPancakeWebhookEnabled())
+
+	setting.WaffoPancakeProductID = "product"
+	setting.WaffoPancakePrivateKey = ""
 	require.False(t, isWaffoPancakeWebhookEnabled())
 }
 

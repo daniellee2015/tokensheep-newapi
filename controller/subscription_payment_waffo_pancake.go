@@ -46,7 +46,8 @@ func SubscriptionRequestWaffoPancakePay(c *gin.Context) {
 	}
 	// Plan targets its own Pancake product, so we only require credentials
 	// here — not the gateway-level WaffoPancakeProductID.
-	if strings.TrimSpace(setting.WaffoPancakeMerchantID) == "" {
+	if strings.TrimSpace(setting.WaffoPancakeMerchantID) == "" ||
+		strings.TrimSpace(setting.WaffoPancakePrivateKey) == "" {
 		common.ApiErrorMsg(c, "Waffo Pancake 未配置或密钥无效")
 		return
 	}

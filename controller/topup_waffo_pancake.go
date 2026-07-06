@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -80,9 +81,9 @@ func getWaffoPancakePayMoney(amount int64, group string) float64 {
 	}
 
 	// TokenSheep addition #2: pad the Pancake charge by SurchargePercent so
-	// the operator doesn't absorb the ~0.5% Pancake platform fee. Only the
-	// Pancake checkout amount is affected; station-side quota credited is
-	// still the selected `amount`.
+	// the operator doesn't absorb the Pancake platform fee. Only the Pancake
+	// checkout amount is affected; station-side quota credited stays the
+	// selected amount. See setting/payment_waffo_pancake.go.
 	if setting.WaffoPancakeSurchargePercent > 0 {
 		surchargeMul := decimal.NewFromFloat(1).Add(
 			decimal.NewFromFloat(setting.WaffoPancakeSurchargePercent).
@@ -356,6 +357,18 @@ func getWaffoPancakeBuyerIdentity(user *model.User) string {
 	return service.WaffoPancakeBuyerIdentityFromUserID(user.Id)
 }
 
+func waffoPancakeReversalStatus(eventType string) (string, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(eventType))
+	switch {
+	case strings.Contains(normalized, "refund"):
+		return common.TopUpStatusRefunded, true
+	case strings.Contains(normalized, "dispute"), strings.Contains(normalized, "chargeback"):
+		return common.TopUpStatusDisputed, true
+	default:
+		return "", false
+	}
+}
+
 func RequestWaffoPancakePay(c *gin.Context) {
 	if !isWaffoPancakeTopUpEnabled() {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "Waffo Pancake 配置不完整"})
@@ -489,15 +502,65 @@ func WaffoPancakeWebhook(c *gin.Context) {
 	}
 
 	logger.LogInfo(c.Request.Context(), fmt.Sprintf("Waffo Pancake webhook 验签成功 event_type=%s event_id=%s order_id=%s client_ip=%s", event.NormalizedEventType(), event.ID, event.Data.OrderID, c.ClientIP()))
-	if event.NormalizedEventType() != "order.completed" {
-		c.String(http.StatusOK, "OK")
-		return
-	}
 
 	// Dispatch by trade_no prefix. OrderMerchantExternalID = our trade_no;
 	// OrderID is Pancake's internal ORD_* (logs only).
 	rawTradeNo := strings.TrimSpace(event.Data.OrderMerchantExternalID)
 	isSubscription := strings.HasPrefix(rawTradeNo, "WAFFO_PANCAKE_SUB-")
+
+	if targetStatus, ok := waffoPancakeReversalStatus(event.NormalizedEventType()); ok {
+		if isSubscription {
+			logger.LogWarn(c.Request.Context(), fmt.Sprintf(
+				"Waffo Pancake 订阅退款/拒付事件暂不自动反冲 trade_no=%s event_type=%s event_id=%s order_id=%s client_ip=%s",
+				rawTradeNo, event.NormalizedEventType(), event.ID, event.Data.OrderID, c.ClientIP(),
+			))
+			c.String(http.StatusOK, "OK")
+			return
+		}
+
+		tradeNo, err := service.ResolveWaffoPancakeTradeNo(event)
+		if err != nil {
+			logger.LogError(c.Request.Context(), fmt.Sprintf(
+				"Waffo Pancake webhook 退款/拒付订单解析失败 event_type=%s event_id=%s order_id=%s buyer_identity=%q client_ip=%s error=%q",
+				event.NormalizedEventType(), event.ID, event.Data.OrderID, event.Data.MerchantProvidedBuyerIdentity, c.ClientIP(), err.Error(),
+			))
+			c.String(http.StatusOK, "OK")
+			return
+		}
+
+		LockOrder(tradeNo)
+		defer UnlockOrder(tradeNo)
+
+		quotaRevoked, err := model.ReverseWaffoPancakeTopUp(tradeNo, targetStatus, event.Data.Amount)
+		if err != nil {
+			if errors.Is(err, model.ErrTopUpStatusInvalid) {
+				logger.LogWarn(c.Request.Context(), fmt.Sprintf(
+					"Waffo Pancake 退款/拒付事件跳过 trade_no=%s event_type=%s event_id=%s order_id=%s client_ip=%s error=%q",
+					tradeNo, event.NormalizedEventType(), event.ID, event.Data.OrderID, c.ClientIP(), err.Error(),
+				))
+				c.String(http.StatusOK, "OK")
+				return
+			}
+			logger.LogError(c.Request.Context(), fmt.Sprintf(
+				"Waffo Pancake 退款/拒付处理失败 trade_no=%s event_type=%s event_id=%s order_id=%s client_ip=%s error=%q",
+				tradeNo, event.NormalizedEventType(), event.ID, event.Data.OrderID, c.ClientIP(), err.Error(),
+			))
+			c.String(http.StatusInternalServerError, "retry")
+			return
+		}
+
+		logger.LogInfo(c.Request.Context(), fmt.Sprintf(
+			"Waffo Pancake 退款/拒付处理成功 trade_no=%s event_type=%s status=%s quota_revoked=%d event_id=%s order_id=%s client_ip=%s",
+			tradeNo, event.NormalizedEventType(), targetStatus, quotaRevoked, event.ID, event.Data.OrderID, c.ClientIP(),
+		))
+		c.String(http.StatusOK, "OK")
+		return
+	}
+
+	if event.NormalizedEventType() != "order.completed" {
+		c.String(http.StatusOK, "OK")
+		return
+	}
 
 	if isSubscription {
 		tradeNo, err := service.ResolveWaffoPancakeSubscriptionTradeNo(event)
