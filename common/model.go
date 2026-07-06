@@ -16,6 +16,15 @@ var (
 		"prefix:imagen-",
 		"flux-",
 		"flux.1-",
+		// TokenSheep upstream (qzcode) image models. Matched via Contains,
+		// so "-image" / "imagine" cover gpt-image-2, gemini-*-flash-image-*,
+		// grok-imagine-image-* without enumerating every size variant.
+		"-image",
+		"imagine-image",
+		"gpt-image",
+		"nano-banana",
+		"grok-image",
+		"qwen-image",
 	}
 	OpenAITextModels = []string{
 		"gpt-",
