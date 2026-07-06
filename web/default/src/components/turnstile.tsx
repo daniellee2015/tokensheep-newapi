@@ -47,6 +47,9 @@ export function Turnstile({
       try {
         window.turnstile.render(ref.current, {
           sitekey: siteKey,
+          // 'flexible' is Cloudflare's responsive widget size — it stretches
+          // to fill the container width instead of the fixed 300px default.
+          size: 'flexible',
           callback: (token: string) => onVerify(token),
           'error-callback': () => onExpire?.(),
           'expired-callback': () => onExpire?.(),

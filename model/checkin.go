@@ -2,11 +2,11 @@ package model
 
 import (
 	"errors"
-	"math/rand"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/tokensheep_setting"
 	"gorm.io/gorm"
 )
 
@@ -52,10 +52,37 @@ func HasCheckedInToday(userId int) (bool, error) {
 // UserCheckin 执行用户签到
 // MySQL 和 PostgreSQL 使用事务保证原子性
 // SQLite 不支持嵌套事务，使用顺序操作 + 手动回滚
+// Check-in reward & gift-pool ceiling live in the tokensheep_setting module
+// so operators tune them from the admin UI without a code push. Free users
+// (or any group missing from the reward map) get 0 → rejected at API layer.
+// See docs/spec/economy-model.md §4.2.
+
 func UserCheckin(userId int) (*Checkin, error) {
 	setting := operation_setting.GetCheckinSetting()
 	if !setting.Enabled {
 		return nil, errors.New("签到功能未启用")
+	}
+
+	// Look up the user first — tier decides both eligibility and reward.
+	user, err := GetUserById(userId, true)
+	if err != nil {
+		return nil, err
+	}
+
+	quotaAwarded := tokensheep_setting.CheckinAward(user.Group)
+	if quotaAwarded <= 0 {
+		// Free / unknown tier: not eligible. Rejected at API layer.
+		return nil, errors.New("升级 Tier 才能签到,前往贡献页解锁每日签到")
+	}
+
+	// Cap the actual credit so the gift pool never exceeds the ceiling.
+	giftPoolCap := tokensheep_setting.GiftPoolCap()
+	if user.QuotaGift >= giftPoolCap {
+		return nil, errors.New("赠送池已满,先消耗一部分再签到")
+	}
+	remaining := giftPoolCap - user.QuotaGift
+	if quotaAwarded > remaining {
+		quotaAwarded = remaining
 	}
 
 	// 检查今天是否已签到
@@ -67,11 +94,7 @@ func UserCheckin(userId int) (*Checkin, error) {
 		return nil, errors.New("今日已签到")
 	}
 
-	// 计算随机额度奖励
-	quotaAwarded := setting.MinQuota
-	if setting.MaxQuota > setting.MinQuota {
-		quotaAwarded = setting.MinQuota + rand.Intn(setting.MaxQuota-setting.MinQuota+1)
-	}
+	_ = setting // legacy min/max fields are ignored — tier decides the award
 
 	today := time.Now().Format("2006-01-02")
 	checkin := &Checkin{
@@ -100,9 +123,9 @@ func userCheckinWithTransaction(checkin *Checkin, userId int, quotaAwarded int) 
 			return errors.New("签到失败，请稍后重试")
 		}
 
-		// 步骤2: 在事务中增加用户额度
+		// 步骤2: 在事务中增加用户赠送池 (quota_gift, not paid quota)
 		if err := tx.Model(&User{}).Where("id = ?", userId).
-			Update("quota", gorm.Expr("quota + ?", quotaAwarded)).Error; err != nil {
+			Update("quota_gift", gorm.Expr("quota_gift + ?", quotaAwarded)).Error; err != nil {
 			return errors.New("签到失败：更新额度出错")
 		}
 
@@ -113,10 +136,9 @@ func userCheckinWithTransaction(checkin *Checkin, userId int, quotaAwarded int) 
 		return nil, err
 	}
 
-	// 事务成功后，异步更新缓存
-	go func() {
-		_ = cacheIncrUserQuota(userId, int64(quotaAwarded))
-	}()
+	// Check-in credit lands in the gift pool, which we don't currently cache,
+	// so no cacheIncrUserQuota() call here. If we start caching quota_gift too,
+	// mirror the pattern from cacheIncrUserQuota.
 
 	return checkin, nil
 }
@@ -129,9 +151,9 @@ func userCheckinWithoutTransaction(checkin *Checkin, userId int, quotaAwarded in
 		return nil, errors.New("签到失败，请稍后重试")
 	}
 
-	// 步骤2: 增加用户额度
-	// 使用 db=true 强制直接写入数据库，不使用批量更新
-	if err := IncreaseUserQuota(userId, quotaAwarded, true); err != nil {
+	// 步骤2: 增加用户赠送池 (quota_gift, not paid quota)
+	if err := DB.Model(&User{}).Where("id = ?", userId).
+		Update("quota_gift", gorm.Expr("quota_gift + ?", quotaAwarded)).Error; err != nil {
 		// 如果增加额度失败，需要回滚签到记录
 		DB.Delete(checkin)
 		return nil, errors.New("签到失败：更新额度出错")

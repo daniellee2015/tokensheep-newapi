@@ -52,6 +52,21 @@ type User struct {
 	StripeCustomer   string                     `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
 	CreatedAt        int64                      `json:"created_at" gorm:"autoCreateTime;column:created_at"`
 	LastLoginAt      int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
+	// -------------------------------------------------------------------------
+	// TokenSheep economy fields (see docs/spec/economy-model.md)
+	//
+	// QuotaGift      — the "gift pool". Filled by check-in and welcome codes.
+	//                  Debited BEFORE Quota. Capped at $50. Zeroed after 30 days
+	//                  of inactivity.
+	// TotalDonated   — cumulative amount paid via Pancake (cents). Drives tier
+	//                  eligibility together with the "last 30 days donations"
+	//                  liveness rule.
+	// LastRequestAt  — unix ts of the users most recent API call. Consulted by
+	//                  the daily zeroing cron.
+	// -------------------------------------------------------------------------
+	QuotaGift        int                        `json:"quota_gift" gorm:"type:int;default:0;column:quota_gift"`
+	TotalDonated     int                        `json:"total_donated" gorm:"type:int;default:0;column:total_donated"`
+	LastRequestAt    int64                      `json:"last_request_at" gorm:"default:0;column:last_request_at"`
 	AdminPermissions map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
 }
 
@@ -956,6 +971,14 @@ func increaseUserQuota(id int, quota int) (err error) {
 	return err
 }
 
+// DecreaseUserQuota drains the users combined balance. Under TokenSheep we
+// spend the gift pool first, then fall through to the paid quota. This keeps
+// donated dollars in the wallet for as long as possible so paying users always
+// have runway even after their free daily check-in credit is gone.
+//
+// The cache decrement still targets a single logical quota value so downstream
+// callers dont have to know about the split — the SQL fan-out below is where
+// the two columns are actually updated.
 func DecreaseUserQuota(id int, quota int, db bool) (err error) {
 	if quota < 0 {
 		return errors.New("quota 不能为负数！")
@@ -973,11 +996,26 @@ func DecreaseUserQuota(id int, quota int, db bool) (err error) {
 	return decreaseUserQuota(id, quota)
 }
 
+// decreaseUserQuota debits `quota` from the user, spending from `quota_gift`
+// first and only touching `quota` for the remainder. This is atomic under the
+// PostgreSQL/MySQL row-level lock issued by GORMs `Update()` call, and safe on
+// SQLite because every request holds the writer lock exclusively.
+//
+// A single UPDATE with a raw SQL statement is used so both column expressions
+// see the SAME pre-update value of `quota_gift` — a plain `Updates(map)` would
+// let one column read the freshly-mutated `quota_gift` for the other, which is
+// wrong.
 func decreaseUserQuota(id int, quota int) (err error) {
-	err = DB.Model(&User{}).Where("id = ?", id).Update("quota", gorm.Expr("quota - ?", quota)).Error
-	if err != nil {
-		return err
+	if quota <= 0 {
+		return nil
 	}
+	err = DB.Exec(
+		`UPDATE users
+		    SET quota      = quota - GREATEST(? - quota_gift, 0),
+		        quota_gift = GREATEST(quota_gift - ?, 0)
+		  WHERE id = ?`,
+		quota, quota, id,
+	).Error
 	return err
 }
 

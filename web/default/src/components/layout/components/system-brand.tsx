@@ -40,6 +40,29 @@ type SystemBrandProps = {
 }
 
 /**
+ * When the resolved logo URL points at our packaged wordmark asset we swap in
+ * a light-text variant automatically under dark mode. Any other URL (i.e. an
+ * admin-configured external logo) is rendered as-is with no theme swap.
+ */
+const PACKAGED_LOGO_LIGHT = '/tokensheep-logo.svg'
+const PACKAGED_LOGO_DARK = '/tokensheep-logo-dark.svg'
+
+function usePackagedLogoPair(configuredLogo: string | undefined) {
+  if (!configuredLogo) {
+    return { light: PACKAGED_LOGO_LIGHT, dark: PACKAGED_LOGO_DARK }
+  }
+  try {
+    const url = new URL(configuredLogo, window.location.origin)
+    if (url.pathname === PACKAGED_LOGO_LIGHT) {
+      return { light: PACKAGED_LOGO_LIGHT, dark: PACKAGED_LOGO_DARK }
+    }
+  } catch {
+    /* fall through */
+  }
+  return { light: configuredLogo, dark: configuredLogo }
+}
+
+/**
  * System brand component
  * Displays current system logo + name.
  * - inline: compact pill in the top app bar; clicking navigates to home (/)
@@ -51,9 +74,15 @@ export function SystemBrand(props: SystemBrandProps) {
   const { logo } = useSystemConfig()
 
   const variant = props.variant ?? 'sidebar'
-  const name = status?.system_name || props.defaultName || 'New API'
+  // Falsy fallback to empty so operators whose logo already contains a wordmark
+  // can hide the redundant text label by leaving SystemName blank.
+  const rawName = status?.system_name ?? props.defaultName ?? ''
+  const name = rawName.trim()
+  const hasName = name.length > 0
   const version =
     status?.version || props.defaultVersion || t('Unknown version')
+
+  const { light: logoLight, dark: logoDark } = usePackagedLogoPair(logo)
 
   if (variant === 'inline') {
     return (
@@ -61,18 +90,21 @@ export function SystemBrand(props: SystemBrandProps) {
         to='/'
         aria-label={t('Go to home')}
         className={cn(
-          'text-foreground inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-sm font-medium transition-colors outline-none select-none',
+          'text-foreground inline-flex h-10 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors outline-none select-none',
           'hover:bg-accent focus-visible:ring-ring/40 focus-visible:ring-2'
         )}
       >
-        <div className='flex size-5 items-center justify-center overflow-hidden rounded-md'>
-          <img
-            src={logo}
-            alt={t('Logo')}
-            className='size-full rounded-md object-cover'
-          />
-        </div>
-        <span className='max-w-[12rem] truncate'>{name}</span>
+        <img
+          src={logoLight}
+          alt={t('Logo')}
+          className='block h-8 w-auto object-contain dark:hidden'
+        />
+        <img
+          src={logoDark}
+          alt={t('Logo')}
+          className='hidden h-8 w-auto object-contain dark:block'
+        />
+        {hasName && <span className='truncate'>{name}</span>}
       </Link>
     )
   }
@@ -82,20 +114,36 @@ export function SystemBrand(props: SystemBrandProps) {
       <SidebarMenuItem>
         <SidebarMenuButton
           size='lg'
-          className='hover:text-sidebar-foreground active:text-sidebar-foreground cursor-default hover:bg-transparent active:bg-transparent'
+          className='hover:text-sidebar-foreground active:text-sidebar-foreground h-auto cursor-default py-3 hover:bg-transparent active:bg-transparent'
           render={<div />}
         >
-          <div className='flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg'>
+          <div className='flex h-12 items-center'>
             <img
-              src={logo}
+              src={logoLight}
               alt={t('Logo')}
-              className='size-full rounded-lg object-cover'
+              className='block h-10 w-auto object-contain dark:hidden'
+            />
+            <img
+              src={logoDark}
+              alt={t('Logo')}
+              className='hidden h-10 w-auto object-contain dark:block'
             />
           </div>
-          <div className='grid flex-1 text-start text-sm leading-tight group-data-[collapsible=icon]:hidden'>
-            <span className='truncate font-semibold'>{name}</span>
-            <span className='truncate text-xs'>{version}</span>
-          </div>
+          {(hasName || version) && (
+            <div className='grid flex-1 text-start text-sm leading-tight group-data-[collapsible=icon]:hidden'>
+              {hasName && (
+                <span className='truncate font-semibold'>{name}</span>
+              )}
+              <span
+                className={cn(
+                  'truncate text-xs',
+                  !hasName && 'text-muted-foreground'
+                )}
+              >
+                {version}
+              </span>
+            </div>
+          )}
         </SidebarMenuButton>
       </SidebarMenuItem>
     </SidebarMenu>

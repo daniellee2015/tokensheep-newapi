@@ -228,8 +228,19 @@ export interface UserWalletData {
   id: number
   /** Username */
   username: string
-  /** Current quota balance */
+  /** Current quota balance (self-paid pool — permanent, no cap, no expiry) */
   quota: number
+  /**
+   * Gift-pool balance (quota_gift): filled by check-in and welcome codes.
+   * Consumed BEFORE `quota`. Capped and wiped after prolonged inactivity.
+   * See docs/spec/economy-model.md §2.1.
+   */
+  quota_gift?: number
+  /**
+   * Cumulative Pancake donation total in quota cents; drives tier promotion.
+   * See docs/spec/economy-model.md §2.2.
+   */
+  total_donated?: number
   /** Total used quota */
   used_quota: number
   /** Total request count */

@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/setting/tokensheep_setting"
 
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -569,8 +570,29 @@ func RechargeWaffoPancake(tradeNo string) (err error) {
 			return err
 		}
 
-		if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).Update("quota", gorm.Expr("quota + ?", quotaToAdd)).Error; err != nil {
+		// Credit paid quota + track cumulative donation total.
+		if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).Updates(map[string]interface{}{
+			"quota":         gorm.Expr("quota + ?", quotaToAdd),
+			"total_donated": gorm.Expr("total_donated + ?", quotaToAdd),
+		}).Error; err != nil {
 			return err
+		}
+
+		// Re-evaluate the users tier now that they have a fresh donation.
+		// The webhook is the natural point for this — waiting for the daily
+		// cron would delay upgrade by up to a day for a paying user, which
+		// nobody wants. See docs/spec/economy-model.md §4.1.
+		var freshUser User
+		if err := tx.Select("id, \"group\", total_donated").
+			Where("id = ?", topUp.UserId).First(&freshUser).Error; err != nil {
+			return err
+		}
+		newTier := tokensheep_setting.TierForDonation(freshUser.TotalDonated)
+		if newTier != freshUser.Group {
+			if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).
+				Update("group", newTier).Error; err != nil {
+				return err
+			}
 		}
 
 		return nil

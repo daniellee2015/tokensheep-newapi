@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Activity, BarChart3, WalletCards } from 'lucide-react'
+import { Activity, BarChart3, Gift, WalletCards } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Skeleton } from '@/components/ui/skeleton'
@@ -29,13 +29,19 @@ interface WalletStatsCardProps {
   loading?: boolean
 }
 
+// The gift pool has a fixed cap set by the backend (see
+// setting/tokensheep_setting/economy.go: GiftPoolCap, default $50 = 5,000,000
+// quota cents). Surfacing the cap alongside the balance turns the number into
+// "$3.20 / $50" so users understand why check-ins get refused past the cap.
+const GIFT_POOL_CAP_QUOTA = 5_000_000
+
 export function WalletStatsCard(props: WalletStatsCardProps) {
   const { t } = useTranslation()
   if (props.loading) {
     return (
       <div className='overflow-hidden rounded-lg border'>
-        <div className='divide-border/60 grid grid-cols-3 divide-x'>
-          {Array.from({ length: 3 }).map((_, i) => (
+        <div className='divide-border/60 grid grid-cols-2 divide-x md:grid-cols-4'>
+          {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className='px-3 py-3 sm:px-5 sm:py-4'>
               <Skeleton className='h-3.5 w-20' />
               <Skeleton className='mt-2 h-7 w-28' />
@@ -47,12 +53,24 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
     )
   }
 
+  const giftBalance = props.user?.quota_gift ?? 0
+  const giftLabel =
+    giftBalance > 0
+      ? `${formatQuota(giftBalance)} / ${formatQuota(GIFT_POOL_CAP_QUOTA)}`
+      : formatQuota(0)
+
   const stats = [
     {
-      label: t('Current Balance'),
+      label: t('wallet.pool.paid.label'),
       value: formatQuota(props.user?.quota ?? 0),
-      description: t('Remaining quota'),
+      description: t('wallet.pool.paid.description'),
       icon: WalletCards,
+    },
+    {
+      label: t('wallet.pool.gift.label'),
+      value: giftLabel,
+      description: t('wallet.pool.gift.description'),
+      icon: Gift,
     },
     {
       label: t('Total Usage'),
@@ -70,7 +88,7 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
 
   return (
     <div className='overflow-hidden rounded-lg border'>
-      <div className='divide-border/60 grid grid-cols-3 divide-x'>
+      <div className='divide-border/60 grid grid-cols-2 divide-x md:grid-cols-4'>
         {stats.map((item) => (
           <div key={item.label} className='px-3 py-3 sm:px-5 sm:py-4'>
             <div className='flex items-center gap-2'>

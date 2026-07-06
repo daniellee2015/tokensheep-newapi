@@ -1,19 +1,76 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <!-- Primary Meta Tags -->
-    <title>New API</title>
-    <meta name="title" content="New API" />
+    <!-- Primary favicon (SVG, no-text, adapts to light/dark via media) -->
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/favicon.svg"
+      media="(prefers-color-scheme: light)"
+    />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/favicon-dark.svg"
+      media="(prefers-color-scheme: dark)"
+    />
+    <!-- Universal SVG fallback for browsers that ignore media queries -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Apple touch icon -->
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <!-- Mask icon for Safari pinned tabs -->
+    <link rel="mask-icon" href="/favicon.svg" color="#191919" />
+
+    <!-- Primary Meta Tags. Values here are the crawler-visible defaults
+         (Chinese); useHeadI18n() rewrites them client-side when a real
+         user switches language. -->
+    <title>TokenSheep · 羊毛公益站 — 免费 AI API 全球统一网关</title>
+    <meta name="title" content="TokenSheep · 羊毛公益站 — 免费 AI API 全球统一网关" />
     <meta
       name="description"
-      content="Unified AI API gateway and admin dashboard."
+      content="TokenSheep · 羊毛公益站 — 免费 AI API 全球统一网关。一手 token · 满血上下文 · 不套娃 · 不截断。OpenAI · Claude · Gemini · Grok · DeepSeek · Qwen 一站接入,基础档永久免费。"
     />
+    <meta
+      name="keywords"
+      content="TokenSheep, 羊毛公益站, 免费 AI API, LLM 网关, ChatGPT API, Claude API, Gemini API, Grok API, DeepSeek API, Qwen API, OpenAI 中转, 公益 API"
+    />
+    <meta name="author" content="TokenSheep" />
+    <meta name="theme-color" content="#191919" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#f5f5f5" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="canonical" href="https://free.tokensheep.fun/" />
 
-    <meta name="theme-color" content="#fff" />
+    <!-- Open Graph / Facebook / share cards -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="TokenSheep" />
+    <meta property="og:url" content="https://free.tokensheep.fun/" />
+    <meta property="og:title" content="TokenSheep · 羊毛公益站 — 免费 AI API 全球统一网关" />
+    <meta
+      property="og:description"
+      content="一手 token · 满血上下文 · 不套娃 · 不截断。OpenAI · Claude · Gemini · Grok · DeepSeek · Qwen 一站接入,基础档永久免费。"
+    />
+    <meta property="og:image" content="https://free.tokensheep.fun/tokensheep-logo.svg" />
+    <meta property="og:image:alt" content="TokenSheep logo" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:locale:alternate" content="en_US" />
+    <link rel="alternate" hreflang="zh-CN" href="https://free.tokensheep.fun/" />
+    <link rel="alternate" hreflang="en" href="https://free.tokensheep.fun/" />
+    <link rel="alternate" hreflang="x-default" href="https://free.tokensheep.fun/" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="TokenSheep · 羊毛公益站 — 免费 AI API 全球统一网关" />
+    <meta
+      name="twitter:description"
+      content="一手 token · 满血上下文 · 不套娃 · 不截断。OpenAI · Claude · Gemini · Grok · DeepSeek · Qwen 一站接入。"
+    />
+    <meta name="twitter:image" content="https://free.tokensheep.fun/tokensheep-logo.svg" />
+
+    <!-- Robots -->
+    <meta name="robots" content="index, follow, max-image-preview:large" />
     <!--umami-->
     <!--Google Analytics-->
   </head>

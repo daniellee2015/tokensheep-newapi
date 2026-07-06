@@ -79,6 +79,50 @@ function FooterLinkItem(props: { link: FooterLink }) {
 // Renders User Agreement / Privacy Policy links inline with the parent's
 // copyright row when either is configured in System Settings → Site. Emits
 // fragmented siblings so the parent flex container's gap controls spacing.
+// Legal / single-page column shown in the top area of the footer. Wires
+// directly to the CMS-managed pages configured in System Settings → Site
+// (user_agreement / privacy_policy). "About" is always shown because it's
+// a permanent route.
+function FooterLegalColumn() {
+  const { t } = useTranslation()
+  const { status } = useStatus()
+
+  interface FooterLegalLink {
+    label: string
+    to: string
+  }
+
+  const legalLinks: FooterLegalLink[] = [
+    { label: t('About'), to: '/about' },
+  ]
+  if (status?.user_agreement_enabled) {
+    legalLinks.push({ label: t('User Agreement'), to: '/user-agreement' })
+  }
+  if (status?.privacy_policy_enabled) {
+    legalLinks.push({ label: t('Privacy Policy'), to: '/privacy-policy' })
+  }
+
+  return (
+    <div>
+      <p className='text-muted-foreground/50 mb-3 text-xs font-medium tracking-wider uppercase'>
+        {t('Legal')}
+      </p>
+      <ul className='space-y-2.5'>
+        {legalLinks.map((link) => (
+          <li key={link.to}>
+            <Link
+              to={link.to}
+              className='text-muted-foreground hover:text-foreground text-sm transition-colors duration-200'
+            >
+              {link.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 function LegalLinks(props: { leadingSeparator?: boolean }) {
   const { t } = useTranslation()
   const { status } = useStatus()
@@ -159,7 +203,8 @@ export function Footer(props: FooterProps) {
   } = useSystemConfig()
 
   const displayLogo = systemLogo || props.logo || '/logo.png'
-  const displayName = systemName || props.name || 'New API'
+  const displayName = systemName || props.name || ''
+  const hasDisplayName = displayName.trim().length > 0
   const isDemoSiteMode = Boolean(demoSiteEnabled)
   const currentYear = new Date().getFullYear()
 
@@ -253,53 +298,69 @@ export function Footer(props: FooterProps) {
       <div className='mx-auto max-w-6xl px-6 py-12 md:py-16'>
         <div className='flex flex-col justify-between gap-10 md:flex-row md:gap-16'>
           {/* Brand column */}
-          <div className='shrink-0'>
+          <div className='max-w-md shrink-0'>
             <Link to='/' className='group flex items-center gap-2.5'>
               <img
                 src={displayLogo}
-                alt={displayName}
-                className='size-7 rounded-lg object-contain'
+                alt={displayName || t('Logo')}
+                className='block h-8 w-auto max-w-[12rem] object-contain dark:hidden'
               />
-              <span className='text-sm font-semibold tracking-tight'>
-                {displayName}
-              </span>
+              <img
+                src={
+                  displayLogo === '/tokensheep-logo.svg'
+                    ? '/tokensheep-logo-dark.svg'
+                    : displayLogo
+                }
+                alt={displayName || t('Logo')}
+                className='hidden h-8 w-auto max-w-[12rem] object-contain dark:block'
+              />
+              {hasDisplayName && (
+                <span className='text-sm font-semibold tracking-tight'>
+                  {displayName}
+                </span>
+              )}
             </Link>
-            <p className='text-muted-foreground/60 mt-3 max-w-[200px] text-xs leading-relaxed'>
-              {t('Powerful API Management Platform')}
+            <p className='text-muted-foreground mt-4 text-sm leading-relaxed'>
+              {t('footer.brandIntro')}
             </p>
           </div>
 
-          {/* Links columns */}
-          {isDemoSiteMode && (
-            <div className='grid grid-cols-3 gap-8 md:gap-16'>
-              {displayColumns.map((column, index) => (
-                <div key={index}>
-                  <p className='text-muted-foreground/50 mb-3 text-xs font-medium tracking-wider uppercase'>
-                    {t(column.title)}
-                  </p>
-                  <ul className='space-y-2.5'>
-                    {column.links.map((link, linkIndex) => (
-                      <li key={linkIndex}>
-                        <FooterLinkItem link={link} />
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className='flex flex-col gap-10 sm:flex-row sm:gap-16'>
+            {/* Legal / About links — surfaces the CMS-managed single-page
+                content configured in System Settings → Site. Each entry only
+                appears when its enable flag is on in /api/status. */}
+            <FooterLegalColumn />
+
+            {/* Demo-site preset link columns (only when demo mode is on). */}
+            {isDemoSiteMode && (
+              <div className='grid grid-cols-3 gap-8 md:gap-12'>
+                {displayColumns.map((column, index) => (
+                  <div key={index}>
+                    <p className='text-muted-foreground/50 mb-3 text-xs font-medium tracking-wider uppercase'>
+                      {t(column.title)}
+                    </p>
+                    <ul className='space-y-2.5'>
+                      {column.links.map((link, linkIndex) => (
+                        <li key={linkIndex}>
+                          <FooterLinkItem link={link} />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Copyright + optional legal links inline on the left, project
-            attribution on the right; wraps on narrow screens. */}
+        {/* Copyright row — brand copyright left, upstream attribution right.
+            Legal single-page links moved to their own column above. */}
         <div className='border-border/30 mt-12 flex flex-col items-center justify-between gap-x-3 gap-y-2 border-t pt-6 sm:flex-row'>
-          <div className='text-muted-foreground/40 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs sm:justify-start'>
-            <span>
-              &copy; {currentYear} {displayName}.{' '}
-              {props.copyright ?? t('footer.defaultCopyright')}
-            </span>
-            <LegalLinks leadingSeparator />
-          </div>
+          <span className='text-muted-foreground/40 text-xs'>
+            &copy; {currentYear}
+            {hasDisplayName && <> {displayName}.</>}{' '}
+            {props.copyright ?? t('footer.defaultCopyright')}
+          </span>
           <ProjectAttribution currentYear={currentYear} />
         </div>
       </div>

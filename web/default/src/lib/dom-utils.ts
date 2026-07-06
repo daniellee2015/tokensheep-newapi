@@ -16,19 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export function applyFaviconToDom(url: string) {
-  if (typeof document === 'undefined' || !url) return
-  try {
-    const next = new URL(url, window.location.href).href
-    const existing =
-      document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]')
-    if (existing.length === 1 && existing[0].href === next) return
-    const link = document.createElement('link')
-    link.rel = 'icon'
-    link.href = url
-    existing.forEach((l) => l.remove())
-    document.head.appendChild(link)
-  } catch {
-    // Ignore malformed URLs
-  }
+// Favicon is now managed statically in index.html with two <link> tags
+// selected by `prefers-color-scheme`, so header/logo config no longer
+// hijacks the browser tab icon. Keeping the export as a no-op so all
+// upstream call sites remain valid without touching them.
+// The parameter is retained purely for the existing call signature.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function applyFaviconToDom(_url: string) {
+  return
 }

@@ -57,7 +57,7 @@ const _systemInfoSchema = z.object({
   theme: z.object({
     frontend: z.enum(['default', 'classic']),
   }),
-  SystemName: z.string().min(1),
+  SystemName: z.string().optional().or(z.literal('')),
   ServerAddress: z.string().optional(),
   Logo: z.string().url().optional().or(z.literal('')),
   Footer: z.string().optional(),
@@ -105,9 +105,9 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
     theme: z.object({
       frontend: z.enum(['default', 'classic']),
     }),
-    SystemName: z.string().min(1, {
-      error: () => t('System name is required'),
-    }),
+    // Allow empty so operators whose logo already contains a wordmark can
+    // suppress the redundant text label in header/sidebar/footer.
+    SystemName: z.string().optional().or(z.literal('')),
     ServerAddress: z.string().optional(),
     Logo: z.string().url().optional().or(z.literal('')),
     Footer: z.string().optional(),

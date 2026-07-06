@@ -337,10 +337,11 @@ export function SignUpForm({
 
         {/* Turnstile */}
         {isTurnstileEnabled && (
-          <div className='mt-2'>
+          <div className='mt-2 w-full'>
             <Turnstile
               siteKey={turnstileSiteKey}
               onVerify={setTurnstileToken}
+              className='w-full'
             />
           </div>
         )}

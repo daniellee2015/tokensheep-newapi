@@ -66,10 +66,19 @@ func getWaffoPancakePayMoney(amount int64, group string) float64 {
 		discount = ds
 	}
 
+	// Pancake platform charges a per-transaction fee; the operator passes
+	// that on to the buyer via WaffoPancakeSurchargePercent (default 5%).
+	// Station-side quota credited stays untouched — only the amount charged
+	// via Pancake gets marked up. See setting/payment_waffo_pancake.go.
+	surchargeMul := decimal.NewFromFloat(1).Add(
+		decimal.NewFromFloat(setting.WaffoPancakeSurchargePercent).Div(decimal.NewFromInt(100)),
+	)
+
 	payMoney := dAmount.
 		Mul(decimal.NewFromFloat(setting.WaffoPancakeUnitPrice)).
 		Mul(decimal.NewFromFloat(topupGroupRatio)).
-		Mul(decimal.NewFromFloat(discount))
+		Mul(decimal.NewFromFloat(discount)).
+		Mul(surchargeMul)
 
 	return payMoney.InexactFloat64()
 }

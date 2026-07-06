@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Google } from '@lobehub/icons'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -30,6 +31,20 @@ import { cn } from '@/lib/utils'
 
 import { useOAuthLogin } from '../hooks/use-oauth-login'
 import type { SystemStatus } from '../types'
+
+// If the admin-configured OIDC endpoint points to Google, surface it as
+// "Continue with Google" with Google's brand mark. Any other OIDC provider
+// falls back to the generic "Continue with OIDC" label.
+function isGoogleOidc(status: SystemStatus | null): boolean {
+  const auth = status?.oidc_authorization_endpoint ?? ''
+  const wk = (status as unknown as { oidc_well_known?: string })
+    ?.oidc_well_known ?? ''
+  return (
+    /(^|\.)google\.com\b/i.test(auth) ||
+    /(^|\.)google\.com\b/i.test(wk) ||
+    /(^|\.)googleapis\.com\b/i.test(auth)
+  )
+}
 
 type OAuthProvidersProps = {
   status: SystemStatus | null
@@ -99,10 +114,14 @@ export function OAuthProviders({
   }
 
   if (status?.oidc_enabled) {
+    const looksLikeGoogle = isGoogleOidc(status)
     providerButtons.push({
       key: 'oidc',
-      label: t('Continue with OIDC'),
+      label: looksLikeGoogle
+        ? t('Continue with Google')
+        : t('Continue with OIDC'),
       onClick: handleOIDCLogin,
+      icon: looksLikeGoogle ? <Google.Color size={16} /> : undefined,
     })
   }
 

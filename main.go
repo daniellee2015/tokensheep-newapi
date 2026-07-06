@@ -125,6 +125,10 @@ func main() {
 	// Subscription quota reset task (daily/weekly/monthly/custom)
 	service.StartSubscriptionQuotaResetTask()
 
+	// TokenSheep daily maintenance: tier downgrade + 30-day gift-pool zero.
+	// Runs every 6h; individual users only mutate when they cross a boundary.
+	service.StartTokenSheepDailyTask()
+
 	// Report this process as a system instance so the System Info page can show
 	// all currently alive nodes in multi-instance deployments.
 	service.StartSystemInstanceReporter()

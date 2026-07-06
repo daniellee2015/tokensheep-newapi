@@ -51,12 +51,19 @@ interface CheckinCalendarCardProps {
   checkinEnabled: boolean
   turnstileEnabled: boolean
   turnstileSiteKey: string
+  /**
+   * Current user tier. When it is `free`, check-in is refused server-side
+   * (see docs/spec/economy-model.md §4.2); we mirror that decision in the
+   * UI to avoid a wasted round-trip and to surface the upgrade prompt inline.
+   */
+  userGroup?: string
 }
 
 export function CheckinCalendarCard({
   checkinEnabled,
   turnstileEnabled,
   turnstileSiteKey,
+  userGroup,
 }: CheckinCalendarCardProps) {
   const { t } = useTranslation()
   const [currentMonth, setCurrentMonth] = useState(() => {
@@ -119,6 +126,9 @@ export function CheckinCalendarCard({
 
   const checkedToday = checkinData?.stats?.checked_in_today === true
   const todayAward = checkinRecordsMap[todayString]
+  // Free tier is ineligible: DoCheckin() will short-circuit with an error, so
+  // disable the CTA and swap the caption to an upgrade nudge.
+  const tierIneligible = userGroup === 'free' || !userGroup
 
   useEffect(() => {
     if (initialLoaded) return
@@ -308,23 +318,27 @@ export function CheckinCalendarCard({
                   </span>
                 </div>
                 <p className='text-muted-foreground mt-1 line-clamp-2 text-xs sm:text-sm'>
-                  {checkedToday && todayAward !== undefined
-                    ? `${t('Today')} +${formatQuotaWithCurrency(todayAward)}`
-                    : t('Check in daily to receive random quota rewards')}
+                  {tierIneligible
+                    ? t('checkin.tierGate.hint')
+                    : checkedToday && todayAward !== undefined
+                      ? `${t('Today')} +${formatQuotaWithCurrency(todayAward)}`
+                      : t('Check in daily to receive random quota rewards')}
                 </p>
               </div>
             </button>
             <Button
               onClick={() => doCheckin()}
-              disabled={checkinLoading || checkedToday}
+              disabled={checkinLoading || checkedToday || tierIneligible}
               size='sm'
               className='w-full shrink-0 sm:w-auto'
             >
-              {checkinLoading
-                ? t('Loading...')
-                : checkedToday
-                  ? t('Checked in')
-                  : t('Check in now')}
+              {tierIneligible
+                ? t('checkin.tierGate.cta')
+                : checkinLoading
+                  ? t('Loading...')
+                  : checkedToday
+                    ? t('Checked in')
+                    : t('Check in now')}
             </Button>
           </div>
         </div>

@@ -27,9 +27,16 @@ interface HeaderLogoProps {
 }
 
 /**
- * Logo component for header with loading state
- * Shows image only when fully loaded for smooth UX
+ * Header wordmark logo. Renders a horizontally sized brand asset — height
+ * is fixed and width is intrinsic ('w-auto object-contain') so wide
+ * wordmark SVGs render at their real aspect ratio instead of being clipped
+ * into a circular badge. Under dark mode the light-text wordmark is
+ * swapped in for the packaged tokensheep-logo.svg pair. Any other src
+ * (admin-configured external URL) is rendered as-is.
  */
+const PACKAGED_LIGHT = '/tokensheep-logo.svg'
+const PACKAGED_DARK = '/tokensheep-logo-dark.svg'
+
 export function HeaderLogo({
   src,
   alt = 'logo',
@@ -37,15 +44,38 @@ export function HeaderLogo({
   logoLoaded,
   className,
 }: HeaderLogoProps) {
+  const isPackaged = (() => {
+    try {
+      return new URL(src, window.location.origin).pathname === PACKAGED_LIGHT
+    } catch {
+      return false
+    }
+  })()
+  const opacity = !loading && logoLoaded ? 'opacity-100' : 'opacity-0'
+  const base = 'h-9 w-auto object-contain transition-opacity duration-200'
+
+  if (!isPackaged) {
+    return (
+      <img
+        src={src}
+        alt={alt}
+        className={cn(base, opacity, className)}
+      />
+    )
+  }
+
   return (
-    <img
-      src={src}
-      alt={alt}
-      className={cn(
-        'h-6 w-6 rounded-full transition-opacity duration-200',
-        !loading && logoLoaded ? 'opacity-100' : 'opacity-0',
-        className
-      )}
-    />
+    <>
+      <img
+        src={PACKAGED_LIGHT}
+        alt={alt}
+        className={cn(base, opacity, 'block dark:hidden', className)}
+      />
+      <img
+        src={PACKAGED_DARK}
+        alt={alt}
+        className={cn(base, opacity, 'hidden dark:block', className)}
+      />
+    </>
   )
 }
