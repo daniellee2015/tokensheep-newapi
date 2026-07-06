@@ -26,6 +26,24 @@ import { RatioSettingsCard } from '../models/ratio-settings-card'
 import type { BillingSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 
+// Parse a `Record<string, number>` from a JSON string stored in an option;
+// tolerates empty/invalid values so a missing DB row falls back to `{}`.
+function parseJsonObjectMap(raw: string | undefined): Record<string, number> {
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const result: Record<string, number> = {}
+      for (const [k, v] of Object.entries(parsed)) {
+        const n = Number(v)
+        if (!Number.isNaN(n)) result[k] = n
+      }
+      return result
+    }
+  } catch {}
+  return {}
+}
+
 const getModelDefaults = (settings: BillingSettings) => ({
   ModelPrice: settings.ModelPrice,
   ModelRatio: settings.ModelRatio,
@@ -189,6 +207,22 @@ const BILLING_SECTIONS = [
         }}
         waffoPancakeProvisionedStoreID={settings.WaffoPancakeStoreID ?? ''}
         waffoPancakeProvisionedProductID={settings.WaffoPancakeProductID ?? ''}
+        tokensheepEconomyDefaultValues={{
+          TierThresholds: parseJsonObjectMap(
+            settings['tokensheep_economy.tier_thresholds']
+          ),
+          CheckinAwardByGroup: parseJsonObjectMap(
+            settings['tokensheep_economy.checkin_award_by_group']
+          ),
+          SessionLimits: parseJsonObjectMap(
+            settings['tokensheep_economy.session_limits']
+          ),
+          GiftPoolCap: Number(settings['tokensheep_economy.gift_pool_cap']) || 0,
+          GiftPoolInactiveDays:
+            Number(settings['tokensheep_economy.gift_pool_inactive_days']) || 30,
+          DowngradeInactiveDays:
+            Number(settings['tokensheep_economy.downgrade_inactive_days']) || 30,
+        }}
         complianceDefaults={{
           confirmed: settings['payment_setting.compliance_confirmed'] ?? false,
           termsVersion:

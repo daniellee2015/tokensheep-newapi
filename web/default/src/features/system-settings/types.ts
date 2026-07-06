@@ -329,6 +329,14 @@ export type BillingSettings = {
   // TokenSheep wallet UX toggles — see setting/tokensheep_setting/wallet_ui.go.
   EnableTierCardsInRecharge: boolean
   EnableCustomTopup: boolean
+  // TokenSheep economy — flat keys from GlobalConfig.Register("tokensheep_economy").
+  // Each of these is a JSON string that admins edit through the TokenSheep tab.
+  'tokensheep_economy.tier_thresholds': string
+  'tokensheep_economy.checkin_award_by_group': string
+  'tokensheep_economy.session_limits': string
+  'tokensheep_economy.gift_pool_cap': string
+  'tokensheep_economy.gift_pool_inactive_days': string
+  'tokensheep_economy.downgrade_inactive_days': string
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number

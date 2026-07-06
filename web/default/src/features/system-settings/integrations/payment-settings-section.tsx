@@ -68,6 +68,10 @@ import {
   normalizeJsonForComparison,
   removeTrailingSlash,
 } from './utils'
+import {
+  TokensheepEconomySection,
+  type TokensheepEconomySettingsValues,
+} from './tokensheep-economy-section'
 import { saveWaffoPancakeConfig } from './waffo-pancake-api'
 import {
   WaffoPancakeSettingsSection,
@@ -207,6 +211,7 @@ type PaymentSettingsSectionProps = {
   waffoPancakeDefaultValues: WaffoPancakeSettingsValues
   waffoPancakeProvisionedStoreID?: string
   waffoPancakeProvisionedProductID?: string
+  tokensheepEconomyDefaultValues: TokensheepEconomySettingsValues
   complianceDefaults: PaymentComplianceDefaults
 }
 
@@ -225,6 +230,7 @@ export function PaymentSettingsSection({
   waffoPancakeDefaultValues,
   waffoPancakeProvisionedStoreID,
   waffoPancakeProvisionedProductID,
+  tokensheepEconomyDefaultValues,
   complianceDefaults,
 }: PaymentSettingsSectionProps) {
   const { t } = useTranslation()
@@ -933,8 +939,9 @@ export function PaymentSettingsSection({
           />
           <Tabs defaultValue='general' className='min-w-0'>
             <div className='overflow-x-auto pb-1'>
-              <TabsList className='grid min-w-[44rem] grid-cols-6'>
+              <TabsList className='grid min-w-[52rem] grid-cols-7'>
                 <TabsTrigger value='general'>{t('General')}</TabsTrigger>
+                <TabsTrigger value='tokensheep'>TokenSheep</TabsTrigger>
                 <TabsTrigger value='epay'>Epay</TabsTrigger>
                 <TabsTrigger value='stripe'>{t('Stripe')}</TabsTrigger>
                 <TabsTrigger value='creem'>Creem</TabsTrigger>
@@ -1230,6 +1237,15 @@ export function PaymentSettingsSection({
                   />
                 </div>
               </div>
+            </TabsContent>
+
+            <TabsContent
+              value='tokensheep'
+              className={paymentTabContentClassName}
+            >
+              <TokensheepEconomySection
+                defaultValues={tokensheepEconomyDefaultValues}
+              />
             </TabsContent>
 
             <TabsContent value='epay' className={paymentTabContentClassName}>

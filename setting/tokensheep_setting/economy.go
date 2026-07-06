@@ -43,21 +43,25 @@ type EconomySetting struct {
 var (
 	economyMu      sync.RWMutex
 	economySetting = EconomySetting{
+		// All monetary values in this struct are in quota units, where
+		// QuotaPerUnit = 500,000 quota per station dollar (see
+		// common/constants.go). So $10 = 5,000,000 quota. The seed values
+		// below match docs/spec/economy-model.md §2.2 & §4.2.
 		CheckinAwardByGroup: map[string]int{
 			// See docs/spec/economy-model.md §4.2 — free tier can't check in;
 			// paid tiers earn a fixed daily gift into quota_gift.
-			"supporter": 50000,   // $0.50
-			"fan":       300000,  // $3.00
-			"bestie":    500000,  // $5.00
-			"vip":       1000000, // $10.00 — highest daily gift
+			"supporter": 250_000,   // $0.50
+			"fan":       1_500_000, // $3.00
+			"bestie":    2_500_000, // $5.00
+			"vip":       5_000_000, // $10.00 — highest daily gift
 		},
-		GiftPoolCap: 5000000, // $50
+		GiftPoolCap: 25_000_000, // $50
 		TierThresholds: map[string]int{
-			// §2.2 — cumulative donation cents to promote into each tier.
-			"supporter": 1000000,  // $10
-			"fan":       5000000,  // $50
-			"bestie":    10000000, // $100
-			"vip":       50000000, // $500 — invite-only whale tier
+			// §2.2 — cumulative donation quota to promote into each tier.
+			"supporter": 5_000_000,   // $10
+			"fan":       25_000_000,  // $50
+			"bestie":    50_000_000,  // $100
+			"vip":       250_000_000, // $500 — invite-only whale tier
 		},
 		GiftPoolInactiveDays:  30,
 		DowngradeInactiveDays: 30,
@@ -98,9 +102,9 @@ type TierCard struct {
 }
 
 // TierCardsSorted materializes the currently-configured TierThresholds map
-// as a slice sorted by amount (ascending). Threshold values are quota cents
-// so we divide by QuotaPerUnit-worth (500000 = $1 by default across
-// tokensheep) — mirroring the same conversion the wallet UI already does.
+// as a slice sorted by amount (ascending). Threshold values live in quota
+// units where 500,000 quota = $1 (matches common.QuotaPerUnit), so we
+// divide to convert the map into station dollars for the wallet UI.
 //
 // Thresholds <= 0 are excluded (they signify "free tier" or admin-cleared
 // rows). This keeps the wallet Tier row responsive to admin panel edits
@@ -113,18 +117,18 @@ func TierCardsSorted() []TierCard {
 	}
 	economyMu.RUnlock()
 
-	// $1 station = 500,000 quota cents (matches common.QuotaPerUnit). Kept
-	// as a local constant to avoid importing common from setting/.
-	const quotaCentsPerDollar = 500_000
+	// Kept as a local constant to avoid importing common from setting/.
+	// If common.QuotaPerUnit is ever changed this needs to move with it.
+	const quotaPerDollar = 500_000
 
 	cards := make([]TierCard, 0, len(rawThresholds))
-	for tier, cents := range rawThresholds {
-		if cents <= 0 {
+	for tier, quota := range rawThresholds {
+		if quota <= 0 {
 			continue
 		}
 		cards = append(cards, TierCard{
 			Tier:   tier,
-			Amount: cents / quotaCentsPerDollar,
+			Amount: quota / quotaPerDollar,
 		})
 	}
 	sort.Slice(cards, func(i, j int) bool {
