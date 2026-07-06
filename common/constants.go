@@ -146,6 +146,11 @@ var TelegramBotName = ""
 var QuotaForNewUser = 0
 var QuotaForInviter = 0
 var QuotaForInvitee = 0
+
+// DefaultUserGroup is the tier a freshly registered user lands in. Kept as a
+// setting-backed variable so ops can change it from the admin panel; the
+// User.BeforeCreate hook applies it when a new row has no explicit group.
+var DefaultUserGroup = "default"
 var ChannelDisableThreshold = 5.0
 var AutomaticDisableChannelEnabled = false
 var AutomaticEnableChannelEnabled = false

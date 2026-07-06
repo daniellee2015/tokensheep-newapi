@@ -428,6 +428,16 @@ func (user *User) Insert(inviterId int) error {
 		}
 	}
 	user.Quota = common.QuotaForNewUser
+	// TokenSheep: honor the operator-configured DefaultUserGroup option when
+	// the caller didn't specify one. GORM's column default ('default') still
+	// applies at the DB level, but option-driven config wins here so ops can
+	// change the landing tier from the admin panel without touching code.
+	if strings.TrimSpace(user.Group) == "" ||
+		user.Group == "default" {
+		if fallback := strings.TrimSpace(common.DefaultUserGroup); fallback != "" {
+			user.Group = fallback
+		}
+	}
 	//user.SetAccessToken(common.GetUUID())
 	user.AffCode = common.GetRandomString(4)
 
