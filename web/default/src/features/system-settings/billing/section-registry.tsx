@@ -172,6 +172,9 @@ const BILLING_SECTIONS = [
         }}
         waffoPancakeDefaultValues={{
           WaffoPancakeMerchantID: settings.WaffoPancakeMerchantID ?? '',
+          // Private key is intentionally blank on load — backend strips it
+          // from GET /api/option/ so admins can re-verify without re-pasting.
+          WaffoPancakePrivateKey: '',
           WaffoPancakeReturnURL: settings.WaffoPancakeReturnURL ?? '',
           // TokenSheep additions — default matches server-side defaults so a
           // fresh install lands on "apply exchange rate, 0.5% surcharge".

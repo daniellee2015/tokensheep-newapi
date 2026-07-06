@@ -174,6 +174,7 @@ const paymentSchema = z.object({
   WaffoNotifyUrl: z.string(),
   WaffoReturnUrl: z.string(),
   WaffoPancakeMerchantID: z.string(),
+  WaffoPancakePrivateKey: z.string(),
   WaffoPancakeReturnURL: z.string(),
   // TokenSheep additions — see setting/payment_waffo_pancake.go.
   WaffoPancakeApplyUSDExchangeRate: z.boolean(),
@@ -455,6 +456,7 @@ export function PaymentSettingsSection({
       WaffoSandboxPrivateKey: values.WaffoSandboxPrivateKey.trim(),
       WaffoPayMethods: JSON.stringify(waffoPayMethods),
       WaffoPancakeMerchantID: values.WaffoPancakeMerchantID.trim(),
+      WaffoPancakePrivateKey: values.WaffoPancakePrivateKey.trim(),
       WaffoPancakeReturnURL: removeTrailingSlash(
         values.WaffoPancakeReturnURL.trim()
       ),
@@ -503,6 +505,7 @@ export function PaymentSettingsSection({
         parseWaffoPayMethods(waffoDefaultValues.WaffoPayMethods)
       ),
       WaffoPancakeMerchantID: initialRef.current.WaffoPancakeMerchantID.trim(),
+      WaffoPancakePrivateKey: initialRef.current.WaffoPancakePrivateKey.trim(),
       WaffoPancakeReturnURL: removeTrailingSlash(
         initialRef.current.WaffoPancakeReturnURL.trim()
       ),
@@ -707,9 +710,9 @@ export function PaymentSettingsSection({
       updates.push({ key: 'WaffoPayMethods', value: sanitized.WaffoPayMethods })
     }
 
-    // TokenSheep pancake add-ons flow through the generic options endpoint
-    // (like WaffoUnitPrice / WaffoMinTopUp) rather than the atomic
-    // waffo-pancake/save handler, since they aren't coupled with store/product
+    // TokenSheep pancake add-ons flow through the generic /api/option/
+    // endpoint (like WaffoUnitPrice / WaffoMinTopUp) rather than the atomic
+    // waffo-pancake/save handler — they aren't coupled to store/product
     // catalog operations.
     if (
       sanitized.WaffoPancakeApplyUSDExchangeRate !==
@@ -732,6 +735,7 @@ export function PaymentSettingsSection({
 
     const hasWaffoPancakeChanges =
       sanitized.WaffoPancakeMerchantID !== initial.WaffoPancakeMerchantID ||
+      sanitized.WaffoPancakePrivateKey.length > 0 ||
       sanitized.WaffoPancakeReturnURL !== initial.WaffoPancakeReturnURL ||
       waffoPancakeSelection.storeID !== waffoPancakeSavedBinding.storeID ||
       waffoPancakeSelection.productID !== waffoPancakeSavedBinding.productID
@@ -762,6 +766,7 @@ export function PaymentSettingsSection({
     try {
       const body = await saveWaffoPancakeConfig({
         merchantID: sanitized.WaffoPancakeMerchantID,
+        privateKey: sanitized.WaffoPancakePrivateKey,
         returnURL: sanitized.WaffoPancakeReturnURL,
         storeID: waffoPancakeSelection.storeID,
         productID: waffoPancakeSelection.productID,
@@ -819,6 +824,7 @@ export function PaymentSettingsSection({
   }
   const waffoPancakeValues: WaffoPancakeSettingsValues = {
     WaffoPancakeMerchantID: currentFormValues.WaffoPancakeMerchantID,
+    WaffoPancakePrivateKey: currentFormValues.WaffoPancakePrivateKey,
     WaffoPancakeReturnURL: currentFormValues.WaffoPancakeReturnURL,
     WaffoPancakeApplyUSDExchangeRate:
       currentFormValues.WaffoPancakeApplyUSDExchangeRate,
