@@ -11,9 +11,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// GetGroups returns the list of user-facing group names. TokenSheep splits
+// its group registry into two overlapping sets: the "ratio" map lives in
+// GroupRatio and includes both user tiers (free / supporter / fan / ...)
+// and channel-side tags (gpt-supporter / claude-supporter / image / ...).
+// The admin user-editor drop-down only wants the tier names, so we filter
+// against `UserUsableGroups` — the same registry that /api/user/self/groups
+// uses to decide what a caller may switch to. Adding a new tier to that
+// map exposes it here automatically; adding a channel tag does not.
 func GetGroups(c *gin.Context) {
-	groupNames := make([]string, 0)
-	for groupName := range ratio_setting.GetGroupRatioCopy() {
+	usable := setting.GetUserUsableGroupsCopy()
+	groupNames := make([]string, 0, len(usable))
+	for groupName := range usable {
 		groupNames = append(groupNames, groupName)
 	}
 	c.JSON(http.StatusOK, gin.H{
