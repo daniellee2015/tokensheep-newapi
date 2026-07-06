@@ -140,6 +140,7 @@ func InitOptionMap() {
 	common.OptionMap["QuotaForInviter"] = strconv.Itoa(common.QuotaForInviter)
 	common.OptionMap["QuotaForInvitee"] = strconv.Itoa(common.QuotaForInvitee)
 	common.OptionMap["DefaultUserGroup"] = common.DefaultUserGroup
+	common.OptionMap["PromoDisplayGroup"] = common.PromoDisplayGroup
 	common.OptionMap["QuotaRemindThreshold"] = strconv.Itoa(common.QuotaRemindThreshold)
 	common.OptionMap["PreConsumedQuota"] = strconv.Itoa(common.PreConsumedQuota)
 	common.OptionMap["ModelRequestRateLimitCount"] = strconv.Itoa(setting.ModelRequestRateLimitCount)
@@ -521,6 +522,8 @@ func updateOptionMap(key string, value string) (err error) {
 		if strings.TrimSpace(value) != "" {
 			common.DefaultUserGroup = strings.TrimSpace(value)
 		}
+	case "PromoDisplayGroup":
+		common.PromoDisplayGroup = strings.TrimSpace(value)
 	case "QuotaForInviter":
 		common.QuotaForInviter, _ = strconv.Atoi(value)
 	case "QuotaForInvitee":

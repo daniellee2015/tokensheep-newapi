@@ -151,6 +151,16 @@ var QuotaForInvitee = 0
 // setting-backed variable so ops can change it from the admin panel; the
 // User.BeforeCreate hook applies it when a new row has no explicit group.
 var DefaultUserGroup = "default"
+
+// PromoDisplayGroup, when non-empty, makes the public pricing page / model
+// plaza render every model's multiplier from THIS group's inter-group ratio
+// map (GroupGroupRatio) for every visitor — logged in or not. It's a display
+// knob only: actual billing on the relay path still uses the caller's real
+// group. TokenSheep points this at a dedicated "promo" group carrying the
+// cheapest (vip-equivalent) ratios so the plaza always advertises the best
+// price, nudging users to upgrade. Empty = upstream behavior (each visitor
+// sees their own group's ratios; logged-out sees the raw global ratios).
+var PromoDisplayGroup = ""
 var ChannelDisableThreshold = 5.0
 var AutomaticDisableChannelEnabled = false
 var AutomaticEnableChannelEnabled = false

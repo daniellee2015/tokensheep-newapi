@@ -55,7 +55,23 @@ func GetPricing(c *gin.Context) {
 		}
 	}
 
-	usableGroup = service.GetUserUsableGroups(group)
+	// TokenSheep promo display: when PromoDisplayGroup is set, the plaza shows
+	// every visitor the promo group's inter-group ratios (the cheapest,
+	// vip-equivalent tier) instead of their own — a display-only nudge to
+	// upgrade. Billing on the relay path is unaffected; it uses the caller's
+	// real group. See common.PromoDisplayGroup.
+	if promoGroup := common.PromoDisplayGroup; promoGroup != "" {
+		for g := range groupRatio {
+			if ratio, ok := ratio_setting.GetGroupGroupRatio(promoGroup, g); ok {
+				groupRatio[g] = ratio
+			}
+		}
+		// Surface the promo group's usable channel set so all its models
+		// stay visible in the plaza regardless of who's looking.
+		usableGroup = service.GetUserUsableGroups(promoGroup)
+	} else {
+		usableGroup = service.GetUserUsableGroups(group)
+	}
 	pricing = filterPricingByUsableGroups(pricing, usableGroup)
 	// check groupRatio contains usableGroup
 	for group := range ratio_setting.GetGroupRatioCopy() {
