@@ -31,7 +31,6 @@ import { PaymentConfirmDialog } from './components/dialogs/payment-confirm-dialo
 import { TransferDialog } from './components/dialogs/transfer-dialog'
 import { RechargeFormCard } from './components/recharge-form-card'
 import { SubscriptionPlansCard } from './components/subscription-plans-card'
-import { TokensheepTierCards } from './components/tokensheep-tier-cards'
 import { WalletStatsCard } from './components/wallet-stats-card'
 import { DEFAULT_DISCOUNT_RATE } from './constants'
 import {
@@ -76,11 +75,6 @@ export function Wallet(props: WalletProps) {
   const [selectedCreemProduct, setSelectedCreemProduct] =
     useState<CreemProduct | null>(null)
   const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(true)
-  // Tier quick-pick loading key — mirrors the picked tier while the Pancake
-  // handoff is in flight, so only that card shows a spinner.
-  const [tierPickLoading, setTierPickLoading] = useState<
-    'supporter' | 'fan' | 'bestie' | null
-  >(null)
 
   const { status } = useStatus()
   const { currency } = useSystemConfig()
@@ -242,25 +236,6 @@ export function Wallet(props: WalletProps) {
     }
   }
 
-  // Tier quick-pick handler: bypasses the amount input + confirm dialog to
-  // send the user straight to Pancake with the fixed $10 / $50 / $100 amount.
-  // Cumulative donation → server-side tier promotion (see DoCheckin gating
-  // and the daily downgrade cron in economy-model.md §4.5).
-  const handleTierQuickPick = async (
-    amount: number,
-    tier: 'supporter' | 'fan' | 'bestie'
-  ) => {
-    setTierPickLoading(tier)
-    try {
-      const success = await processWaffoPancakePayment(amount)
-      if (success) {
-        await fetchUser()
-      }
-    } finally {
-      setTierPickLoading(null)
-    }
-  }
-
   const handleWaffoMethodSelect = async (_method: unknown, index: number) => {
     const loadingKey = `waffo-${index}`
     setPaymentLoading(loadingKey)
@@ -291,14 +266,6 @@ export function Wallet(props: WalletProps) {
         <SectionPageLayout.Content>
           <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
             <WalletStatsCard user={user} loading={userLoading} />
-
-            <TokensheepTierCards
-              enabled={topupInfo?.enable_waffo_pancake_topup}
-              currentTier={user?.group}
-              onSelect={handleTierQuickPick}
-              loadingTier={tierPickLoading}
-              loading={topupLoading}
-            />
 
             <div
               className={
