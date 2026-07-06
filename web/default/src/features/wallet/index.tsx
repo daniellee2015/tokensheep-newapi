@@ -340,6 +340,7 @@ export function Wallet(props: WalletProps) {
         processing={processing || pancakeProcessing}
         discountRate={getDiscountRate()}
         usdExchangeRate={effectiveUsdExchangeRate}
+        pancakeSurchargePercent={topupInfo?.waffo_pancake_surcharge_percent}
       />
 
       <TransferDialog

@@ -101,8 +101,6 @@ export function RechargeFormCard({
   onSelectPreset,
   topupAmount,
   onTopupAmountChange,
-  paymentAmount,
-  calculating,
   onPaymentMethodSelect,
   paymentLoading,
   redemptionCode,
@@ -241,7 +239,6 @@ export function RechargeFormCard({
                         1.0
                       const {
                         displayValue,
-                        actualPrice,
                         savedAmount,
                         hasDiscount,
                       } = calculatePresetPricing(
@@ -273,7 +270,7 @@ export function RechargeFormCard({
                             )}
                           </div>
                           <div className='text-muted-foreground mt-1.5 w-full text-xs sm:mt-2'>
-                            Pay {formatCurrency(actualPrice)}
+                            {t('Pay')} {formatCurrency(preset.value)}
                             {hasDiscount && savedAmount > 0 && (
                               <span className='text-green-600'>
                                 {' '}
@@ -309,13 +306,9 @@ export function RechargeFormCard({
                     <span className='text-muted-foreground truncate text-xs'>
                       {t('Amount to pay:')}
                     </span>
-                    {calculating ? (
-                      <Skeleton className='h-5 w-16' />
-                    ) : (
-                      <span className='text-sm font-semibold'>
-                        {formatCurrency(paymentAmount)}
-                      </span>
-                    )}
+                    <span className='text-sm font-semibold'>
+                      {formatCurrency(topupAmount)}
+                    </span>
                   </div>
                 </div>
               </div>

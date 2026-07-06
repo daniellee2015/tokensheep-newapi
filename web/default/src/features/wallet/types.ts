@@ -150,6 +150,12 @@ export interface TopupInfo {
   enable_waffo_pancake_topup?: boolean
   /** Minimum topup amount for Waffo Pancake */
   waffo_pancake_min_topup?: number
+  /**
+   * Waffo Pancake surcharge percent (station-side option
+   * WaffoPancakeSurchargePercent). Shown in the confirm dialog as
+   * "provider fee +X%".
+   */
+  waffo_pancake_surcharge_percent?: number
   /** Whether redemption code usage is enabled */
   enable_redemption?: boolean
   /** Whether compliance confirmation has been completed */

@@ -29,24 +29,38 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Skeleton } from '@/components/ui/skeleton'
-import { formatLocalCurrencyAmount } from '@/lib/currency'
 
-import { DEFAULT_DISCOUNT_RATE } from '../../constants'
 import { formatCurrency, getPaymentIcon } from '../../lib'
 import type { PaymentMethod } from '../../types'
 
+// TokenSheep confirm dialog. Station-side ($ = quota) rows only; the real
+// USD settlement, the exchange-rate conversion, and per-payment-method
+// fees are shown on the Waffo checkout page after redirect.
+//
+// Rows (top to bottom):
+//   1. Topup amount              — station $, same as the field the user typed.
+//   2. You pay                   — station $, same as row 1 (1:1 quota).
+//   3. Pancake surcharge (+X%)   — informational, green, from WaffoPancakeSurchargePercent.
+//   4. Payment method            — carried over from the recharge form.
 interface PaymentConfirmDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onConfirm: () => void
   topupAmount: number
-  paymentAmount: number
+  // Kept for source-compat with the parent; not rendered. See file comment.
+  paymentAmount?: number
   paymentMethod: PaymentMethod | undefined
   calculating: boolean
   processing: boolean
+  // Legacy props kept for parent compatibility; not rendered.
   discountRate?: number
   usdExchangeRate?: number
+  /**
+   * Waffo Pancake surcharge percent (from options: WaffoPancakeSurchargePercent).
+   * Shown as a small green "+0.5%" chip — the extra is charged on the
+   * provider's checkout page, not station-side.
+   */
+  pancakeSurchargePercent?: number
 }
 
 export function PaymentConfirmDialog({
@@ -54,17 +68,14 @@ export function PaymentConfirmDialog({
   onOpenChange,
   onConfirm,
   topupAmount,
-  paymentAmount,
   paymentMethod,
-  calculating,
   processing,
-  discountRate = DEFAULT_DISCOUNT_RATE,
-  usdExchangeRate = 1,
+  pancakeSurchargePercent = 0,
 }: PaymentConfirmDialogProps) {
   const { t } = useTranslation()
-  const hasDiscount = discountRate > 0 && discountRate < 1 && paymentAmount > 0
-  const originalAmount = hasDiscount ? paymentAmount / discountRate : 0
-  const discountAmount = hasDiscount ? originalAmount - paymentAmount : 0
+
+  const surchargeVisible =
+    pancakeSurchargePercent > 0 && paymentMethod?.type === 'waffo_pancake'
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -84,11 +95,7 @@ export function PaymentConfirmDialog({
               {t('Topup Amount')}
             </span>
             <span className='text-lg font-semibold'>
-              {formatLocalCurrencyAmount(topupAmount * usdExchangeRate, {
-                digitsLarge: 2,
-                digitsSmall: 2,
-                abbreviate: false,
-              })}
+              {formatCurrency(topupAmount)}
             </span>
           </div>
 
@@ -96,30 +103,19 @@ export function PaymentConfirmDialog({
             <span className='text-muted-foreground text-sm'>
               {t('You Pay')}
             </span>
-            {calculating ? (
-              <Skeleton className='h-6 w-24' />
-            ) : (
-              <div className='flex items-baseline gap-2'>
-                <span className='text-2xl font-semibold'>
-                  {formatCurrency(paymentAmount)}
-                </span>
-                {hasDiscount && (
-                  <span className='text-muted-foreground text-sm line-through'>
-                    {formatCurrency(originalAmount)}
-                  </span>
-                )}
-              </div>
-            )}
+            <span className='text-2xl font-semibold'>
+              {formatCurrency(topupAmount)}
+            </span>
           </div>
 
-          {hasDiscount && !calculating && (
-            <div className='bg-muted/50 rounded-lg p-3'>
-              <div className='flex items-center justify-between text-sm'>
-                <span className='text-muted-foreground'>{t('You save')}</span>
-                <span className='font-semibold text-green-600'>
-                  {formatCurrency(discountAmount)}
-                </span>
-              </div>
+          {surchargeVisible && (
+            <div className='flex items-center justify-between rounded-md bg-green-500/10 px-3 py-2 text-sm'>
+              <span className='text-green-700 dark:text-green-400'>
+                {t('Payment provider fee')}
+              </span>
+              <span className='font-semibold text-green-700 dark:text-green-400'>
+                +{pancakeSurchargePercent}%
+              </span>
             </div>
           )}
 
