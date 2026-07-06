@@ -101,6 +101,19 @@ type TierCard struct {
 	Amount int    `json:"amount"`
 }
 
+// GetTierThresholdsCopy returns a shallow copy of the tier threshold map.
+// Used by the admin user-editor to enumerate valid tier names — see
+// controller/group.go for the "tier vs pricing group" split.
+func GetTierThresholdsCopy() map[string]int {
+	economyMu.RLock()
+	defer economyMu.RUnlock()
+	out := make(map[string]int, len(economySetting.TierThresholds))
+	for k, v := range economySetting.TierThresholds {
+		out[k] = v
+	}
+	return out
+}
+
 // TierCardsSorted materializes the currently-configured TierThresholds map
 // as a slice sorted by amount (ascending). Threshold values live in quota
 // units where 500,000 quota = $1 (matches common.QuotaPerUnit), so we

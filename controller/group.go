@@ -7,28 +7,33 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/setting/tokensheep_setting"
 
 	"github.com/gin-gonic/gin"
 )
 
-// GetGroups returns the list of user-facing group names. TokenSheep splits
-// its group registry into two overlapping sets: the "ratio" map lives in
-// GroupRatio and includes both user tiers (free / supporter / fan / ...)
-// and channel-side tags (gpt-supporter / claude-supporter / image / ...).
-// The admin user-editor drop-down only wants the tier names, so we filter
-// against `UserUsableGroups` — the same registry that /api/user/self/groups
-// uses to decide what a caller may switch to. Adding a new tier to that
-// map exposes it here automatically; adding a channel tag does not.
+// GetGroups returns the list of USER TIER names (free + every key in
+// TierThresholds), used by the admin user-editor drop-down.
+//
+// Upstream new-api merges "user tier" and "channel/pricing group" into a
+// single GroupRatio map. TokenSheep separates them: tier names come from
+// `tokensheep_economy.tier_thresholds` (supporter / fan / bestie / vip …),
+// and channel-side names (gpt-supporter, claude-supporter, image, …) stay
+// in GroupRatio only for pricing lookups. The admin user-editor never
+// wants a channel name assigned to `users.group`, so we return only the
+// tier set here. `free` is always included as the default fallback tier.
 func GetGroups(c *gin.Context) {
-	usable := setting.GetUserUsableGroupsCopy()
-	groupNames := make([]string, 0, len(usable))
-	for groupName := range usable {
-		groupNames = append(groupNames, groupName)
+	names := []string{"free"}
+	for tierName := range tokensheep_setting.GetTierThresholdsCopy() {
+		if tierName == "free" {
+			continue
+		}
+		names = append(names, tierName)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    groupNames,
+		"data":    names,
 	})
 }
 
