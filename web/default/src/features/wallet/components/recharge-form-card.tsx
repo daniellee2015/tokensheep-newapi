@@ -52,6 +52,18 @@ import type {
 } from '../types'
 import { CreemProductsSection } from './creem-products-section'
 
+const PRESET_AMOUNT_SKELETON_KEYS = [
+  'preset-a',
+  'preset-b',
+  'preset-c',
+  'preset-d',
+  'preset-e',
+  'preset-f',
+  'preset-g',
+  'preset-h',
+]
+const PAYMENT_METHOD_SKELETON_KEYS = ['method-a', 'method-b', 'method-c']
+
 interface RechargeFormCardProps {
   topupInfo: TopupInfo | null
   presetAmounts: PresetAmount[]
@@ -120,7 +132,7 @@ export function RechargeFormCard({
 
   const handleAmountChange = (value: string) => {
     setLocalAmount(value)
-    const numValue = parseInt(value) || 0
+    const numValue = Number.parseInt(value) || 0
     if (numValue >= 0) {
       onTopupAmountChange(numValue)
     }
@@ -136,6 +148,8 @@ export function RechargeFormCard({
     Array.isArray(topupInfo?.pay_methods) && topupInfo.pay_methods.length > 0
   const hasWaffoPaymentMethods =
     Array.isArray(waffoPayMethods) && waffoPayMethods.length > 0
+  const showNoStandardPaymentAlert =
+    !hasStandardPaymentMethods && !hasWaffoPaymentMethods
   const minTopup = getMinTopupAmount(topupInfo)
   const redemptionEnabled = topupInfo?.enable_redemption !== false
 
@@ -152,8 +166,8 @@ export function RechargeFormCard({
             <div className='space-y-3'>
               <Skeleton className='h-3 w-16' />
               <div className='grid grid-cols-2 gap-3 sm:grid-cols-4'>
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <Skeleton key={i} className='h-[72px] rounded-lg' />
+                {PRESET_AMOUNT_SKELETON_KEYS.map((key) => (
+                  <Skeleton key={key} className='h-[72px] rounded-lg' />
                 ))}
               </div>
             </div>
@@ -168,8 +182,8 @@ export function RechargeFormCard({
             <div className='space-y-3'>
               <Skeleton className='h-3 w-32' />
               <div className='flex flex-wrap gap-3'>
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className='h-10 w-24 rounded-lg' />
+                {PAYMENT_METHOD_SKELETON_KEYS.map((key) => (
+                  <Skeleton key={key} className='h-10 w-24 rounded-lg' />
                 ))}
               </div>
             </div>
@@ -220,7 +234,7 @@ export function RechargeFormCard({
                     {t('Amount')}
                   </Label>
                   <div className='grid grid-cols-2 gap-1.5 sm:gap-3 md:grid-cols-4'>
-                    {presetAmounts.map((preset, index) => {
+                    {presetAmounts.map((preset) => {
                       const discount =
                         preset.discount ||
                         topupInfo?.discount?.[preset.value] ||
@@ -238,7 +252,7 @@ export function RechargeFormCard({
                       )
                       return (
                         <Button
-                          key={index}
+                          key={`${preset.value}-${preset.discount ?? 'full'}`}
                           variant='outline'
                           className={cn(
                             'flex min-h-16 flex-col items-start rounded-lg px-3 py-2.5 text-left whitespace-normal sm:min-h-[72px] sm:p-4',
@@ -310,7 +324,7 @@ export function RechargeFormCard({
                 <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
                   {t('Payment Method')}
                 </Label>
-                {hasStandardPaymentMethods ? (
+                {hasStandardPaymentMethods && (
                   <div className='grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-3'>
                     {topupInfo?.pay_methods?.map((method) => {
                       const minTopup = method.min_topup || 0
@@ -364,7 +378,7 @@ export function RechargeFormCard({
                       return disabled ? (
                         <TooltipProvider key={method.type}>
                           <Tooltip>
-                            <TooltipTrigger render={button}></TooltipTrigger>
+                            <TooltipTrigger render={button} />
                             <TooltipContent>{disabledReason}</TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
@@ -373,7 +387,8 @@ export function RechargeFormCard({
                       )
                     })}
                   </div>
-                ) : hasWaffoPaymentMethods ? null : (
+                )}
+                {showNoStandardPaymentAlert && (
                   <Alert>
                     <AlertDescription>
                       {t(
@@ -394,6 +409,11 @@ export function RechargeFormCard({
                     <div className='grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-3'>
                       {waffoPayMethods?.map((method, index) => {
                         const loadingKey = `waffo-${index}`
+                        const methodKey = [
+                          method.name,
+                          method.payMethodType || 'auto-type',
+                          method.payMethodName || 'auto-name',
+                        ].join('-')
                         const waffoMin = waffoMinTopup || 0
                         const belowMin = waffoMin > topupAmount
                         const disabledReason = belowMin
@@ -407,7 +427,7 @@ export function RechargeFormCard({
 
                         const button = (
                           <Button
-                            key={`${method.name}-${index}`}
+                            key={methodKey}
                             variant='outline'
                             onClick={() => onWaffoMethodSelect(method, index)}
                             disabled={belowMin || !!paymentLoading}
@@ -421,14 +441,13 @@ export function RechargeFormCard({
                           >
                             {paymentLoading === loadingKey ? (
                               <Loader2 className='h-4 w-4 animate-spin' />
-                            ) : method.icon ? (
-                              <img
-                                src={method.icon}
-                                alt={method.name}
-                                className='h-4 w-4 object-contain'
-                              />
                             ) : (
-                              getPaymentIcon('waffo')
+                              getPaymentIcon(
+                                'waffo',
+                                'h-4 w-4',
+                                method.icon,
+                                method.name
+                              )
                             )}
                             <span className='flex min-w-0 flex-col items-start gap-0.5'>
                               <span className='max-w-full truncate'>
@@ -444,9 +463,9 @@ export function RechargeFormCard({
                         )
 
                         return belowMin ? (
-                          <TooltipProvider key={`${method.name}-${index}`}>
+                          <TooltipProvider key={methodKey}>
                             <Tooltip>
-                              <TooltipTrigger render={button}></TooltipTrigger>
+                              <TooltipTrigger render={button} />
                               <TooltipContent>{disabledReason}</TooltipContent>
                             </Tooltip>
                           </TooltipProvider>

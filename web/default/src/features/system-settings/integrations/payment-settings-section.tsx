@@ -174,8 +174,10 @@ const paymentSchema = z.object({
   WaffoNotifyUrl: z.string(),
   WaffoReturnUrl: z.string(),
   WaffoPancakeMerchantID: z.string(),
-  WaffoPancakePrivateKey: z.string(),
   WaffoPancakeReturnURL: z.string(),
+  // TokenSheep additions — see setting/payment_waffo_pancake.go.
+  WaffoPancakeApplyUSDExchangeRate: z.boolean(),
+  WaffoPancakeSurchargePercent: z.string(),
 })
 
 type PaymentFormValues = z.infer<typeof paymentSchema>
@@ -453,10 +455,11 @@ export function PaymentSettingsSection({
       WaffoSandboxPrivateKey: values.WaffoSandboxPrivateKey.trim(),
       WaffoPayMethods: JSON.stringify(waffoPayMethods),
       WaffoPancakeMerchantID: values.WaffoPancakeMerchantID.trim(),
-      WaffoPancakePrivateKey: values.WaffoPancakePrivateKey.trim(),
       WaffoPancakeReturnURL: removeTrailingSlash(
         values.WaffoPancakeReturnURL.trim()
       ),
+      WaffoPancakeApplyUSDExchangeRate: values.WaffoPancakeApplyUSDExchangeRate,
+      WaffoPancakeSurchargePercent: values.WaffoPancakeSurchargePercent.trim(),
     }
 
     const initial = {
@@ -500,10 +503,13 @@ export function PaymentSettingsSection({
         parseWaffoPayMethods(waffoDefaultValues.WaffoPayMethods)
       ),
       WaffoPancakeMerchantID: initialRef.current.WaffoPancakeMerchantID.trim(),
-      WaffoPancakePrivateKey: initialRef.current.WaffoPancakePrivateKey.trim(),
       WaffoPancakeReturnURL: removeTrailingSlash(
         initialRef.current.WaffoPancakeReturnURL.trim()
       ),
+      WaffoPancakeApplyUSDExchangeRate:
+        initialRef.current.WaffoPancakeApplyUSDExchangeRate,
+      WaffoPancakeSurchargePercent:
+        initialRef.current.WaffoPancakeSurchargePercent.trim(),
     }
 
     const updates: Array<{ key: string; value: string | number | boolean }> = []
@@ -701,9 +707,31 @@ export function PaymentSettingsSection({
       updates.push({ key: 'WaffoPayMethods', value: sanitized.WaffoPayMethods })
     }
 
+    // TokenSheep pancake add-ons flow through the generic options endpoint
+    // (like WaffoUnitPrice / WaffoMinTopUp) rather than the atomic
+    // waffo-pancake/save handler, since they aren't coupled with store/product
+    // catalog operations.
+    if (
+      sanitized.WaffoPancakeApplyUSDExchangeRate !==
+      initial.WaffoPancakeApplyUSDExchangeRate
+    ) {
+      updates.push({
+        key: 'WaffoPancakeApplyUSDExchangeRate',
+        value: sanitized.WaffoPancakeApplyUSDExchangeRate,
+      })
+    }
+    if (
+      sanitized.WaffoPancakeSurchargePercent !==
+      initial.WaffoPancakeSurchargePercent
+    ) {
+      updates.push({
+        key: 'WaffoPancakeSurchargePercent',
+        value: sanitized.WaffoPancakeSurchargePercent,
+      })
+    }
+
     const hasWaffoPancakeChanges =
       sanitized.WaffoPancakeMerchantID !== initial.WaffoPancakeMerchantID ||
-      sanitized.WaffoPancakePrivateKey.length > 0 ||
       sanitized.WaffoPancakeReturnURL !== initial.WaffoPancakeReturnURL ||
       waffoPancakeSelection.storeID !== waffoPancakeSavedBinding.storeID ||
       waffoPancakeSelection.productID !== waffoPancakeSavedBinding.productID
@@ -734,7 +762,6 @@ export function PaymentSettingsSection({
     try {
       const body = await saveWaffoPancakeConfig({
         merchantID: sanitized.WaffoPancakeMerchantID,
-        privateKey: sanitized.WaffoPancakePrivateKey,
         returnURL: sanitized.WaffoPancakeReturnURL,
         storeID: waffoPancakeSelection.storeID,
         productID: waffoPancakeSelection.productID,
@@ -792,8 +819,10 @@ export function PaymentSettingsSection({
   }
   const waffoPancakeValues: WaffoPancakeSettingsValues = {
     WaffoPancakeMerchantID: currentFormValues.WaffoPancakeMerchantID,
-    WaffoPancakePrivateKey: currentFormValues.WaffoPancakePrivateKey,
     WaffoPancakeReturnURL: currentFormValues.WaffoPancakeReturnURL,
+    WaffoPancakeApplyUSDExchangeRate:
+      currentFormValues.WaffoPancakeApplyUSDExchangeRate,
+    WaffoPancakeSurchargePercent: currentFormValues.WaffoPancakeSurchargePercent,
   }
 
   return (

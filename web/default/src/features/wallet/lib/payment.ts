@@ -33,8 +33,8 @@ import type { PresetAmount, TopupInfo } from '../types'
  */
 function isSafariBrowser(): boolean {
   return (
-    navigator.userAgent.indexOf('Safari') > -1 &&
-    navigator.userAgent.indexOf('Chrome') < 1
+    navigator.userAgent.includes('Safari') &&
+    !navigator.userAgent.includes('Chrome')
   )
 }
 
@@ -99,16 +99,16 @@ export function getDefaultPaymentType(topupInfo: TopupInfo | null): string {
     return topupInfo.pay_methods[0].type
   }
 
+  if (topupInfo.enable_waffo_pancake_topup) {
+    return PAYMENT_TYPES.WAFFO_PANCAKE
+  }
+
   if (topupInfo.enable_stripe_topup) {
     return PAYMENT_TYPES.STRIPE
   }
 
   if (topupInfo.enable_waffo_topup) {
     return PAYMENT_TYPES.WAFFO
-  }
-
-  if (topupInfo.enable_waffo_pancake_topup) {
-    return PAYMENT_TYPES.WAFFO_PANCAKE
   }
 
   return DEFAULT_PAYMENT_TYPE
@@ -126,16 +126,16 @@ export function getMinTopupAmount(topupInfo: TopupInfo | null): number {
     return topupInfo.min_topup
   }
 
+  if (topupInfo.enable_waffo_pancake_topup) {
+    return topupInfo.waffo_pancake_min_topup || DEFAULT_MIN_TOPUP
+  }
+
   if (topupInfo.enable_stripe_topup) {
     return topupInfo.stripe_min_topup
   }
 
   if (topupInfo.enable_waffo_topup) {
     return topupInfo.waffo_min_topup || DEFAULT_MIN_TOPUP
-  }
-
-  if (topupInfo.enable_waffo_pancake_topup) {
-    return topupInfo.waffo_pancake_min_topup || DEFAULT_MIN_TOPUP
   }
 
   return DEFAULT_MIN_TOPUP

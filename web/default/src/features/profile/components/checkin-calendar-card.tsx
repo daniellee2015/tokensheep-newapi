@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import {
   CalendarDays,
   ChevronDown,
@@ -172,7 +173,7 @@ export function CheckinCalendarCard({
           }
           toast.error(res.message || t('Check-in failed'))
         }
-      } catch (_error) {
+      } catch {
         toast.error(t('Check-in failed'))
       } finally {
         setCheckinLoading(false)
@@ -251,6 +252,20 @@ export function CheckinCalendarCard({
     )
   }
 
+  let statusDescription = t('Check in daily to receive random quota rewards')
+  if (tierIneligible) {
+    statusDescription = t('checkin.tierGate.hint')
+  } else if (checkedToday && todayAward !== undefined) {
+    statusDescription = `${t('Today')} +${formatQuotaWithCurrency(todayAward)}`
+  }
+
+  let checkinButtonLabel = t('Check in now')
+  if (checkinLoading) {
+    checkinButtonLabel = t('Loading...')
+  } else if (checkedToday) {
+    checkinButtonLabel = t('Checked in')
+  }
+
   return (
     <TooltipProvider delay={100}>
       <Dialog
@@ -318,28 +333,28 @@ export function CheckinCalendarCard({
                   </span>
                 </div>
                 <p className='text-muted-foreground mt-1 line-clamp-2 text-xs sm:text-sm'>
-                  {tierIneligible
-                    ? t('checkin.tierGate.hint')
-                    : checkedToday && todayAward !== undefined
-                      ? `${t('Today')} +${formatQuotaWithCurrency(todayAward)}`
-                      : t('Check in daily to receive random quota rewards')}
+                  {statusDescription}
                 </p>
               </div>
             </button>
-            <Button
-              onClick={() => doCheckin()}
-              disabled={checkinLoading || checkedToday || tierIneligible}
-              size='sm'
-              className='w-full shrink-0 sm:w-auto'
-            >
-              {tierIneligible
-                ? t('checkin.tierGate.cta')
-                : checkinLoading
-                  ? t('Loading...')
-                  : checkedToday
-                    ? t('Checked in')
-                    : t('Check in now')}
-            </Button>
+            {tierIneligible ? (
+              <Button
+                size='sm'
+                className='w-full shrink-0 sm:w-auto'
+                render={<Link to='/contribute' />}
+              >
+                {t('checkin.tierGate.cta')}
+              </Button>
+            ) : (
+              <Button
+                onClick={() => doCheckin()}
+                disabled={checkinLoading || checkedToday}
+                size='sm'
+                className='w-full shrink-0 sm:w-auto'
+              >
+                {checkinButtonLabel}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -419,7 +434,7 @@ export function CheckinCalendarCard({
                   ))}
 
                   {/* Calendar days */}
-                  {calendarDays.map((dayObj, idx) => {
+                  {calendarDays.map((dayObj) => {
                     const dateStr = `${dayObj.date.getFullYear()}-${String(
                       dayObj.date.getMonth() + 1
                     ).padStart(2, '0')}-${String(
@@ -432,7 +447,7 @@ export function CheckinCalendarCard({
 
                     const dayButton = (
                       <Button
-                        key={idx}
+                        key={dateStr}
                         variant={isToday ? 'default' : 'ghost'}
                         disabled={!dayObj.isCurrentMonth}
                         className={cn(
@@ -451,8 +466,8 @@ export function CheckinCalendarCard({
 
                     if (isCheckedIn && dayObj.isCurrentMonth) {
                       return (
-                        <Tooltip key={idx}>
-                          <TooltipTrigger render={dayButton}></TooltipTrigger>
+                        <Tooltip key={dateStr}>
+                          <TooltipTrigger render={dayButton} />
                           <TooltipContent>
                             <div className='text-xs'>
                               <div className='font-medium'>

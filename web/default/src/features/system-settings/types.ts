@@ -318,12 +318,14 @@ export type BillingSettings = {
   WaffoReturnUrl: string
   WaffoPayMethods: string
   WaffoPancakeMerchantID: string
-  WaffoPancakePrivateKey: string
   WaffoPancakeReturnURL: string
   // Bound by the operator through the catalog flow in the admin Pancake
   // section (saved via /api/option/waffo-pancake/save).
   WaffoPancakeStoreID: string
   WaffoPancakeProductID: string
+  // TokenSheep additions — see setting/payment_waffo_pancake.go for defaults.
+  WaffoPancakeApplyUSDExchangeRate: boolean
+  WaffoPancakeSurchargePercent: string
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number

@@ -15,26 +15,9 @@ var EpayId = ""
 var EpayKey = ""
 var Price = 7.3
 var MinTopUp = 1
-var USDExchangeRate = 7.3
+var USDExchangeRate = 6.8
 
-var PayMethods = []map[string]string{
-	{
-		"name": "支付宝",
-		"icon": "SiAlipay",
-		"type": "alipay",
-	},
-	{
-		"name": "微信",
-		"icon": "SiWechat",
-		"type": "wxpay",
-	},
-	{
-		"name":      "自定义1",
-		"icon":      "LuCreditCard",
-		"type":      "custom1",
-		"min_topup": "50",
-	},
-}
+var PayMethods = []map[string]string{}
 
 func UpdatePayMethodsByJsonString(jsonString string) error {
 	PayMethods = make([]map[string]string, 0)

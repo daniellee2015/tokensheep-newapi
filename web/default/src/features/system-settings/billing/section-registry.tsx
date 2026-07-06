@@ -172,8 +172,13 @@ const BILLING_SECTIONS = [
         }}
         waffoPancakeDefaultValues={{
           WaffoPancakeMerchantID: settings.WaffoPancakeMerchantID ?? '',
-          WaffoPancakePrivateKey: settings.WaffoPancakePrivateKey ?? '',
           WaffoPancakeReturnURL: settings.WaffoPancakeReturnURL ?? '',
+          // TokenSheep additions — default matches server-side defaults so a
+          // fresh install lands on "apply exchange rate, 0.5% surcharge".
+          WaffoPancakeApplyUSDExchangeRate:
+            settings.WaffoPancakeApplyUSDExchangeRate ?? true,
+          WaffoPancakeSurchargePercent:
+            settings.WaffoPancakeSurchargePercent ?? '0.5',
         }}
         waffoPancakeProvisionedStoreID={settings.WaffoPancakeStoreID ?? ''}
         waffoPancakeProvisionedProductID={settings.WaffoPancakeProductID ?? ''}

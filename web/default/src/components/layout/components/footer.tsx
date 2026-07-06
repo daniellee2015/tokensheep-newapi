@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Link } from '@tanstack/react-router'
+import { Mail } from 'lucide-react'
 import { Fragment, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -50,7 +51,8 @@ const NEW_API_FOOTER_ATTRIBUTION_KEY = [
 
 function FooterLinkItem(props: { link: FooterLink }) {
   const { t } = useTranslation()
-  const isExternal = props.link.href.startsWith('http')
+  const isExternal =
+    props.link.href.startsWith('http') || props.link.href.startsWith('mailto:')
   const label = t(props.link.text)
 
   if (isExternal) {
@@ -73,6 +75,25 @@ function FooterLinkItem(props: { link: FooterLink }) {
     >
       {label}
     </Link>
+  )
+}
+
+function FooterContactColumn() {
+  const { t } = useTranslation()
+
+  return (
+    <div>
+      <p className='text-muted-foreground/50 mb-3 text-xs font-medium tracking-wider uppercase'>
+        {t('Contact Us')}
+      </p>
+      <a
+        href='mailto:hello@tokensheep.fun'
+        className='text-muted-foreground hover:text-foreground inline-flex items-center gap-2 text-sm transition-colors duration-200'
+      >
+        <Mail className='h-3.5 w-3.5' />
+        <span>hello@tokensheep.fun</span>
+      </a>
+    </div>
   )
 }
 
@@ -218,10 +239,6 @@ export function Footer(props: FooterProps) {
             href: 'https://docs.newapi.pro/wiki/project-introduction/',
           },
           {
-            text: t('footer.columns.about.links.contact'),
-            href: 'https://docs.newapi.pro/support/community-interaction/',
-          },
-          {
             text: t('footer.columns.about.links.features'),
             href: 'https://docs.newapi.pro/wiki/features-introduction/',
           },
@@ -282,6 +299,12 @@ export function Footer(props: FooterProps) {
               dangerouslySetInnerHTML={{ __html: footerHtml }}
             />
             <div className='border-border/60 text-muted-foreground/45 flex w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 border-t pt-4 text-xs sm:w-auto sm:justify-end sm:border-t-0 sm:border-l sm:pt-0 sm:pl-5'>
+              <a
+                href='mailto:hello@tokensheep.fun'
+                className='hover:text-foreground transition-colors duration-200'
+              >
+                {t('Contact Us')}: hello@tokensheep.fun
+              </a>
               <LegalLinks />
               <ProjectAttribution currentYear={currentYear} inline />
             </div>
@@ -330,18 +353,19 @@ export function Footer(props: FooterProps) {
                 content configured in System Settings → Site. Each entry only
                 appears when its enable flag is on in /api/status. */}
             <FooterLegalColumn />
+            <FooterContactColumn />
 
             {/* Demo-site preset link columns (only when demo mode is on). */}
             {isDemoSiteMode && (
               <div className='grid grid-cols-3 gap-8 md:gap-12'>
-                {displayColumns.map((column, index) => (
-                  <div key={index}>
+                {displayColumns.map((column) => (
+                  <div key={column.title}>
                     <p className='text-muted-foreground/50 mb-3 text-xs font-medium tracking-wider uppercase'>
                       {t(column.title)}
                     </p>
                     <ul className='space-y-2.5'>
-                      {column.links.map((link, linkIndex) => (
-                        <li key={linkIndex}>
+                      {column.links.map((link) => (
+                        <li key={`${link.href}-${link.text}`}>
                           <FooterLinkItem link={link} />
                         </li>
                       ))}

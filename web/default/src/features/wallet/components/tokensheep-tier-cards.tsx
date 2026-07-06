@@ -19,8 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 // TokenSheep tier upgrade cards — three quick-pick amounts backed by a single
 // Pancake product (see docs/spec/economy-model.md §7.2). One click sends the
 // user to Pancake with the corresponding amount; cumulative donation total
-// determines the tier they land in (§2.2). Rendered above RechargeFormCard on
-// the wallet page — only when the operator has enabled the Pancake channel.
+// determines the tier they land in (§2.2). Rendered on the dedicated
+// contribution page only when the operator has enabled the Pancake channel.
 import { Check, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -42,6 +42,7 @@ const TIER_OPTIONS: TierOption[] = [
   { tier: 'fan', amount: 50, featured: true },
   { tier: 'bestie', amount: 100 },
 ]
+const TIER_SKELETON_KEYS = ['supporter', 'fan', 'bestie']
 
 interface TokensheepTierCardsProps {
   /** Backend flag: Pancake channel is provisioned and enabled */
@@ -73,17 +74,17 @@ export function TokensheepTierCards({
 }: TokensheepTierCardsProps) {
   const { t } = useTranslation()
 
-  if (!enabled) return null
-
   if (loading) {
     return (
       <div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className='h-40 rounded-2xl' />
+        {TIER_SKELETON_KEYS.map((key) => (
+          <Skeleton key={key} className='h-40 rounded-2xl' />
         ))}
       </div>
     )
   }
+
+  if (!enabled) return null
 
   const currentRank = TIER_ORDER[currentTier ?? 'free'] ?? 0
 
@@ -137,6 +138,12 @@ function TierCard({
   onSelect,
 }: TierCardProps) {
   const { t } = useTranslation()
+  let actionLabel = t('wallet.tierCards.contribute')
+  if (loading) {
+    actionLabel = t('wallet.tierCards.processing')
+  } else if (reached) {
+    actionLabel = t('wallet.tierCards.topUp')
+  }
 
   return (
     <button
@@ -182,11 +189,7 @@ function TierCard({
       </div>
 
       <div className='text-primary flex items-center gap-1 text-xs font-medium'>
-        {loading
-          ? t('wallet.tierCards.processing')
-          : reached
-            ? t('wallet.tierCards.topUp')
-            : t('wallet.tierCards.contribute')}
+        {actionLabel}
       </div>
     </button>
   )

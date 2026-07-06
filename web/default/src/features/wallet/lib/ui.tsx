@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import i18next from 'i18next'
 import { CreditCard, Landmark } from 'lucide-react'
-import { type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { SiAlipay, SiWechat, SiStripe } from 'react-icons/si'
 
 import { ReactIconByName } from '@/components/react-icon-by-name'
@@ -29,15 +29,24 @@ import { PAYMENT_TYPES, PAYMENT_ICON_COLORS } from '../constants'
 // UI Helper Functions
 // ============================================================================
 
+const PACKAGED_PAYMENT_ICON_PATHS = new Set([
+  '/pay-apple.png',
+  '/pay-card.png',
+  '/pay-google.png',
+  '/waffo-logo-dark.svg',
+  '/waffo-logo-light.svg',
+])
+
 /**
- * Resolves a backend-provided image URL to https only. Rejects http:,
- * data:, blob:, file:, relative paths, and URLs with userinfo, which are unsafe
- * or ambiguous in <img src/>.
+ * Resolves a backend-provided image URL to known packaged assets or https
+ * only. Rejects http:, data:, blob:, file:, arbitrary relative paths, and URLs
+ * with userinfo, which are unsafe or ambiguous in <img src/>.
  */
 function normalizeHttpIconUrl(raw: string | undefined | null): string | null {
   if (!raw) return null
   const s = raw.trim()
   if (!s) return null
+  if (PACKAGED_PAYMENT_ICON_PATHS.has(s)) return s
   if (!/^https:\/\//i.test(s)) return null
 
   let url: URL

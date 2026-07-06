@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { Construction } from 'lucide-react'
+import { Construction, Mail } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { PublicLayout } from '@/components/layout'
@@ -26,6 +26,30 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { isHttpUrl, isLikelyHtml } from '@/lib/content-format'
 
 import { getAboutContent } from './api'
+
+function AboutContactCard() {
+  const { t } = useTranslation()
+
+  return (
+    <section className='border-border/60 bg-muted/20 rounded-lg border px-5 py-4'>
+      <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+        <div className='space-y-1'>
+          <h2 className='text-lg font-semibold'>{t('Contact Us')}</h2>
+          <p className='text-muted-foreground text-sm'>
+            {t('For questions, access, or account support, email us at')}
+          </p>
+        </div>
+        <a
+          href='mailto:hello@tokensheep.fun'
+          className='text-primary inline-flex items-center gap-2 text-sm font-medium hover:underline'
+        >
+          <Mail className='h-4 w-4' />
+          <span>hello@tokensheep.fun</span>
+        </a>
+      </div>
+    </section>
+  )
+}
 
 function EmptyAboutState() {
   const { t } = useTranslation()
@@ -45,6 +69,7 @@ function EmptyAboutState() {
             )}
           </p>
         </div>
+        <AboutContactCard />
         <div className='space-y-4 text-sm'>
           <p>
             {t('New API Project Repository:')}{' '}
@@ -148,12 +173,17 @@ export function About() {
   if (isUrl) {
     return (
       <PublicLayout showMainContainer={false}>
-        <iframe
-          src={rawContent}
-          className='h-[calc(100vh-3.5rem)] w-full border-0'
-          title={t('About')}
-          sandbox='allow-forms allow-popups allow-popups-to-escape-sandbox allow-scripts'
-        />
+        <div className='flex h-[calc(100vh-3.5rem)] flex-col'>
+          <div className='mx-auto w-full max-w-6xl px-4 py-4'>
+            <AboutContactCard />
+          </div>
+          <iframe
+            src={rawContent}
+            className='min-h-0 flex-1 border-0'
+            title={t('About')}
+            sandbox='allow-forms allow-popups allow-popups-to-escape-sandbox allow-scripts'
+          />
+        </div>
       </PublicLayout>
     )
   }
@@ -167,6 +197,9 @@ export function About() {
           content={rawContent}
           className='prose-neutral dark:prose-invert max-w-none'
         />
+        <div className='mx-auto max-w-6xl px-4 py-8'>
+          <AboutContactCard />
+        </div>
       </PublicLayout>
     )
   }
@@ -179,6 +212,9 @@ export function About() {
           content={rawContent}
           className='prose-neutral dark:prose-invert max-w-none'
         />
+        <div className='mt-8'>
+          <AboutContactCard />
+        </div>
       </div>
     </PublicLayout>
   )

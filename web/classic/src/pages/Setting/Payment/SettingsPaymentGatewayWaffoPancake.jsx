@@ -30,7 +30,6 @@ import { BookOpen } from 'lucide-react';
 
 const defaultInputs = {
   WaffoPancakeMerchantID: '',
-  WaffoPancakePrivateKey: '',
   WaffoPancakeReturnURL: '',
 };
 
@@ -48,7 +47,6 @@ export default function SettingsPaymentGatewayWaffoPancake(props) {
 
     const currentInputs = {
       WaffoPancakeMerchantID: props.options.WaffoPancakeMerchantID || '',
-      WaffoPancakePrivateKey: props.options.WaffoPancakePrivateKey || '',
       WaffoPancakeReturnURL: props.options.WaffoPancakeReturnURL || '',
     };
 
@@ -68,7 +66,7 @@ export default function SettingsPaymentGatewayWaffoPancake(props) {
 
     setLoading(true);
     try {
-      // Classic admin only persists the three operator-typed fields.
+      // Classic admin only persists non-secret operator-typed fields.
       // Store/Product binding is handled exclusively by the default
       // frontend's catalog flow (see waffo-pancake-settings-section.tsx)
       // because picking entities from a live catalog needs the Select +
@@ -83,13 +81,6 @@ export default function SettingsPaymentGatewayWaffoPancake(props) {
           value: removeTrailingSlash(values.WaffoPancakeReturnURL || ''),
         },
       ];
-
-      if ((values.WaffoPancakePrivateKey || '').trim()) {
-        options.push({
-          key: 'WaffoPancakePrivateKey',
-          value: values.WaffoPancakePrivateKey,
-        });
-      }
 
       const results = await Promise.all(
         options.map((opt) =>
@@ -128,7 +119,7 @@ export default function SettingsPaymentGatewayWaffoPancake(props) {
             icon={<BookOpen size={16} />}
             description={
               <>
-                Waffo Pancake 商户 ID 与私钥请在
+                Waffo Pancake 商户 ID 请在
                 <a
                   href='https://pancake.waffo.ai/merchant/dashboard'
                   target='_blank'
@@ -136,8 +127,7 @@ export default function SettingsPaymentGatewayWaffoPancake(props) {
                 >
                   Waffo Pancake 控制台
                 </a>
-                获取，保存后系统会自动在该商户名下创建 Store + Product，无需手动配置；
-                环境（test / 生产）由你粘贴的 API 私钥本身决定。
+                获取。Pancake 私钥不会从后台页面保存到数据库。
                 请在 Pancake 控制台把下面两个回调地址分别注册到 Test Mode 和 Production Mode
                 两个 webhook 位置，分开走避免测试流量污染生产数据：
                 <br />
@@ -172,22 +162,6 @@ export default function SettingsPaymentGatewayWaffoPancake(props) {
                 field='WaffoPancakeReturnURL'
                 label={t('支付返回地址')}
                 placeholder={t('例如：https://example.com/console/topup')}
-              />
-            </Col>
-          </Row>
-
-          <Row
-            gutter={{ xs: 8, sm: 16, md: 24, lg: 24, xl: 24, xxl: 24 }}
-            style={{ marginTop: 16 }}
-          >
-            <Col xs={24}>
-              <Form.TextArea
-                field='WaffoPancakePrivateKey'
-                label={t('API 私钥')}
-                placeholder={t('填写后覆盖当前私钥，留空表示保持当前不变')}
-                extraText={t('⚠ 测试 / 生产环境由你粘进来的 API 私钥本身决定——集成阶段用 Test Key，正式上线时再换成 Production Key')}
-                type='password'
-                autosize={{ minRows: 4, maxRows: 8 }}
               />
             </Col>
           </Row>

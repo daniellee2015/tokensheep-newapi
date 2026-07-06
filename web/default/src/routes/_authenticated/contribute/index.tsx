@@ -16,26 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { api } from '@/lib/api'
+import { createFileRoute } from '@tanstack/react-router'
 
-interface BackendBody<T> {
-  message?: string
-  data?: T | string
-}
+import { Contribute } from '@/features/contribute'
 
-export type SaveResponse = BackendBody<{ product_id: string; store_id: string }>
-
-export async function saveWaffoPancakeConfig(params: {
-  merchantID: string
-  returnURL: string
-  storeID: string
-  productID: string
-}): Promise<SaveResponse> {
-  const res = await api.post<SaveResponse>('/api/option/waffo-pancake/save', {
-    merchant_id: params.merchantID,
-    return_url: params.returnURL,
-    store_id: params.storeID,
-    product_id: params.productID,
-  })
-  return res.data
-}
+export const Route = createFileRoute('/_authenticated/contribute/')({
+  component: Contribute,
+})
