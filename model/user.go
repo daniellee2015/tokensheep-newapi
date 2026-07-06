@@ -428,16 +428,7 @@ func (user *User) Insert(inviterId int) error {
 		}
 	}
 	user.Quota = common.QuotaForNewUser
-	// TokenSheep: honor the operator-configured DefaultUserGroup option when
-	// the caller didn't specify one. GORM's column default ('default') still
-	// applies at the DB level, but option-driven config wins here so ops can
-	// change the landing tier from the admin panel without touching code.
-	if strings.TrimSpace(user.Group) == "" ||
-		user.Group == "default" {
-		if fallback := strings.TrimSpace(common.DefaultUserGroup); fallback != "" {
-			user.Group = fallback
-		}
-	}
+	applyDefaultUserGroup(user)
 	//user.SetAccessToken(common.GetUUID())
 	user.AffCode = common.GetRandomString(4)
 
@@ -493,6 +484,20 @@ func (user *User) FinishInsert(inviterId int) {
 	user.finishInsert(inviterId)
 }
 
+// applyDefaultUserGroup honors the operator-configured DefaultUserGroup
+// option when the caller didn't specify a group (or left GORM's raw
+// column default "default", which TokenSheep never uses as an actual
+// tier). Ops set the landing tier from the admin panel — no code change
+// needed to switch new sign-ups between free/supporter/etc.
+func applyDefaultUserGroup(user *User) {
+	if strings.TrimSpace(user.Group) != "" && user.Group != "default" {
+		return
+	}
+	if fallback := strings.TrimSpace(common.DefaultUserGroup); fallback != "" {
+		user.Group = fallback
+	}
+}
+
 // InsertWithTx inserts a new user within an existing transaction.
 // This is used for OAuth registration where user creation and binding need to be atomic.
 // Post-creation tasks (sidebar config, logs, inviter rewards) are handled after the transaction commits.
@@ -505,6 +510,7 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 		}
 	}
 	user.Quota = common.QuotaForNewUser
+	applyDefaultUserGroup(user)
 	user.AffCode = common.GetRandomString(4)
 
 	// 初始化用户设置
