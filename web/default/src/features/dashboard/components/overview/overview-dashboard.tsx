@@ -48,7 +48,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { fetchTokenKey, getApiKeys } from '@/features/keys/api'
 import type { ApiKey } from '@/features/keys/types'
-import { TierCard, TierLimitsCard } from '@/features/tier'
+import { TierMiniCard } from '@/features/tier'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { getUserModels } from '@/lib/api'
 import { MOTION_TRANSITION } from '@/lib/motion'
@@ -746,15 +746,7 @@ export function OverviewDashboard() {
         </CardStaggerContainer>
       )}
 
-      {/* Tier (6) + API limits (4) side by side on wide screens, stacked on mobile. */}
-      <div className='grid grid-cols-1 gap-4 lg:grid-cols-10'>
-        <div className='lg:col-span-6'>
-          <TierCard />
-        </div>
-        <div className='lg:col-span-4'>
-          <TierLimitsCard />
-        </div>
-      </div>
+      <TierMiniCard />
 
       <SummaryCards />
 
