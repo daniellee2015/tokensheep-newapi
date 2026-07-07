@@ -29,3 +29,8 @@ export async function getPrivacyPolicy() {
   const res = await api.get<LegalDocumentResponse>('/api/privacy-policy')
   return res.data
 }
+
+export async function getUsagePolicy() {
+  const res = await api.get<LegalDocumentResponse>('/api/usage-policy')
+  return res.data
+}

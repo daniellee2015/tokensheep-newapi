@@ -3489,6 +3489,8 @@
     "Priority level from 0 (lowest) to 10 (highest), default is 5": "Priority level from 0 (lowest) to 10 (highest), default is 5",
     "Priority order for automatic group assignment. New tokens rotate through this list.": "Priority order for automatic group assignment. New tokens rotate through this list.",
     "Privacy Policy": "Privacy Policy",
+    "Acceptable Use Policy": "Acceptable Use Policy",
+    "The administrator has not configured an acceptable use policy yet.": "The administrator has not configured an acceptable use policy yet.",
     "Private Deployment URL": "Private Deployment URL",
     "Processing OAuth response...": "Processing OAuth response...",
     "Processing...": "Processing...",

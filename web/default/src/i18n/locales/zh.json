@@ -3489,6 +3489,8 @@
     "Priority level from 0 (lowest) to 10 (highest), default is 5": "优先级，从 0（最低）到 10（最高），默认为 5",
     "Priority order for automatic group assignment. New tokens rotate through this list.": "自动分组分配的优先级顺序。新 token 将按此列表轮换。",
     "Privacy Policy": "隐私政策",
+    "Acceptable Use Policy": "可接受使用政策",
+    "The administrator has not configured an acceptable use policy yet.": "管理员尚未配置可接受使用政策。",
     "Private Deployment URL": "私有部署 URL",
     "Processing OAuth response...": "正在处理 OAuth 响应...",
     "Processing...": "处理中...",

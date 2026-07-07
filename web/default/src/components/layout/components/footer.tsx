@@ -122,6 +122,9 @@ function FooterLegalColumn() {
   if (status?.privacy_policy_enabled) {
     legalLinks.push({ label: t('Privacy Policy'), to: '/privacy-policy' })
   }
+  if (status?.usage_policy_enabled) {
+    legalLinks.push({ label: t('Acceptable Use Policy'), to: '/usage-policy' })
+  }
 
   return (
     <div>
@@ -160,6 +163,13 @@ function LegalLinks(props: { leadingSeparator?: boolean }) {
       key: 'privacy-policy',
       label: t('Privacy Policy'),
       href: '/privacy-policy',
+    })
+  }
+  if (status?.usage_policy_enabled) {
+    items.push({
+      key: 'usage-policy',
+      label: t('Acceptable Use Policy'),
+      href: '/usage-policy',
     })
   }
   if (items.length === 0) {

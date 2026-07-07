@@ -119,6 +119,7 @@ func GetStatus(c *gin.Context) {
 		"setup":                       constant.Setup,
 		"user_agreement_enabled":      legalSetting.UserAgreement != "",
 		"privacy_policy_enabled":      legalSetting.PrivacyPolicy != "",
+		"usage_policy_enabled":        legalSetting.UsagePolicy != "",
 		"checkin_enabled":             operation_setting.GetCheckinSetting().Enabled,
 	}
 
@@ -205,6 +206,22 @@ func GetPrivacyPolicy(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data":    system_setting.GetLegalSettings().PrivacyPolicy,
+	})
+	return
+}
+
+// GetUsagePolicy returns the Acceptable Use Policy (AUP). Returns the English
+// variant when ?lang=en is passed and it's non-empty, else the Chinese default.
+func GetUsagePolicy(c *gin.Context) {
+	legal := system_setting.GetLegalSettings()
+	data := legal.UsagePolicy
+	if c.Query("lang") == "en" && legal.UsagePolicyEn != "" {
+		data = legal.UsagePolicyEn
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    data,
 	})
 	return
 }
