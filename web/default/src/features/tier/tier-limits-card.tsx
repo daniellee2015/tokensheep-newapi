@@ -20,8 +20,9 @@ import { useQuery } from '@tanstack/react-query'
 import { Gauge, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { TitledCard } from '@/components/ui/titled-card'
 
 import { getMyTier } from './api'
 
@@ -71,37 +72,35 @@ export function TierLimitsCard() {
   ]
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className='flex items-center gap-2 text-base'>
-          <Zap className='size-4 text-sky-500' />
-          {t('API Limits')}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className='space-y-3'>
-        {items.map((it) => {
-          const Icon = it.icon
-          return (
-            <div
-              key={it.label}
-              className='bg-muted/30 flex items-center gap-3 rounded-md p-3'
-            >
-              <span className='bg-background flex size-9 shrink-0 items-center justify-center rounded-full border'>
-                <Icon className='text-muted-foreground size-4' />
-              </span>
-              <div className='min-w-0 flex-1'>
-                <div className='text-sm font-medium'>{it.label}</div>
-                <div className='text-muted-foreground line-clamp-1 text-xs'>
-                  {it.sub}
-                </div>
-              </div>
-              <div className='text-foreground text-lg font-semibold tabular-nums'>
-                {it.value}
+    <TitledCard
+      title={t('API Limits')}
+      description={t('Rate and concurrency ceilings for your tier.')}
+      icon={<Zap className='h-4 w-4' />}
+      disableHoverEffect
+      contentClassName='space-y-3'
+    >
+      {items.map((it) => {
+        const Icon = it.icon
+        return (
+          <div
+            key={it.label}
+            className='bg-muted/30 flex items-center gap-3 rounded-md p-3'
+          >
+            <span className='bg-background flex size-8 shrink-0 items-center justify-center rounded-full border'>
+              <Icon className='text-muted-foreground size-4' />
+            </span>
+            <div className='min-w-0 flex-1'>
+              <div className='text-sm font-medium'>{it.label}</div>
+              <div className='text-muted-foreground line-clamp-1 text-xs'>
+                {it.sub}
               </div>
             </div>
-          )
-        })}
-      </CardContent>
-    </Card>
+            <div className='text-foreground text-base font-semibold tabular-nums'>
+              {it.value}
+            </div>
+          </div>
+        )
+      })}
+    </TitledCard>
   )
 }

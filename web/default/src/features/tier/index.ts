@@ -19,3 +19,4 @@ For commercial licensing, please contact support@quantumnous.com
 export { TierCard } from './tier-card'
 export { TierLimitsCard } from './tier-limits-card'
 export { TierMiniCard } from './tier-mini-card'
+export { TierMiniPanel, ApiLimitsMiniPanel } from './tier-mini-split'

@@ -59,14 +59,7 @@ export function Profile() {
           <CardStaggerItem>
             <div className='grid gap-4 sm:gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.46fr)] xl:items-start'>
               <div className='space-y-4 sm:space-y-6'>
-                <div className='grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-10'>
-                  <div className='lg:col-span-6'>
-                    <TierCard />
-                  </div>
-                  <div className='lg:col-span-4'>
-                    <TierLimitsCard />
-                  </div>
-                </div>
+                <TierCard />
                 <ProfileSettingsCard
                   profile={profile}
                   loading={loading}
@@ -89,6 +82,7 @@ export function Profile() {
                   />
                 )}
                 {canConfigureSidebar && <SidebarModulesCard />}
+                <TierLimitsCard />
                 <PasskeyCard loading={loading} />
                 <TwoFACard loading={loading} />
               </div>

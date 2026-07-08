@@ -48,7 +48,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { fetchTokenKey, getApiKeys } from '@/features/keys/api'
 import type { ApiKey } from '@/features/keys/types'
-import { TierCard, TierLimitsCard } from '@/features/tier'
+import { TierMiniPanel, ApiLimitsMiniPanel } from '@/features/tier'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { getUserModels } from '@/lib/api'
 import { MOTION_TRANSITION } from '@/lib/motion'
@@ -746,13 +746,14 @@ export function OverviewDashboard() {
         </CardStaggerContainer>
       )}
 
-      {/* Tier (6) + API Limits (4) side by side — same layout as profile. */}
+      {/* Overview: the old mini strip split into two mini panels, 6 (tier) /
+          4 (API limits) side by side. Full-size cards live on the profile. */}
       <div className='grid grid-cols-1 gap-4 lg:grid-cols-10'>
         <div className='lg:col-span-6'>
-          <TierCard />
+          <TierMiniPanel />
         </div>
         <div className='lg:col-span-4'>
-          <TierLimitsCard />
+          <ApiLimitsMiniPanel />
         </div>
       </div>
 

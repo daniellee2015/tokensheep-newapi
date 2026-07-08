@@ -23,9 +23,10 @@ import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
+import { TitledCard } from '@/components/ui/titled-card'
 
 import { formatUSD, getMyTier, tierLabel } from './api'
 
@@ -67,18 +68,19 @@ export function TierCard() {
       : 0
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className='flex items-center gap-2 text-base'>
-          <Trophy className='size-4 text-amber-500' />
-          {t('My Tier')}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className='space-y-5'>
-        {/* Current tier headline + contribution progress */}
+    <TitledCard
+      title={t('My Tier')}
+      description={t('Your contribution tier and wallet pools.')}
+      icon={<Trophy className='h-4 w-4' />}
+      disableHoverEffect
+      contentClassName='space-y-5'
+    >
+      {/* Current tier headline + contribution progress */}
         <div className='space-y-2'>
           <div className='flex items-center justify-between'>
-            <span className='text-2xl font-bold'>{tierLabel(data.group)}</span>
+            <span className='text-lg font-semibold'>
+              {tierLabel(data.group)}
+            </span>
             {hasNext ? (
               <Badge variant='outline' className='text-xs'>
                 {t('Next')}: {tierLabel(data.next_tier)}
@@ -110,7 +112,7 @@ export function TierCard() {
               <WalletCards className='size-3.5' />
               {t('Paid balance')}
             </div>
-            <div className='text-lg font-semibold tabular-nums'>
+            <div className='text-base font-semibold tabular-nums'>
               {formatUSD(data.quota_paid)}
             </div>
           </div>
@@ -119,7 +121,7 @@ export function TierCard() {
               <Gift className='size-3.5' />
               {t('Gift balance')}
             </div>
-            <div className='text-lg font-semibold tabular-nums'>
+            <div className='text-base font-semibold tabular-nums'>
               {formatUSD(data.quota_gift)}
               <span className='text-muted-foreground text-xs font-normal'>
                 {' / '}
@@ -153,7 +155,6 @@ export function TierCard() {
         >
           {t('Contribute to upgrade')}
         </Button>
-      </CardContent>
-    </Card>
+    </TitledCard>
   )
 }
