@@ -100,6 +100,9 @@ export interface PaymentMethod {
   min_topup?: number
   /** Optional react-icons component name or safe icon URL */
   icon?: string
+  /** Optional supporting text shown inside the method card (operator-set in
+   *  the PayMethods JSON, e.g. "支持信用卡、Google Pay、Apple Pay"). */
+  description?: string
 }
 
 /**

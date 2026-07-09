@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Info, Loader2, Receipt, WalletCards } from 'lucide-react'
+import { Check, Info, Loader2, Receipt, WalletCards } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -51,7 +51,6 @@ import type {
   WaffoPayMethod,
 } from '../types'
 import { CreemProductsSection } from './creem-products-section'
-import { TokensheepTierCards } from './tokensheep-tier-cards'
 
 const PRESET_AMOUNT_SKELETON_KEYS = [
   'preset-a',
@@ -75,6 +74,8 @@ interface RechargeFormCardProps {
   paymentAmount: number
   calculating: boolean
   onPaymentMethodSelect: (method: PaymentMethod) => void
+  /** Currently-selected standard payment method type (for highlight). */
+  selectedPaymentType?: string
   paymentLoading: string | null
   loading?: boolean
   priceRatio?: number
@@ -88,22 +89,11 @@ interface RechargeFormCardProps {
   waffoMinTopup?: number
   onWaffoMethodSelect?: (method: WaffoPayMethod, index: number) => void
   enableWaffoPancakeTopup?: boolean
-  // TokenSheep additions — driven by tokensheep_setting.EnableTierCardsInRecharge
-  // and EnableCustomTopup (see setting/tokensheep_setting/wallet_ui.go). Tier
-  // list itself is not hardcoded here: `tierCards` comes from the /topup/info
-  // response and is sourced from the tokensheep_economy option map so ops can
-  // add/remove tiers in the admin panel without a code change.
-  enableTierCardsInRecharge?: boolean
+  // EnableCustomTopup / EnableCustomAmountInput — see
+  // setting/tokensheep_setting/wallet_ui.go. (Tier cards were extracted to a
+  // standalone block above the Add Funds card — see wallet/index.tsx.)
   enableCustomTopup?: boolean
   enableCustomAmountInput?: boolean
-  tierCards?: Array<{
-    tier: string
-    amount: number
-    featured?: boolean
-  }>
-  currentTier?: string
-  onSelectTier?: (amount: number, tier: string) => void
-  loadingTier?: string | null
 }
 
 export function RechargeFormCard({
@@ -114,6 +104,7 @@ export function RechargeFormCard({
   topupAmount,
   onTopupAmountChange,
   onPaymentMethodSelect,
+  selectedPaymentType,
   paymentLoading,
   loading,
   priceRatio = 1,
@@ -127,13 +118,8 @@ export function RechargeFormCard({
   waffoMinTopup,
   onWaffoMethodSelect,
   enableWaffoPancakeTopup,
-  enableTierCardsInRecharge = true,
   enableCustomTopup = true,
   enableCustomAmountInput = true,
-  tierCards,
-  currentTier,
-  onSelectTier,
-  loadingTier,
 }: RechargeFormCardProps) {
   const { t } = useTranslation()
   const [localAmount, setLocalAmount] = useState(topupAmount.toString())
@@ -234,22 +220,8 @@ export function RechargeFormCard({
       }
       contentClassName='space-y-4 sm:space-y-6'
     >
-      {/* TokenSheep tier cards — driven by tokensheep_setting.EnableTierCardsInRecharge.
-          Tier list itself comes from the /topup/info tier_cards array so
-          admin edits to TierThresholds propagate here with no code change.
-          The component ships its own card chrome (title + subtitle), so it
-          renders as a distinct block inside the Add Funds card. */}
-      {enableTierCardsInRecharge &&
-        Array.isArray(tierCards) &&
-        tierCards.length > 0 &&
-        onSelectTier && (
-          <TokensheepTierCards
-            tiers={tierCards}
-            currentTier={currentTier}
-            onSelect={onSelectTier}
-            loadingTier={loadingTier}
-          />
-        )}
+      {/* Tier contribution cards were extracted to a standalone block above
+          the Add Funds card — see wallet/index.tsx. */}
 
       {/* Preset / Custom / Payment methods — hidden entirely via
           tokensheep_setting.EnableCustomTopup when the operator wants a
@@ -375,6 +347,25 @@ export function RechargeFormCard({
               </div>
               )}
 
+              {/* Invoice guidance (neutral/grey), above the payment methods:
+                  row1 icon+title, row2 description, row3 notice. */}
+              {hasStandardPaymentMethods && (
+                <div className='bg-muted/30 space-y-1 rounded-lg border p-3'>
+                  <div className='flex items-center gap-2'>
+                    <Receipt className='text-muted-foreground size-4 shrink-0' />
+                    <span className='text-sm font-medium'>
+                      {t('wallet.invoice.title')}
+                    </span>
+                  </div>
+                  <p className='text-muted-foreground text-xs leading-relaxed'>
+                    {t('wallet.invoice.desc')}
+                  </p>
+                  <p className='text-muted-foreground text-xs leading-relaxed'>
+                    {t('wallet.invoice.notice')}
+                  </p>
+                </div>
+              )}
+
               <div className='space-y-2.5 sm:space-y-3'>
                 <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
                   {t('Payment Method')}
@@ -393,41 +384,59 @@ export function RechargeFormCard({
                         ? `${t('Minimum:')} ${minTopup}`
                         : undefined
 
+                      const selected = selectedPaymentType === method.type
+                      // Selector semantics: clicking only marks the method as
+                      // chosen (highlight). Payment is triggered by the primary
+                      // button below the card, not here.
                       const button = (
-                        <Button
+                        <button
                           key={method.type}
-                          variant='outline'
+                          type='button'
                           onClick={() => onPaymentMethodSelect(method)}
-                          disabled={disabled || !!paymentLoading}
+                          disabled={disabled}
                           title={disabledReason}
+                          aria-pressed={selected}
                           aria-label={
                             disabledReason
                               ? `${method.name}. ${disabledReason}`
                               : method.name
                           }
-                          className='min-h-14 min-w-0 justify-start gap-2 rounded-lg px-3 py-2 text-left'
-                        >
-                          {paymentLoading === method.type ? (
-                            <Loader2 className='h-4 w-4 animate-spin' />
-                          ) : (
-                            getPaymentIcon(
-                              method.type,
-                              'h-4 w-4',
-                              method.icon,
-                              method.name
-                            )
+                          className={cn(
+                            'flex min-h-14 min-w-0 items-center gap-3 rounded-lg border-2 px-3 py-2 text-left transition-colors',
+                            'disabled:cursor-not-allowed disabled:opacity-50',
+                            selected
+                              ? 'border-primary bg-primary/5'
+                              : 'border-muted hover:border-foreground/30'
                           )}
-                          <span className='flex min-w-0 flex-col items-start gap-0.5'>
-                            <span className='max-w-full truncate'>
+                        >
+                          {getPaymentIcon(
+                            method.type,
+                            'h-4 w-4 shrink-0',
+                            method.icon,
+                            method.name
+                          )}
+                          <span className='flex min-w-0 flex-1 flex-col items-start gap-0.5'>
+                            <span className='max-w-full truncate text-sm font-medium'>
                               {method.name}
                             </span>
+                            {method.description && (
+                              <span className='text-muted-foreground max-w-full truncate text-[11px] leading-4 font-normal'>
+                                {method.description}
+                              </span>
+                            )}
                             {disabledLabel && (
                               <span className='text-muted-foreground max-w-full truncate text-[11px] leading-4 font-normal'>
                                 {disabledLabel}
                               </span>
                             )}
                           </span>
-                        </Button>
+                          {/* check inside the card, on the right */}
+                          {selected && (
+                            <span className='bg-primary text-primary-foreground flex size-4 shrink-0 items-center justify-center rounded-full'>
+                              <Check className='size-3' />
+                            </span>
+                          )}
+                        </button>
                       )
 
                       return disabled ? (

@@ -16,10 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Loader2 } from 'lucide-react'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { SectionPageLayout } from '@/components/layout'
+import { Button } from '@/components/ui/button'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { getSelf } from '@/lib/api'
@@ -31,6 +34,7 @@ import { PaymentConfirmDialog } from './components/dialogs/payment-confirm-dialo
 import { TransferDialog } from './components/dialogs/transfer-dialog'
 import { RechargeFormCard } from './components/recharge-form-card'
 import { RedemptionCard } from './components/redemption-card'
+import { TokensheepTierCards } from './components/tokensheep-tier-cards'
 import { SubscriptionPlansCard } from './components/subscription-plans-card'
 import { WalletStatsCard } from './components/wallet-stats-card'
 import { DEFAULT_DISCOUNT_RATE } from './constants'
@@ -168,19 +172,27 @@ export function Wallet(props: WalletProps) {
   }
 
   // Handle payment method selection
-  const handlePaymentMethodSelect = async (method: PaymentMethod) => {
+  // Selector semantics: choosing a method only marks it selected. Payment is
+  // triggered by the primary button below the card (handleOpenPayConfirm).
+  const handlePaymentMethodSelect = (method: PaymentMethod) => {
     setSelectedPaymentMethod(method)
-    setPaymentLoading(method.type)
+  }
 
+  // Primary "Pay" button below the card: validate, calculate, open the
+  // confirmation dialog. The dialog's confirm then runs the actual payment.
+  const handleOpenPayConfirm = async () => {
+    if (!selectedPaymentMethod) {
+      toast.error(t('Select a payment method'))
+      return
+    }
+    const minTopup = getMinTopupAmount(topupInfo)
+    if (topupAmount < minTopup) {
+      toast.error(t('Minimum topup amount: {{amount}}', { amount: minTopup }))
+      return
+    }
+    setPaymentLoading(selectedPaymentMethod.type)
     try {
-      // Validate minimum topup
-      const minTopup = getMinTopupAmount(topupInfo)
-      if (topupAmount < minTopup) {
-        return
-      }
-
-      // Calculate payment amount and show confirmation dialog
-      await calculatePaymentAmount(topupAmount, method.type)
+      await calculatePaymentAmount(topupAmount, selectedPaymentMethod.type)
       setConfirmDialogOpen(true)
     } finally {
       setPaymentLoading(null)
@@ -286,6 +298,20 @@ export function Wallet(props: WalletProps) {
           <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
             <WalletStatsCard user={user} loading={userLoading} />
 
+            {/* Tier contribution cards — extracted above the Add Funds card.
+                Driven by tokensheep_setting.EnableTierCardsInRecharge + the
+                /topup/info tier_cards list. */}
+            {topupInfo?.enable_tier_cards_in_recharge !== false &&
+              Array.isArray(topupInfo?.tier_cards) &&
+              topupInfo.tier_cards.length > 0 && (
+                <TokensheepTierCards
+                  tiers={topupInfo.tier_cards}
+                  currentTier={user?.group}
+                  onSelect={handleTierQuickPick}
+                  loadingTier={tierPickLoading}
+                />
+              )}
+
             <div
               className={
                 showSubscriptionPanel
@@ -304,6 +330,7 @@ export function Wallet(props: WalletProps) {
                   paymentAmount={paymentAmount}
                   calculating={calculating}
                   onPaymentMethodSelect={handlePaymentMethodSelect}
+                  selectedPaymentType={selectedPaymentMethod?.type}
                   paymentLoading={paymentLoading}
                   loading={topupLoading}
                   priceRatio={(status?.price as number) || 1}
@@ -319,18 +346,39 @@ export function Wallet(props: WalletProps) {
                   enableWaffoPancakeTopup={
                     topupInfo?.enable_waffo_pancake_topup
                   }
-                  enableTierCardsInRecharge={
-                    topupInfo?.enable_tier_cards_in_recharge
-                  }
                   enableCustomTopup={topupInfo?.enable_custom_topup}
                   enableCustomAmountInput={
                     topupInfo?.enable_custom_amount_input
                   }
-                  tierCards={topupInfo?.tier_cards}
-                  currentTier={user?.group}
-                  onSelectTier={handleTierQuickPick}
-                  loadingTier={tierPickLoading}
                 />
+
+                {/* Primary pay button below the Add Funds card (100b-style):
+                    method selection above only highlights; this triggers the
+                    confirmation dialog → payment. Shown when standard payment
+                    methods exist and the custom-topup section is on. */}
+                {topupInfo?.enable_custom_topup !== false &&
+                  Array.isArray(topupInfo?.pay_methods) &&
+                  topupInfo.pay_methods.length > 0 && (
+                    <Button
+                      size='lg'
+                      className='mt-4 h-12 w-full text-base font-semibold'
+                      disabled={
+                        !selectedPaymentMethod ||
+                        topupAmount < getMinTopupAmount(topupInfo) ||
+                        calculating ||
+                        !!paymentLoading
+                      }
+                      onClick={handleOpenPayConfirm}
+                    >
+                      {paymentLoading ? (
+                        <Loader2 className='size-4 animate-spin' />
+                      ) : selectedPaymentMethod ? (
+                        t('Pay now')
+                      ) : (
+                        t('Select a payment method')
+                      )}
+                    </Button>
+                  )}
               </div>
 
               <SubscriptionPlansCard
