@@ -584,12 +584,14 @@ func RechargeWaffoPancake(tradeNo string) (err error) {
 		// cron would delay upgrade by up to a day for a paying user, which
 		// nobody wants. See docs/spec/economy-model.md §4.1.
 		var freshUser User
-		if err := tx.Select("id, "+commonGroupColumn()+", total_donated").
+		if err := tx.Select("id, "+commonGroupColumn()+", total_donated, role").
 			Where("id = ?", topUp.UserId).First(&freshUser).Error; err != nil {
 			return err
 		}
+		// Admins/root (role >= 10) keep any manually-granted tier; skip the
+		// contribution-based recompute for them (matches the daily cron).
 		newTier := tokensheep_setting.TierForDonation(freshUser.TotalDonated)
-		if newTier != freshUser.Group {
+		if freshUser.Role < common.RoleAdminUser && newTier != freshUser.Group {
 			if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).
 				Update("group", newTier).Error; err != nil {
 				return err
@@ -665,7 +667,7 @@ func ReverseWaffoPancakeTopUp(tradeNo string, targetStatus string, providerAmoun
 
 		var user User
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").
-			Select("id, quota, total_donated, "+commonGroupColumn()).
+			Select("id, quota, total_donated, role, "+commonGroupColumn()).
 			Where("id = ?", topUp.UserId).
 			First(&user).Error; err != nil {
 			return err
@@ -693,11 +695,15 @@ func ReverseWaffoPancakeTopUp(tradeNo string, targetStatus string, providerAmoun
 			nextGroup = tokensheep_setting.TierForDonation(nextTotalDonated)
 		}
 
-		if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).Updates(map[string]interface{}{
+		// Admins/root keep their manually-granted tier — only adjust quota.
+		updates := map[string]interface{}{
 			"quota":         nextQuota,
 			"total_donated": nextTotalDonated,
-			"group":         nextGroup,
-		}).Error; err != nil {
+		}
+		if user.Role < common.RoleAdminUser {
+			updates["group"] = nextGroup
+		}
+		if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).Updates(updates).Error; err != nil {
 			return err
 		}
 		return nil

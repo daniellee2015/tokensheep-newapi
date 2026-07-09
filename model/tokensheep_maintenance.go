@@ -57,9 +57,14 @@ func RunTokenSheepDailyMaintenance(giftIdleCutoff int64, downgradeCutoff int64) 
 		Group        string `gorm:"column:group"`
 		TotalDonated int    `gorm:"column:total_donated"`
 	}
+	// role < RoleAdminUser: admins and root (role >= 10) are exempt from
+	// contribution-based auto-tiering. Operators may hold a manually-granted
+	// tier (e.g. vip for concurrency) that must not be reset by this cron.
 	err = DB.Table("users").
 		Select("id, "+commonGroupColumn()+", total_donated").
-		Where(commonGroupColumn()+" IN ?", []string{"free", "supporter", "fan", "bestie", "vip"}).
+		Where(commonGroupColumn()+" IN ? AND role < ?",
+			[]string{"free", "supporter", "fan", "bestie", "vip"},
+			common.RoleAdminUser).
 		Find(&users).Error
 	if err != nil {
 		return 0, giftZeroed, err
