@@ -38,6 +38,8 @@ import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
+import { tierDisplayName } from '@/features/tier'
+
 const avatarFallbackClassName = 'font-semibold text-white'
 
 export function ProfileDropdown() {
@@ -92,7 +94,7 @@ export function ProfileDropdown() {
                   <>
                     <span className='text-muted-foreground text-xs'>·</span>
                     <span className='text-muted-foreground truncate text-xs'>
-                      {String(user.group)}
+                      {tierDisplayName(user.group, t)}
                     </span>
                   </>
                 )}

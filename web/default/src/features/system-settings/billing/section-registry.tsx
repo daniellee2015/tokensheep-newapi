@@ -205,6 +205,8 @@ const BILLING_SECTIONS = [
             settings.WaffoPancakeApplyUSDExchangeRate ?? true,
           WaffoPancakeSurchargePercent:
             settings.WaffoPancakeSurchargePercent ?? '0.5',
+          WaffoPancakeUnitPrice: settings.WaffoPancakeUnitPrice ?? '1',
+          WaffoPancakeMinTopUp: settings.WaffoPancakeMinTopUp ?? '1',
         }}
         waffoPancakeProvisionedStoreID={settings.WaffoPancakeStoreID ?? ''}
         waffoPancakeProvisionedProductID={settings.WaffoPancakeProductID ?? ''}

@@ -322,6 +322,9 @@ export function Wallet(props: WalletProps) {
                     topupInfo?.enable_tier_cards_in_recharge
                   }
                   enableCustomTopup={topupInfo?.enable_custom_topup}
+                  enableCustomAmountInput={
+                    topupInfo?.enable_custom_amount_input
+                  }
                   tierCards={topupInfo?.tier_cards}
                   currentTier={user?.group}
                   onSelectTier={handleTierQuickPick}

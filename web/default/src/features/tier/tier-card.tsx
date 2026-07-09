@@ -28,7 +28,7 @@ import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TitledCard } from '@/components/ui/titled-card'
 
-import { formatUSD, getMyTier, tierLabel } from './api'
+import { formatUSD, getMyTier, tierDisplayName } from './api'
 
 // TokenSheep tier card — contribution-triggered tier, dual wallet pool,
 // daily-gift progress. Unlike 100b (spend + daily gates), everything here is
@@ -58,7 +58,7 @@ export function TierCard() {
     )
   }
 
-  const hasNext = data.next_tier !== ''
+  const hasNext = data.next_tier !== '' && data.next_tier !== data.group
   const dailyPct =
     data.gift_daily_limit > 0
       ? Math.min(
@@ -79,11 +79,11 @@ export function TierCard() {
         <div className='space-y-2'>
           <div className='flex items-center justify-between'>
             <span className='text-lg font-semibold'>
-              {tierLabel(data.group)}
+              {tierDisplayName(data.group, t)}
             </span>
             {hasNext ? (
               <Badge variant='outline' className='text-xs'>
-                {t('Next')}: {tierLabel(data.next_tier)}
+                {t('Next')}: {tierDisplayName(data.next_tier, t)}
               </Badge>
             ) : (
               <Badge variant='outline' className='text-xs'>

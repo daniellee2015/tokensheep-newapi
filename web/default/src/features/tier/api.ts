@@ -48,8 +48,38 @@ export async function getMyTier(): Promise<MyTierView | null> {
   return res.data?.success ? (res.data.data ?? null) : null
 }
 
-// Tier display label. TokenSheep tier names are already human-ish
-// (free/supporter/fan/bestie/vip); capitalize for display.
+// Known tier group keys, in ladder order. `standard` is the paid non-tier
+// group (normal ratio, doesn't climb the contribution ladder). The i18n keys
+// tier.name.<key> hold the localized display name for each.
+export const TIER_KEYS = [
+  'free',
+  'supporter',
+  'fan',
+  'bestie',
+  'vip',
+  'standard',
+] as const
+
+// tierDisplayName resolves a group key to its localized display name via the
+// i18n key `tier.name.<key>`. Single source of truth for how a tier/group is
+// shown to users across the app (header, dropdown, profile, wallet, overview,
+// landing). Unknown/legacy keys (e.g. "default") fall back to the raw key so
+// nothing silently disappears.
+export function tierDisplayName(
+  group: string | null | undefined,
+  t: (key: string) => string
+): string {
+  const key = group?.trim()
+  if (!key) return ''
+  const i18nKey = `tier.name.${key}`
+  const translated = t(i18nKey)
+  // i18next returns the key itself when the translation is missing — in that
+  // case fall back to the raw group name.
+  return translated === i18nKey ? key : translated
+}
+
+// tierLabel is the non-i18n fallback (capitalize) kept for contexts without a
+// translator. Prefer tierDisplayName wherever a `t` is available.
 export function tierLabel(group: string): string {
   if (!group) return ''
   return group.charAt(0).toUpperCase() + group.slice(1)

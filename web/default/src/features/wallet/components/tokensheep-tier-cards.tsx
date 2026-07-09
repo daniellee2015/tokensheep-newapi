@@ -31,9 +31,10 @@ For commercial licensing, please contact support@quantumnous.com
 // i18n locale files, keyed by the tier name — so a new tier "whale" only
 // needs a locale entry `wallet.tierCards.whale.perks` to render nicely;
 // missing entries fall back to a generic tier + amount label.
-import { Check, Sparkles } from 'lucide-react'
+import { Check, Info, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
@@ -89,6 +90,14 @@ export function TokensheepTierCards({
             {t('wallet.tierCards.subtitle')}
           </p>
         </div>
+
+        {/* Payment-routing guidance for the contribution channel (WeChat). */}
+        <Alert className='border-amber-500/40 bg-amber-500/10 [&>svg]:text-amber-500'>
+          <Info className='size-4' />
+          <AlertDescription className='text-amber-700 dark:text-amber-300'>
+            {t('wallet.tierCards.hint')}
+          </AlertDescription>
+        </Alert>
 
         <div
           className={cn(
@@ -169,15 +178,15 @@ function TierCard({
       onClick={onSelect}
       disabled={loading || disabled}
       className={cn(
-        'group relative flex flex-col gap-3 rounded-2xl border p-4 text-left transition-all',
+        'group relative flex flex-col gap-3 rounded-2xl border-2 p-4 text-left transition-all',
         'hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none',
         featured
-          ? 'border-fuchsia-500/40 bg-card shadow-md shadow-fuchsia-500/[0.08]'
+          ? 'border-brand/50 bg-card shadow-md shadow-brand/[0.08]'
           : 'border-border/60 bg-card'
       )}
     >
       {featured && (
-        <span className='absolute -top-2 right-3 rounded-full bg-fuchsia-500 px-2 py-0.5 text-[10px] font-semibold tracking-wider text-white uppercase'>
+        <span className='bg-brand text-brand-foreground absolute -top-2 right-3 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase'>
           {t('wallet.tierCards.popular')}
         </span>
       )}
@@ -204,9 +213,16 @@ function TierCard({
         )}
       </div>
 
-      <div className='text-primary flex items-center gap-1 text-xs font-medium'>
+      {/* Grey pseudo-button (the whole card is already a <button>, so this is
+          a styled span that looks like a secondary button). */}
+      <span
+        className={cn(
+          'bg-secondary text-secondary-foreground group-hover:bg-secondary/80 mt-auto inline-flex w-full items-center justify-center gap-1 rounded-md px-3 py-2 text-xs font-medium transition-colors',
+          (loading || disabled) && 'opacity-60'
+        )}
+      >
         {actionLabel}
-      </div>
+      </span>
     </button>
   )
 }

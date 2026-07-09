@@ -160,6 +160,8 @@ export interface TopupInfo {
   enable_tier_cards_in_recharge?: boolean
   /** Show preset amounts + custom amount + payment methods inside the Add Funds card. */
   enable_custom_topup?: boolean
+  /** Allow the free-form custom amount input (presets still show when off). */
+  enable_custom_amount_input?: boolean
   /**
    * Tier upgrade cards (sourced from TierThresholds map, ascending by amount).
    * Empty when no tiers are configured on the server side.

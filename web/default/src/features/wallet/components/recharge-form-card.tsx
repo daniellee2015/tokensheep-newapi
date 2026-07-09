@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Loader2, Receipt, WalletCards } from 'lucide-react'
+import { Info, Loader2, Receipt, WalletCards } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -95,6 +95,7 @@ interface RechargeFormCardProps {
   // add/remove tiers in the admin panel without a code change.
   enableTierCardsInRecharge?: boolean
   enableCustomTopup?: boolean
+  enableCustomAmountInput?: boolean
   tierCards?: Array<{
     tier: string
     amount: number
@@ -128,6 +129,7 @@ export function RechargeFormCard({
   enableWaffoPancakeTopup,
   enableTierCardsInRecharge = true,
   enableCustomTopup = true,
+  enableCustomAmountInput = true,
   tierCards,
   currentTier,
   onSelectTier,
@@ -254,6 +256,25 @@ export function RechargeFormCard({
           tier-only checkout experience. */}
       {enableCustomTopup && hasAnyTopup && (
         <div className='space-y-4 sm:space-y-6'>
+          {/* Standard top-up header + payment-routing guidance (Alipay / bank
+              card). Distinguishes the normal-rate channel from the
+              contribution tier cards above. */}
+          <div className='space-y-3'>
+            <div className='space-y-1'>
+              <h3 className='text-foreground text-base font-semibold tracking-tight sm:text-lg'>
+                {t('wallet.normalTopup.title')}
+              </h3>
+              <p className='text-muted-foreground text-xs sm:text-sm'>
+                {t('wallet.normalTopup.subtitle')}
+              </p>
+            </div>
+            <Alert className='border-sky-500/40 bg-sky-500/10 [&>svg]:text-sky-500'>
+              <Info className='size-4' />
+              <AlertDescription className='text-sky-700 dark:text-sky-300'>
+                {t('wallet.normalTopup.hint')}
+              </AlertDescription>
+            </Alert>
+          </div>
           {hasConfigurableTopup && (
             <>
               {presetAmounts.length > 0 && (
@@ -299,7 +320,7 @@ export function RechargeFormCard({
                               </div>
                             )}
                           </div>
-                          <div className='text-muted-foreground mt-1.5 w-full text-xs sm:mt-2'>
+                          <div className='text-muted-foreground mt-1.5 w-full text-xs leading-relaxed sm:mt-2'>
                             {t('Pay')} {formatCurrency(preset.value)}
                             {hasDiscount && savedAmount > 0 && (
                               <span className='text-green-600'>
@@ -307,6 +328,15 @@ export function RechargeFormCard({
                                 • Save {formatCurrency(savedAmount)}
                               </span>
                             )}
+                            {/* Payment-method + fee hint, inline. WeChat only
+                                under 1000; 1000+ is card/Apple/Google Pay
+                                only, so drop the WeChat mention there. */}
+                            <span className='font-medium text-green-600'>
+                              {' '}
+                              {preset.value < 1000
+                                ? t('wallet.presetCard.wechatFee')
+                                : t('wallet.presetCard.feeOnly')}
+                            </span>
                           </div>
                         </Button>
                       )
@@ -315,6 +345,7 @@ export function RechargeFormCard({
                 </div>
               )}
 
+              {enableCustomAmountInput && (
               <div className='space-y-2.5 sm:space-y-3'>
                 <Label
                   htmlFor='topup-amount'
@@ -342,6 +373,7 @@ export function RechargeFormCard({
                   </div>
                 </div>
               </div>
+              )}
 
               <div className='space-y-2.5 sm:space-y-3'>
                 <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>

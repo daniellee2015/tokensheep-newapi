@@ -326,9 +326,12 @@ export type BillingSettings = {
   // TokenSheep additions — see setting/payment_waffo_pancake.go for defaults.
   WaffoPancakeApplyUSDExchangeRate: boolean
   WaffoPancakeSurchargePercent: string
+  WaffoPancakeUnitPrice: string
+  WaffoPancakeMinTopUp: string
   // TokenSheep wallet UX toggles — see setting/tokensheep_setting/wallet_ui.go.
   EnableTierCardsInRecharge: boolean
   EnableCustomTopup: boolean
+  EnableCustomAmountInput: boolean
   // TokenSheep economy — flat keys from GlobalConfig.Register("tokensheep_economy").
   // Each of these is a JSON string that admins edit through the TokenSheep tab.
   'tokensheep_economy.tier_thresholds': string

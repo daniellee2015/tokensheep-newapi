@@ -50,6 +50,8 @@ export type WaffoPancakeSettingsValues = {
   // TokenSheep additions — see setting/payment_waffo_pancake.go.
   WaffoPancakeApplyUSDExchangeRate: boolean
   WaffoPancakeSurchargePercent: string
+  WaffoPancakeUnitPrice: string
+  WaffoPancakeMinTopUp: string
 }
 
 export interface WaffoPancakeBinding {
@@ -571,6 +573,39 @@ export function WaffoPancakeSettingsSection({
                 'Padding added on top of the Pancake settlement to cover the platform fee (default 0.5%). Only affects the amount charged on Pancake — station-side quota credited stays the selected amount.'
               )}
             </p>
+          </div>
+
+          <div className='grid gap-4 sm:grid-cols-2'>
+            <div className='grid gap-1.5'>
+              <Label>{t('Unit price')}</Label>
+              <Input
+                placeholder='1'
+                inputMode='decimal'
+                value={values.WaffoPancakeUnitPrice}
+                onChange={(event) =>
+                  onValueChange('WaffoPancakeUnitPrice', event.target.value)
+                }
+              />
+              <p className='text-muted-foreground text-xs'>
+                {t(
+                  'Station-side price of one top-up unit (default 1). The paid amount is unit price × quantity.'
+                )}
+              </p>
+            </div>
+            <div className='grid gap-1.5'>
+              <Label>{t('Minimum top-up')}</Label>
+              <Input
+                placeholder='1'
+                inputMode='numeric'
+                value={values.WaffoPancakeMinTopUp}
+                onChange={(event) =>
+                  onValueChange('WaffoPancakeMinTopUp', event.target.value)
+                }
+              />
+              <p className='text-muted-foreground text-xs'>
+                {t('Smallest quantity a user may top up in one Pancake order.')}
+              </p>
+            </div>
           </div>
 
           {hasCatalog ? (

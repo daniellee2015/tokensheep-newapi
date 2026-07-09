@@ -179,9 +179,12 @@ const paymentSchema = z.object({
   // TokenSheep additions — see setting/payment_waffo_pancake.go.
   WaffoPancakeApplyUSDExchangeRate: z.boolean(),
   WaffoPancakeSurchargePercent: z.string(),
+  WaffoPancakeUnitPrice: z.string(),
+  WaffoPancakeMinTopUp: z.string(),
   // TokenSheep wallet UX toggles (see setting/tokensheep_setting/wallet_ui.go).
   EnableTierCardsInRecharge: z.boolean(),
   EnableCustomTopup: z.boolean(),
+  EnableCustomAmountInput: z.boolean(),
 })
 
 type PaymentFormValues = z.infer<typeof paymentSchema>
@@ -465,8 +468,11 @@ export function PaymentSettingsSection({
       ),
       WaffoPancakeApplyUSDExchangeRate: values.WaffoPancakeApplyUSDExchangeRate,
       WaffoPancakeSurchargePercent: values.WaffoPancakeSurchargePercent.trim(),
+      WaffoPancakeUnitPrice: values.WaffoPancakeUnitPrice.trim(),
+      WaffoPancakeMinTopUp: values.WaffoPancakeMinTopUp.trim(),
       EnableTierCardsInRecharge: values.EnableTierCardsInRecharge,
       EnableCustomTopup: values.EnableCustomTopup,
+      EnableCustomAmountInput: values.EnableCustomAmountInput,
     }
 
     const initial = {
@@ -518,8 +524,11 @@ export function PaymentSettingsSection({
         initialRef.current.WaffoPancakeApplyUSDExchangeRate,
       WaffoPancakeSurchargePercent:
         initialRef.current.WaffoPancakeSurchargePercent.trim(),
+      WaffoPancakeUnitPrice: initialRef.current.WaffoPancakeUnitPrice.trim(),
+      WaffoPancakeMinTopUp: initialRef.current.WaffoPancakeMinTopUp.trim(),
       EnableTierCardsInRecharge: initialRef.current.EnableTierCardsInRecharge,
       EnableCustomTopup: initialRef.current.EnableCustomTopup,
+      EnableCustomAmountInput: initialRef.current.EnableCustomAmountInput,
     }
 
     const updates: Array<{ key: string; value: string | number | boolean }> = []
@@ -739,6 +748,18 @@ export function PaymentSettingsSection({
         value: sanitized.WaffoPancakeSurchargePercent,
       })
     }
+    if (sanitized.WaffoPancakeUnitPrice !== initial.WaffoPancakeUnitPrice) {
+      updates.push({
+        key: 'WaffoPancakeUnitPrice',
+        value: sanitized.WaffoPancakeUnitPrice,
+      })
+    }
+    if (sanitized.WaffoPancakeMinTopUp !== initial.WaffoPancakeMinTopUp) {
+      updates.push({
+        key: 'WaffoPancakeMinTopUp',
+        value: sanitized.WaffoPancakeMinTopUp,
+      })
+    }
     if (
       sanitized.EnableTierCardsInRecharge !== initial.EnableTierCardsInRecharge
     ) {
@@ -751,6 +772,12 @@ export function PaymentSettingsSection({
       updates.push({
         key: 'EnableCustomTopup',
         value: sanitized.EnableCustomTopup,
+      })
+    }
+    if (sanitized.EnableCustomAmountInput !== initial.EnableCustomAmountInput) {
+      updates.push({
+        key: 'EnableCustomAmountInput',
+        value: sanitized.EnableCustomAmountInput,
       })
     }
 
@@ -850,6 +877,8 @@ export function PaymentSettingsSection({
     WaffoPancakeApplyUSDExchangeRate:
       currentFormValues.WaffoPancakeApplyUSDExchangeRate,
     WaffoPancakeSurchargePercent: currentFormValues.WaffoPancakeSurchargePercent,
+    WaffoPancakeUnitPrice: currentFormValues.WaffoPancakeUnitPrice,
+    WaffoPancakeMinTopUp: currentFormValues.WaffoPancakeMinTopUp,
   }
 
   return (
@@ -1216,6 +1245,30 @@ export function PaymentSettingsSection({
                           <FormDescription>
                             {t(
                               'Render preset amounts + custom amount input + payment methods inside the wallet Add Funds card. Turn off for a tier-only wallet UI.'
+                            )}
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name='EnableCustomAmountInput'
+                    render={({ field }) => (
+                      <FormItem className='flex flex-row items-center justify-between rounded-lg border p-3'>
+                        <div className='space-y-0.5'>
+                          <FormLabel>
+                            {t('Allow custom amount input')}
+                          </FormLabel>
+                          <FormDescription>
+                            {t(
+                              'Let users type their own top-up amount. Turn off to restrict them to the preset amount buttons only. Requires the custom amount section above to be on.'
                             )}
                           </FormDescription>
                         </div>

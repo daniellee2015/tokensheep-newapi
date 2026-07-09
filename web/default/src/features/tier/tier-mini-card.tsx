@@ -24,7 +24,7 @@ import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 
-import { formatUSD, getMyTier, tierLabel } from './api'
+import { formatUSD, getMyTier, tierDisplayName } from './api'
 
 // Compact tier + limits strip for the Overview first screen. Shows current
 // tier, contribution progress, and RPM/concurrency inline. Links to /profile.
@@ -39,7 +39,7 @@ export function TierMiniCard() {
 
   if (isLoading || !data) return null
 
-  const hasNext = data.next_tier !== ''
+  const hasNext = data.next_tier !== '' && data.next_tier !== data.group
   const fmtLimit = (n: number) => (n <= 0 ? t('Unlimited') : String(n))
 
   return (
@@ -55,7 +55,7 @@ export function TierMiniCard() {
                 {t('My Tier')}
               </span>
               <Badge variant='outline' className='text-xs'>
-                {tierLabel(data.group)}
+                {tierDisplayName(data.group, t)}
               </Badge>
             </div>
             <div className='text-muted-foreground flex items-center gap-2 text-xs'>

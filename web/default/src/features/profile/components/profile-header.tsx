@@ -27,6 +27,8 @@ import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
 import { formatCompactNumber, formatQuota } from '@/lib/format'
 import { getRoleLabel } from '@/lib/roles'
 
+import { tierDisplayName } from '@/features/tier'
+
 import { getDisplayName } from '../lib'
 import type { UserProfile } from '../types'
 
@@ -145,7 +147,9 @@ export function ProfileHeader({ profile, loading }: ProfileHeaderProps) {
               {profile.group && (
                 <>
                   <span>•</span>
-                  <span className='truncate'>{profile.group}</span>
+                  <span className='truncate'>
+                    {tierDisplayName(profile.group, t)}
+                  </span>
                 </>
               )}
             </div>

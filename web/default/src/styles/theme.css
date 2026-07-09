@@ -64,6 +64,8 @@ For commercial licensing, please contact support@quantumnous.com
   --color-info-foreground: var(--info-foreground);
   --color-neutral: var(--neutral);
   --color-neutral-foreground: var(--neutral-foreground);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -124,6 +126,10 @@ For commercial licensing, please contact support@quantumnous.com
   --info-foreground: oklch(0.985 0 0);
   --neutral: oklch(0.708 0 0);
   --neutral-foreground: oklch(0.145 0 0);
+  /* Brand orange #FE6E31 — used for highlights (Popular badge, featured
+     accents), not as the global primary. */
+  --brand: oklch(0.707 0.19 41.2);
+  --brand-foreground: oklch(0.985 0 0);
   --border: oklch(0.93 0 0);
   --input: oklch(0.93 0 0);
   --ring: oklch(0.708 0 0);
@@ -196,6 +202,9 @@ For commercial licensing, please contact support@quantumnous.com
   --info-foreground: oklch(0.145 0 0);
   --neutral: oklch(0.76 0 0);
   --neutral-foreground: oklch(0.155 0 0);
+  /* Brand orange #FE6E31 — slightly lifted for dark canvas. */
+  --brand: oklch(0.735 0.19 41.2);
+  --brand-foreground: oklch(0.155 0 0);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 17%);
   --ring: oklch(0.68 0 0);

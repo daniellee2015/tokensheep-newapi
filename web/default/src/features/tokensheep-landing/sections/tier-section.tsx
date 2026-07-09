@@ -42,7 +42,7 @@ const TIERS: Tier[] = [
   {
     nameKey: 'landing.tier.t2.name',
     chipKey: 'landing.tier.t2.chip',
-    chipTone: 'border-fuchsia-500/40 text-fuchsia-600 dark:text-fuchsia-400',
+    chipTone: 'border-brand/40 text-brand',
     thresholdKey: 'landing.tier.t2.threshold',
     perkKeys: [
       'landing.tier.t2.perk1',
@@ -116,14 +116,14 @@ function TierCard({ tier }: { tier: Tier }) {
   return (
     <div
       className={
-        'relative flex flex-col gap-4 rounded-2xl border p-6 shadow-md transition-all hover:-translate-y-1 hover:shadow-xl ' +
+        'relative flex flex-col gap-4 rounded-2xl border-2 p-6 shadow-md transition-all hover:-translate-y-1 hover:shadow-xl ' +
         (tier.featured
-          ? 'border-fuchsia-500/40 bg-card shadow-fuchsia-500/[0.08] hover:shadow-fuchsia-500/[0.15]'
+          ? 'border-brand/50 bg-card shadow-brand/[0.08] hover:shadow-brand/[0.15]'
           : 'border-border/50 bg-card shadow-black/[0.04] hover:shadow-black/[0.08] dark:shadow-black/30 dark:hover:shadow-black/50')
       }
     >
       {tier.featured && (
-        <span className='absolute -top-2.5 right-4 rounded-full bg-fuchsia-500 px-2 py-0.5 text-[10px] font-semibold tracking-wider text-white uppercase'>
+        <span className='bg-brand text-brand-foreground absolute -top-2.5 right-4 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase'>
           {t('landing.tier.popular')}
         </span>
       )}

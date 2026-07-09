@@ -24,7 +24,7 @@ import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 
-import { formatUSD, getMyTier, tierLabel } from './api'
+import { formatUSD, getMyTier, tierDisplayName } from './api'
 
 // Overview first-screen: the old mini strip split into two side-by-side mini
 // cards — TierMiniPanel (left, 6 cols) + ApiLimitsMiniPanel (right, 4 cols).
@@ -45,7 +45,9 @@ export function TierMiniPanel() {
 
   if (isLoading || !data) return null
 
-  const hasNext = data.next_tier !== ''
+  // Guard against showing "next" equal to the current tier (can happen when a
+  // group is set manually without matching total_donated).
+  const hasNext = data.next_tier !== '' && data.next_tier !== data.group
 
   return (
     <div className='bg-card h-full overflow-hidden rounded-2xl border shadow-xs'>
@@ -60,12 +62,12 @@ export function TierMiniPanel() {
               {t('My Tier')}
             </span>
             <Badge variant='outline' className='text-xs'>
-              {tierLabel(data.group)}
+              {tierDisplayName(data.group, t)}
             </Badge>
             {hasNext && (
               <span className='text-muted-foreground inline-flex items-center gap-1 text-xs'>
                 <ArrowRight className='size-3' aria-hidden='true' />
-                {tierLabel(data.next_tier)}
+                {tierDisplayName(data.next_tier, t)}
               </span>
             )}
           </div>
