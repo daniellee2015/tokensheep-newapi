@@ -38,7 +38,7 @@ export function HeroSection({ isAuthenticated }: HeroSectionProps) {
   const { t } = useTranslation()
 
   return (
-    <section className='relative isolate px-6 pt-24 pb-16 sm:pt-32 sm:pb-24'>
+    <section className='relative isolate min-h-[600px] px-6 pt-24 pb-16 sm:min-h-[700px] sm:pt-32 sm:pb-24'>
       {/* Rainbow perspective background — designed SVG illustration. */}
       <div
         aria-hidden
@@ -47,11 +47,11 @@ export function HeroSection({ isAuthenticated }: HeroSectionProps) {
         <img
           src='/hero-rainbow-bg.svg'
           alt=''
-          className='h-full w-full object-cover object-top'
+          className='h-full w-full object-cover object-bottom'
         />
         {/* White gradient overlay: fades out the top half so the rainbow
             pillar doesn't interfere with headline text above. */}
-        <div className='absolute inset-0 bg-gradient-to-b from-background via-background/90 via-45% to-transparent' />
+        <div className='absolute inset-0 bg-gradient-to-b from-background via-background/80 via-30% to-transparent' />
       </div>
 
       <div className='relative z-10 mx-auto flex max-w-3xl flex-col items-center gap-8 text-center'>
