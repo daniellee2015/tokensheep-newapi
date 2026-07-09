@@ -120,6 +120,7 @@ func GetTopUpInfo(c *gin.Context) {
 		"waffo_pancake_surcharge_percent": setting.WaffoPancakeSurchargePercent,
 		"enable_tier_cards_in_recharge":   tokensheep_setting.EnableTierCardsInRecharge,
 		"enable_custom_topup":             tokensheep_setting.EnableCustomTopup,
+		"enable_custom_amount_input":      tokensheep_setting.EnableCustomAmountInput,
 		"tier_cards":                      tokensheep_setting.TierCardsSorted(),
 		"amount_options":          operation_setting.GetPaymentSetting().AmountOptions,
 		"discount":                operation_setting.GetPaymentSetting().AmountDiscount,

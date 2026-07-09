@@ -122,6 +122,7 @@ func InitOptionMap() {
 	common.OptionMap["WaffoPancakeSurchargePercent"] = strconv.FormatFloat(setting.WaffoPancakeSurchargePercent, 'f', -1, 64)
 	common.OptionMap["EnableTierCardsInRecharge"] = strconv.FormatBool(tokensheep_setting.EnableTierCardsInRecharge)
 	common.OptionMap["EnableCustomTopup"] = strconv.FormatBool(tokensheep_setting.EnableCustomTopup)
+	common.OptionMap["EnableCustomAmountInput"] = strconv.FormatBool(tokensheep_setting.EnableCustomAmountInput)
 	common.OptionMap["TopupGroupRatio"] = common.TopupGroupRatio2JSONString()
 	common.OptionMap["Chats"] = setting.Chats2JsonString()
 	common.OptionMap["AutoGroups"] = setting.AutoGroups2JsonString()
@@ -484,6 +485,8 @@ func updateOptionMap(key string, value string) (err error) {
 		tokensheep_setting.EnableTierCardsInRecharge = value == "true"
 	case "EnableCustomTopup":
 		tokensheep_setting.EnableCustomTopup = value == "true"
+	case "EnableCustomAmountInput":
+		tokensheep_setting.EnableCustomAmountInput = value == "true"
 	case "TopupGroupRatio":
 		err = common.UpdateTopupGroupRatioByJSONString(value)
 	case "GitHubClientId":
