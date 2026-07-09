@@ -5029,6 +5029,8 @@
     "wallet.tierCards.unlockDefault": "Unlock {{tier}}",
     "Show tier cards in Add Funds": "Show tier cards in Add Funds",
     "Render the tier upgrade shortcuts ($10 / $50 / ...) inside the wallet Add Funds card. Tier list comes from the tokensheep_economy TierThresholds map.": "Render the tier upgrade shortcuts ($10 / $50 / ...) inside the wallet Add Funds card. Tier list comes from the tokensheep_economy TierThresholds map.",
+    "Please fix these fields": "Please fix these fields",
+    "Validation failed": "Validation failed",
     "Show custom amount section": "Show custom amount section",
     "Render preset amounts + custom amount input + payment methods inside the wallet Add Funds card. Turn off for a tier-only wallet UI.": "Render preset amounts + custom amount input + payment methods inside the wallet Add Funds card. Turn off for a tier-only wallet UI.",
     "Allow custom amount input": "Allow custom amount input",

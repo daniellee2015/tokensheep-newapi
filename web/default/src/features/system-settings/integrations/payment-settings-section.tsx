@@ -852,6 +852,19 @@ export function PaymentSettingsSection({
     }
   }
 
+  // Surface validation failures. Without this, react-hook-form's
+  // handleSubmit silently swallows a failed validation — the save button
+  // "does nothing", no request fires, no error shows. Now the offending
+  // field(s) are toasted so the operator (and we) can see what blocked it.
+  const onInvalid = (errors: Record<string, unknown>) => {
+    const fields = Object.keys(errors)
+    toast.error(
+      fields.length > 0
+        ? `${t('Please fix these fields')}: ${fields.join(', ')}`
+        : t('Validation failed')
+    )
+  }
+
   const currentFormValues = form.watch()
   const waffoValues: WaffoSettingsValues = {
     WaffoEnabled: currentFormValues.WaffoEnabled,
@@ -948,7 +961,7 @@ export function PaymentSettingsSection({
 
       <Form {...form}>
         <SettingsForm
-          onSubmit={form.handleSubmit(onSubmit)}
+          onSubmit={form.handleSubmit(onSubmit, onInvalid)}
           className={cn(
             'gap-y-8',
             !complianceConfirmed && 'pointer-events-none opacity-40'
@@ -956,7 +969,7 @@ export function PaymentSettingsSection({
           data-no-autosubmit='true'
         >
           <SettingsPageFormActions
-            onSave={form.handleSubmit(onSubmit)}
+            onSave={form.handleSubmit(onSubmit, onInvalid)}
             isSaving={updateOption.isPending || isSubmitting}
             saveLabel='Save all settings'
           />

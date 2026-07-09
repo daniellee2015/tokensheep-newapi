@@ -175,6 +175,7 @@ const BILLING_SECTIONS = [
           EnableTierCardsInRecharge:
             settings.EnableTierCardsInRecharge ?? true,
           EnableCustomTopup: settings.EnableCustomTopup ?? true,
+          EnableCustomAmountInput: settings.EnableCustomAmountInput ?? true,
         }}
         waffoDefaultValues={{
           WaffoEnabled: settings.WaffoEnabled ?? false,
