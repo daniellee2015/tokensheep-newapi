@@ -53,19 +53,19 @@ const CURATION: CurationBucket[] = [
     iconKey: 'openai',
     entries: [
       {
-        displayName: 'gpt-5',
+        displayName: 'GPT-5.5',
         tagKey: 'landing.pricing.tag.flagship',
-        matchPatterns: [/^gpt-5$/i, /^gpt-5-\d+/i],
+        matchPatterns: [/^gpt-5\.5/i],
       },
       {
-        displayName: 'o3',
+        displayName: 'GPT-5.4',
         tagKey: 'landing.pricing.tag.reasoning',
-        matchPatterns: [/^o3$/i, /^o3-\d+/i, /^o3-mini$/i],
+        matchPatterns: [/^gpt-5\.4$/i, /^gpt-5\.4-\d/i],
       },
       {
-        displayName: 'gpt-5-mini',
+        displayName: 'GPT-5.4-mini',
         tagKey: 'landing.pricing.tag.economy',
-        matchPatterns: [/^gpt-5-mini/i, /^gpt-4o-mini/i],
+        matchPatterns: [/^gpt-5\.4-mini/i],
       },
     ],
   },
@@ -75,19 +75,19 @@ const CURATION: CurationBucket[] = [
     iconKey: 'claude',
     entries: [
       {
-        displayName: 'claude-opus-4-8',
+        displayName: 'Claude Opus 4.8',
         tagKey: 'landing.pricing.tag.top',
-        matchPatterns: [/claude.*opus/i],
+        matchPatterns: [/claude-opus-4-8/i, /claude.*opus/i],
       },
       {
-        displayName: 'claude-sonnet-5',
+        displayName: 'Claude Sonnet 5',
         tagKey: 'landing.pricing.tag.workhorse',
-        matchPatterns: [/claude.*sonnet-5/i, /claude.*sonnet/i],
+        matchPatterns: [/claude-sonnet-5/i, /claude-sonnet-4-8/i, /claude.*sonnet/i],
       },
       {
-        displayName: 'claude-haiku-4-5',
-        tagKey: 'landing.pricing.tag.fastLight',
-        matchPatterns: [/claude.*haiku/i],
+        displayName: 'Claude Fable 5',
+        tagKey: 'landing.pricing.tag.creative',
+        matchPatterns: [/claude-fable-5/i, /claude.*fable/i],
       },
     ],
   },
@@ -97,19 +97,19 @@ const CURATION: CurationBucket[] = [
     iconKey: 'gemini',
     entries: [
       {
-        displayName: 'gemini-2.5-pro',
+        displayName: 'Gemini 3.1 Pro',
         tagKey: 'landing.pricing.tag.longContext',
-        matchPatterns: [/gemini.*2\.5.*pro/i, /gemini.*pro/i],
+        matchPatterns: [/gemini-3\.1-pro/i, /gemini.*pro/i],
       },
       {
-        displayName: 'gemini-2.5-flash',
+        displayName: 'Gemini 3.5 Flash',
         tagKey: 'landing.pricing.tag.fast',
-        matchPatterns: [/gemini.*2\.5.*flash$/i, /gemini.*flash$/i],
+        matchPatterns: [/gemini-3\.5-flash/i, /gemini.*3\.5.*flash/i],
       },
       {
-        displayName: 'gemini-2.5-flash-lite',
+        displayName: 'Gemini 3 Flash',
         tagKey: 'landing.pricing.tag.freeCredit',
-        matchPatterns: [/gemini.*flash-lite/i, /gemini.*lite/i],
+        matchPatterns: [/gemini-3-flash/i, /gemini.*flash/i],
       },
     ],
   },
@@ -121,57 +121,57 @@ const FALLBACK: Record<
   string,
   Pick<LandingPriceModel, 'officialInputUsd' | 'officialOutputUsd' | 'cacheReadRatio' | 'cacheWriteRatio'>
 > = {
-  'gpt-5': {
-    officialInputUsd: 1.25,
-    officialOutputUsd: 10,
+  'GPT-5.5': {
+    officialInputUsd: 5,
+    officialOutputUsd: 30,
     cacheReadRatio: 0.1,
     cacheWriteRatio: 1,
   },
-  o3: {
-    officialInputUsd: 2,
-    officialOutputUsd: 8,
-    cacheReadRatio: 0.25,
-    cacheWriteRatio: 1,
-  },
-  'gpt-5-mini': {
-    officialInputUsd: 0.25,
-    officialOutputUsd: 2,
+  'GPT-5.4': {
+    officialInputUsd: 2.5,
+    officialOutputUsd: 15,
     cacheReadRatio: 0.1,
     cacheWriteRatio: 1,
   },
-  'claude-opus-4-8': {
-    officialInputUsd: 15,
-    officialOutputUsd: 75,
+  'GPT-5.4-mini': {
+    officialInputUsd: 0.2,
+    officialOutputUsd: 1.25,
+    cacheReadRatio: 0.1,
+    cacheWriteRatio: 1,
+  },
+  'Claude Opus 4.8': {
+    officialInputUsd: 5,
+    officialOutputUsd: 25,
     cacheReadRatio: 0.1,
     cacheWriteRatio: 1.25,
   },
-  'claude-sonnet-5': {
+  'Claude Sonnet 5': {
     officialInputUsd: 3,
     officialOutputUsd: 15,
     cacheReadRatio: 0.1,
     cacheWriteRatio: 1.25,
   },
-  'claude-haiku-4-5': {
-    officialInputUsd: 1,
-    officialOutputUsd: 5,
+  'Claude Fable 5': {
+    officialInputUsd: 10,
+    officialOutputUsd: 50,
     cacheReadRatio: 0.1,
     cacheWriteRatio: 1.25,
   },
-  'gemini-2.5-pro': {
-    officialInputUsd: 1.25,
-    officialOutputUsd: 10,
+  'Gemini 3.1 Pro': {
+    officialInputUsd: 2,
+    officialOutputUsd: 12,
     cacheReadRatio: 0.25,
     cacheWriteRatio: 1,
   },
-  'gemini-2.5-flash': {
-    officialInputUsd: 0.3,
-    officialOutputUsd: 2.5,
+  'Gemini 3.5 Flash': {
+    officialInputUsd: 1.5,
+    officialOutputUsd: 9,
     cacheReadRatio: 0.25,
     cacheWriteRatio: 1,
   },
-  'gemini-2.5-flash-lite': {
-    officialInputUsd: 0.1,
-    officialOutputUsd: 0.4,
+  'Gemini 3 Flash': {
+    officialInputUsd: 0.25,
+    officialOutputUsd: 1.5,
     cacheReadRatio: 0.25,
     cacheWriteRatio: 1,
   },

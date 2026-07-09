@@ -1,4 +1,13 @@
 import { Link } from '@tanstack/react-router'
+import {
+  Claude,
+  DeepSeek,
+  Gemini,
+  Grok,
+  Kimi,
+  OpenAI,
+  Qwen,
+} from '@lobehub/icons'
 import { ArrowRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -8,22 +17,44 @@ interface HeroSectionProps {
   isAuthenticated: boolean
 }
 
+
+// Provider logos: GPT/Claude/Gemini in center, others flanking on the sides.
+// Kimi uses the base (dark) icon — .Color renders white text invisible on
+// the light chip background.
+const HERO_PROVIDERS: {
+  icon: React.ComponentType<{ size?: number }>
+  label: string
+}[] = [
+  { icon: DeepSeek.Color, label: 'DeepSeek' },
+  { icon: Qwen.Color, label: 'Qwen' },
+  { icon: OpenAI, label: 'OpenAI' },
+  { icon: Claude.Color, label: 'Claude' },
+  { icon: Gemini.Color, label: 'Gemini' },
+  { icon: Grok, label: 'Grok' },
+  { icon: Kimi.Avatar, label: 'Kimi' },
+]
+
 export function HeroSection({ isAuthenticated }: HeroSectionProps) {
   const { t } = useTranslation()
 
   return (
-    <section className='relative overflow-hidden px-6 pt-24 pb-16 sm:pt-32 sm:pb-24'>
-      {/* soft ambient background */}
+    <section className='relative isolate px-6 pt-24 pb-16 sm:pt-32 sm:pb-24'>
+      {/* Rainbow perspective background — designed SVG illustration. */}
       <div
         aria-hidden
-        className='pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-gradient-to-b from-sky-100/40 via-transparent to-transparent dark:from-sky-500/10'
-      />
-      <div
-        aria-hidden
-        className='pointer-events-none absolute -top-24 left-1/2 -z-10 h-[400px] w-[720px] -translate-x-1/2 rounded-full bg-fuchsia-200/40 blur-3xl dark:bg-fuchsia-800/20'
-      />
+        className='pointer-events-none absolute inset-0 z-0'
+      >
+        <img
+          src='/hero-rainbow-bg.svg'
+          alt=''
+          className='h-full w-full object-cover object-top'
+        />
+        {/* White gradient overlay: fades out the top half so the rainbow
+            pillar doesn't interfere with headline text above. */}
+        <div className='absolute inset-0 bg-gradient-to-b from-background via-background/90 via-45% to-transparent' />
+      </div>
 
-      <div className='relative mx-auto flex max-w-3xl flex-col items-center gap-8 text-center'>
+      <div className='relative z-10 mx-auto flex max-w-3xl flex-col items-center gap-8 text-center'>
         <span className='border-border/60 bg-background/60 text-muted-foreground inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs backdrop-blur-sm'>
           <span className='inline-block size-1.5 rounded-full bg-emerald-500' />
           {t('landing.hero.badge')}
@@ -43,6 +74,24 @@ export function HeroSection({ isAuthenticated }: HeroSectionProps) {
           <br className='hidden sm:block' />
           {t('landing.hero.subtitleTail')}
         </p>
+
+        {/* Provider logos floating above the tunnel — each in a frosted chip
+            with a soft shadow, gently bobbing via .hero-float. */}
+        <div className='flex flex-wrap items-center justify-center gap-3 pt-1 sm:gap-4'>
+          {HERO_PROVIDERS.map((p, i) => {
+            const Icon = p.icon
+            return (
+              <div
+                key={p.label}
+                className='hero-float border-border/50 bg-background/70 flex size-12 items-center justify-center rounded-2xl border shadow-lg shadow-black/[0.06] backdrop-blur-md sm:size-14 dark:shadow-black/30'
+                style={{ animationDelay: `${i * 0.35}s` }}
+                title={p.label}
+              >
+                <Icon size={28} />
+              </div>
+            )
+          })}
+        </div>
 
         <div className='flex flex-wrap items-center justify-center gap-3 pt-2'>
           {isAuthenticated ? (

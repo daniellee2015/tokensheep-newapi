@@ -1,3 +1,5 @@
+import { MessageCircle } from 'lucide-react'
+import { SiDiscord, SiTelegram } from 'react-icons/si'
 import { useTranslation } from 'react-i18next'
 
 interface Feature {
@@ -66,6 +68,51 @@ export function FeaturesSection() {
           {FEATURES.map((f) => (
             <FeatureCard key={f.titleKey} feature={f} />
           ))}
+        </div>
+
+        {/* Community links — TG / Discord / QQ */}
+        <div className='mt-10 flex flex-col items-center gap-3'>
+          <p className='text-muted-foreground text-sm'>
+            {t('landing.features.community')}
+          </p>
+          <div className='flex flex-wrap items-center justify-center gap-3'>
+            <a
+              href='https://t.me/tokensheep666'
+              target='_blank'
+              rel='noopener noreferrer'
+              className='border-border/50 bg-background/70 hover:border-foreground/30 flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-colors'
+            >
+              <SiTelegram className='size-4 text-[#26A5E4]' />
+              {t('landing.features.tgChannel')}
+            </a>
+            <a
+              href='https://t.me/tokensheep001'
+              target='_blank'
+              rel='noopener noreferrer'
+              className='border-border/50 bg-background/70 hover:border-foreground/30 flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-colors'
+            >
+              <SiTelegram className='size-4 text-[#26A5E4]' />
+              {t('landing.features.tgGroup')}
+            </a>
+            <a
+              href='https://discord.gg/nH4qMVEpa'
+              target='_blank'
+              rel='noopener noreferrer'
+              className='border-border/50 bg-background/70 hover:border-foreground/30 flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-colors'
+            >
+              <SiDiscord className='size-4 text-[#5865F2]' />
+              Discord
+            </a>
+            <a
+              href='https://qm.qq.com/q/a2qBNKSlkk'
+              target='_blank'
+              rel='noopener noreferrer'
+              className='border-border/50 bg-background/70 hover:border-foreground/30 flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition-colors'
+            >
+              <MessageCircle className='size-4 text-[#12B7F5]' />
+              {t('landing.features.qqGroup')}
+            </a>
+          </div>
         </div>
       </div>
     </section>

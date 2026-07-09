@@ -612,3 +612,23 @@ For commercial licensing, please contact support@quantumnous.com
     animation: none !important;
   }
 }
+
+@keyframes hero-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+.hero-float {
+  animation: hero-float 4s ease-in-out infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-float {
+    animation: none !important;
+  }
+}
