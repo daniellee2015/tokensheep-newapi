@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/tokensheep_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
 	"github.com/thanhpk/randstr"
@@ -21,6 +22,10 @@ import (
 
 type WaffoPancakePayRequest struct {
 	Amount int64 `json:"amount"`
+	// Tier is set only when the request originates from a contribution tier
+	// card (supporter/fan/...). When it matches a configured tier whose amount
+	// equals Amount, the MinTopUp floor is waived — see IsTierContribution.
+	Tier string `json:"tier"`
 }
 
 func RequestWaffoPancakeAmount(c *gin.Context) {
@@ -30,7 +35,10 @@ func RequestWaffoPancakeAmount(c *gin.Context) {
 		return
 	}
 
-	if req.Amount < int64(setting.WaffoPancakeMinTopUp) {
+	// Tier-card contributions have fixed, config-defined amounts and are
+	// exempt from the MinTopUp floor; standard custom top-ups still enforce it.
+	if !tokensheep_setting.IsTierContribution(req.Tier, req.Amount) &&
+		req.Amount < int64(setting.WaffoPancakeMinTopUp) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("充值数量不能小于 %d", setting.WaffoPancakeMinTopUp)})
 		return
 	}
@@ -380,7 +388,8 @@ func RequestWaffoPancakePay(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "参数错误"})
 		return
 	}
-	if req.Amount < int64(setting.WaffoPancakeMinTopUp) {
+	if !tokensheep_setting.IsTierContribution(req.Tier, req.Amount) &&
+		req.Amount < int64(setting.WaffoPancakeMinTopUp) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("充值数量不能小于 %d", setting.WaffoPancakeMinTopUp)})
 		return
 	}

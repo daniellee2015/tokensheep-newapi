@@ -101,6 +101,27 @@ type TierCard struct {
 	Amount int    `json:"amount"`
 }
 
+// IsTierContribution reports whether (tier, amountDollars) is a legitimate
+// contribution-card click: the tier name exists in TierThresholds and its
+// configured dollar amount equals amountDollars. Used to exempt tier-card
+// payments from the standard MinTopUp floor (tier amounts are fixed by config,
+// e.g. supporter=$10, and must be payable even when MinTopUp is higher). The
+// amount must match the server-side config, so a client can't bypass MinTopUp
+// by sending an arbitrary tier name.
+func IsTierContribution(tier string, amountDollars int64) bool {
+	if tier == "" {
+		return false
+	}
+	const quotaPerDollar = 500_000
+	economyMu.RLock()
+	defer economyMu.RUnlock()
+	quota, ok := economySetting.TierThresholds[tier]
+	if !ok || quota <= 0 {
+		return false
+	}
+	return int64(quota/quotaPerDollar) == amountDollars
+}
+
 // GetTierThresholdsCopy returns a shallow copy of the tier threshold map.
 // Used by the admin user-editor to enumerate valid tier names — see
 // controller/group.go for the "tier vs pricing group" split.

@@ -223,6 +223,8 @@ export interface WaffoPaymentRequest {
 export interface WaffoPancakePaymentRequest {
   /** Topup amount */
   amount: number
+  /** Tier key when this is a contribution-card click; waives MinTopUp. */
+  tier?: string
 }
 
 /**

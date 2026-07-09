@@ -247,7 +247,8 @@ export function Wallet(props: WalletProps) {
   const handleTierQuickPick = async (amount: number, tier: string) => {
     setTierPickLoading(tier)
     try {
-      const success = await processWaffoPancakePayment(amount)
+      // Pass the tier so the backend waives MinTopUp for fixed tier amounts.
+      const success = await processWaffoPancakePayment(amount, tier)
       if (success) await fetchUser()
     } finally {
       setTierPickLoading(null)
