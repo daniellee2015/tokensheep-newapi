@@ -442,6 +442,16 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 	c.Set("token_key", token.Key)
 	c.Set("token_name", token.Name)
 	c.Set("token_unlimited_quota", token.UnlimitedQuota)
+	if token.RpmLimit != nil {
+		c.Set("rpm_limit", *token.RpmLimit)
+	} else {
+		c.Set("rpm_limit", 0)
+	}
+	if token.ConcurrencyLimit != nil {
+		c.Set("concurrency_limit", *token.ConcurrencyLimit)
+	} else {
+		c.Set("concurrency_limit", 0)
+	}
 	if !token.UnlimitedQuota {
 		c.Set("token_quota", token.RemainQuota)
 	}

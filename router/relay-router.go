@@ -73,7 +73,9 @@ func SetRelayRouter(router *gin.Engine) {
 	relayV1Router.Use(middleware.RouteTag("relay"))
 	relayV1Router.Use(middleware.SystemPerformanceCheck())
 	relayV1Router.Use(middleware.TokenAuth())
+	relayV1Router.Use(middleware.TokenRPMLimiter())
 	relayV1Router.Use(middleware.ModelRequestRateLimit())
+	relayV1Router.Use(middleware.TokenConcurrencyLimiter())
 	// TokenSheep tier-driven in-flight concurrency limiter (session count).
 	// Applied *after* TokenAuth so user id / group are set on the context.
 	relayV1Router.Use(middleware.SessionConcurrencyLimiter())

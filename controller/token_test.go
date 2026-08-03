@@ -16,6 +16,8 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -537,4 +539,106 @@ func TestGetTokenKeyRequiresOwnershipAndReturnsFullKey(t *testing.T) {
 	if strings.Contains(unauthorizedRecorder.Body.String(), token.Key) {
 		t.Fatalf("unauthorized key response leaked raw token key: %s", unauthorizedRecorder.Body.String())
 	}
+}
+
+func TestAddTokenPersistsKiroBusFieldsAndReplaysIdempotently(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+
+	body := map[string]any{
+		"name":                 "kirobus-passenger",
+		"expired_time":         int64(2_000_000_000),
+		"remain_quota":         50_000,
+		"unlimited_quota":      false,
+		"model_limits_enabled": true,
+		"model_limits":         "gpt-4.1,gpt-4.1-mini",
+		"group":                "kirobus-api",
+		"bus_id":               int64(101),
+		"trip_id":              int64(202),
+		"seat_id":              int64(303),
+		"ride_order_id":        int64(404),
+		"client_key_id":        int64(505),
+		"api_route_profile_id": int64(606),
+		"quota_unit":           "quota",
+		"rpm_limit":            17,
+		"concurrency_limit":    3,
+		"conversion_revision":  "quota-v4",
+		"idempotency_key":      "kirobus:ride-order:404",
+	}
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/", body, 71)
+	AddToken(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	require.True(t, response.Success, response.Message)
+
+	var created model.Token
+	require.NoError(t, db.Where("user_id = ?", 71).First(&created).Error)
+	assert.Equal(t, int64(101), *created.BusId)
+	assert.Equal(t, int64(202), *created.TripId)
+	assert.Equal(t, int64(303), *created.SeatId)
+	assert.Equal(t, int64(404), *created.RideOrderId)
+	assert.Equal(t, int64(505), *created.ClientKeyId)
+	assert.Equal(t, int64(606), *created.ApiRouteProfileId)
+	assert.Equal(t, "quota", *created.QuotaUnit)
+	assert.Equal(t, 17, *created.RpmLimit)
+	assert.Equal(t, 3, *created.ConcurrencyLimit)
+	assert.Equal(t, "quota-v4", *created.ConversionRevision)
+	assert.Equal(t, "kirobus:ride-order:404", *created.IdempotencyKey)
+	assert.NotEmpty(t, created.Key)
+	assert.NotContains(t, recorder.Body.String(), created.Key)
+
+	replayCtx, replayRecorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/", body, 71)
+	AddToken(replayCtx)
+
+	replayResponse := decodeAPIResponse(t, replayRecorder)
+	require.True(t, replayResponse.Success, replayResponse.Message)
+	var count int64
+	require.NoError(t, db.Model(&model.Token{}).Where("user_id = ?", 71).Count(&count).Error)
+	assert.Equal(t, int64(1), count)
+
+	var replayed model.Token
+	require.NoError(t, db.Where("user_id = ?", 71).First(&replayed).Error)
+	assert.Equal(t, created.Id, replayed.Id)
+	assert.Equal(t, created.Key, replayed.Key)
+	assert.NotContains(t, replayRecorder.Body.String(), created.Key)
+}
+
+func TestAddTokenIdempotencyIsScopedByUserAndOptional(t *testing.T) {
+	db := setupTokenControllerTestDB(t)
+
+	idempotentBody := map[string]any{
+		"name":              "shared-reference",
+		"expired_time":      -1,
+		"unlimited_quota":   true,
+		"idempotency_key":   "external-request-1",
+		"rpm_limit":         1,
+		"concurrency_limit": 1,
+	}
+	for _, userId := range []int{81, 82} {
+		ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/", idempotentBody, userId)
+		AddToken(ctx)
+		require.True(t, decodeAPIResponse(t, recorder).Success)
+	}
+
+	ordinaryBody := map[string]any{
+		"name":            "ordinary-token",
+		"expired_time":    -1,
+		"unlimited_quota": true,
+		"idempotency_key": "   ",
+	}
+	for range 2 {
+		ctx, recorder := newAuthenticatedContext(t, http.MethodPost, "/api/token/", ordinaryBody, 83)
+		AddToken(ctx)
+		require.True(t, decodeAPIResponse(t, recorder).Success)
+	}
+
+	var idempotentCount int64
+	require.NoError(t, db.Model(&model.Token{}).Where("idempotency_key = ?", "external-request-1").Count(&idempotentCount).Error)
+	assert.Equal(t, int64(2), idempotentCount)
+
+	var ordinary []model.Token
+	require.NoError(t, db.Where("user_id = ?", 83).Order("id").Find(&ordinary).Error)
+	require.Len(t, ordinary, 2)
+	assert.Nil(t, ordinary[0].IdempotencyKey)
+	assert.Nil(t, ordinary[1].IdempotencyKey)
 }

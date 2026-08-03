@@ -13,7 +13,7 @@ import (
 
 type Token struct {
 	Id                 int            `json:"id"`
-	UserId             int            `json:"user_id" gorm:"index"`
+	UserId             int            `json:"user_id" gorm:"index;uniqueIndex:idx_tokens_user_idempotency,priority:1"`
 	Key                string         `json:"key" gorm:"type:varchar(128);uniqueIndex"`
 	Status             int            `json:"status" gorm:"default:1"`
 	Name               string         `json:"name" gorm:"index" `
@@ -28,7 +28,31 @@ type Token struct {
 	UsedQuota          int            `json:"used_quota" gorm:"default:0"` // used quota
 	Group              string         `json:"group" gorm:"default:''"`
 	CrossGroupRetry    bool           `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
+	BusId              *int64         `json:"bus_id,omitempty"`
+	TripId             *int64         `json:"trip_id,omitempty"`
+	SeatId             *int64         `json:"seat_id,omitempty"`
+	RideOrderId        *int64         `json:"ride_order_id,omitempty"`
+	ClientKeyId        *int64         `json:"client_key_id,omitempty"`
+	ApiRouteProfileId  *int64         `json:"api_route_profile_id,omitempty"`
+	QuotaUnit          *string        `json:"quota_unit,omitempty" gorm:"type:varchar(64)"`
+	RpmLimit           *int           `json:"rpm_limit,omitempty"`
+	ConcurrencyLimit   *int           `json:"concurrency_limit,omitempty"`
+	ConversionRevision *string        `json:"conversion_revision,omitempty" gorm:"type:varchar(191)"`
+	IdempotencyKey     *string        `json:"idempotency_key,omitempty" gorm:"type:varchar(191);uniqueIndex:idx_tokens_user_idempotency,priority:2"`
 	DeletedAt          gorm.DeletedAt `gorm:"index"`
+}
+
+func (token *Token) BeforeCreate(_ *gorm.DB) error {
+	if token.IdempotencyKey == nil {
+		return nil
+	}
+	idempotencyKey := strings.TrimSpace(*token.IdempotencyKey)
+	if idempotencyKey == "" {
+		token.IdempotencyKey = nil
+		return nil
+	}
+	token.IdempotencyKey = &idempotencyKey
+	return nil
 }
 
 func (token *Token) Clean() {
@@ -287,6 +311,15 @@ func (token *Token) Insert() error {
 	var err error
 	err = DB.Create(token).Error
 	return err
+}
+
+func GetTokenByUserIdempotencyKey(userId int, idempotencyKey string) (*Token, error) {
+	if userId <= 0 || idempotencyKey == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+	var token Token
+	err := DB.Where("user_id = ? AND idempotency_key = ?", userId, idempotencyKey).First(&token).Error
+	return &token, err
 }
 
 // Update Make sure your token's fields is completed, because this will update non-zero values

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func buildMaskedTokenResponse(token *model.Token) *model.Token {
@@ -175,6 +177,24 @@ func AddToken(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgTokenNameTooLong)
 		return
 	}
+	userId := c.GetInt("id")
+	if token.IdempotencyKey != nil {
+		idempotencyKey := strings.TrimSpace(*token.IdempotencyKey)
+		if idempotencyKey == "" {
+			token.IdempotencyKey = nil
+		} else {
+			token.IdempotencyKey = &idempotencyKey
+			_, lookupErr := model.GetTokenByUserIdempotencyKey(userId, idempotencyKey)
+			if lookupErr == nil {
+				c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
+				return
+			}
+			if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+				common.ApiError(c, lookupErr)
+				return
+			}
+		}
+	}
 	// 非无限额度时，检查额度值是否超出有效范围
 	if !token.UnlimitedQuota {
 		if token.RemainQuota < 0 {
@@ -189,7 +209,7 @@ func AddToken(c *gin.Context) {
 	}
 	// 检查用户令牌数量是否已达上限
 	maxTokens := operation_setting.GetMaxUserTokens()
-	count, err := model.CountUserTokens(c.GetInt("id"))
+	count, err := model.CountUserTokens(userId)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -208,7 +228,7 @@ func AddToken(c *gin.Context) {
 		return
 	}
 	cleanToken := model.Token{
-		UserId:             c.GetInt("id"),
+		UserId:             userId,
 		Name:               token.Name,
 		Key:                key,
 		CreatedTime:        common.GetTimestamp(),
@@ -221,9 +241,26 @@ func AddToken(c *gin.Context) {
 		AllowIps:           token.AllowIps,
 		Group:              token.Group,
 		CrossGroupRetry:    token.CrossGroupRetry,
+		BusId:              token.BusId,
+		TripId:             token.TripId,
+		SeatId:             token.SeatId,
+		RideOrderId:        token.RideOrderId,
+		ClientKeyId:        token.ClientKeyId,
+		ApiRouteProfileId:  token.ApiRouteProfileId,
+		QuotaUnit:          token.QuotaUnit,
+		RpmLimit:           token.RpmLimit,
+		ConcurrencyLimit:   token.ConcurrencyLimit,
+		ConversionRevision: token.ConversionRevision,
+		IdempotencyKey:     token.IdempotencyKey,
 	}
 	err = cleanToken.Insert()
 	if err != nil {
+		if cleanToken.IdempotencyKey != nil {
+			if _, lookupErr := model.GetTokenByUserIdempotencyKey(userId, *cleanToken.IdempotencyKey); lookupErr == nil {
+				c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
+				return
+			}
+		}
 		common.ApiError(c, err)
 		return
 	}
