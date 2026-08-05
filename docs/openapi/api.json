@@ -3310,6 +3310,221 @@
         ]
       }
     },
+    "/api/user/kirobus/tokens": {
+      "get": {
+        "summary": "列出 Kiro.bus 管理的令牌",
+        "deprecated": false,
+        "description": "按当前认证用户、认证用户分组及 owner_system=kirobus 三重约束分页查询；响应不包含令牌 key。",
+        "tags": [
+          "令牌管理"
+        ],
+        "parameters": [
+          {
+            "name": "p",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/KiroBusTokenPage"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ]
+      }
+    },
+    "/api/user/kirobus/tokens/{id}": {
+      "get": {
+        "summary": "获取 Kiro.bus 管理的令牌",
+        "deprecated": false,
+        "description": "仅返回当前认证用户、认证用户分组及 owner_system=kirobus 共同拥有的令牌；响应不包含令牌 key。",
+        "tags": [
+          "令牌管理"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/KiroBusToken"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "令牌不存在或不属于当前 owner scope"
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ]
+      },
+      "delete": {
+        "summary": "删除 Kiro.bus 管理的令牌",
+        "deprecated": false,
+        "description": "仅软删除当前认证用户、认证用户分组及 owner_system=kirobus 共同拥有的令牌。",
+        "tags": [
+          "令牌管理"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "404": {
+            "description": "令牌不存在或不属于当前 owner scope"
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ]
+      }
+    },
+    "/api/user/kirobus/tokens/{id}/disable": {
+      "post": {
+        "summary": "禁用 Kiro.bus 管理的令牌",
+        "deprecated": false,
+        "description": "仅将当前认证用户、认证用户分组及 owner_system=kirobus 共同拥有的令牌状态更新为 disabled。",
+        "tags": [
+          "令牌管理"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/KiroBusToken"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "令牌不存在或不属于当前 owner scope"
+          }
+        },
+        "security": [
+          {
+            "SessionAuth1": [],
+            "NewApiUser1": []
+          },
+          {
+            "AccessToken1": [],
+            "NewApiUser1": []
+          }
+        ]
+      }
+    },
     "/api/token/": {
       "get": {
         "summary": "获取所有令牌",
@@ -5092,6 +5307,130 @@
           },
           "unlimited_quota": {
             "type": "boolean"
+          },
+          "model_limits_enabled": {
+            "type": "boolean"
+          },
+          "model_limits": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "owner_system": {
+            "type": "string"
+          },
+          "bus_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "trip_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "seat_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "ride_order_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "client_key_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "api_route_profile_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "quota_unit": {
+            "type": "string",
+            "nullable": true
+          },
+          "rpm_limit": {
+            "type": "integer",
+            "nullable": true
+          },
+          "concurrency_limit": {
+            "type": "integer",
+            "nullable": true
+          },
+          "conversion_revision": {
+            "type": "string",
+            "nullable": true
+          },
+          "idempotency_key": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "KiroBusToken": {
+        "type": "object",
+        "required": [
+          "id",
+          "user_id",
+          "name",
+          "status",
+          "created_time",
+          "accessed_time",
+          "expired_time",
+          "remain_quota",
+          "used_quota",
+          "unlimited_quota",
+          "model_limits_enabled",
+          "model_limits",
+          "group",
+          "owner_system"
+        ],
+        "properties": {
+          "id": { "type": "integer" },
+          "user_id": { "type": "integer" },
+          "name": { "type": "string" },
+          "status": { "type": "integer", "enum": [1, 2, 3, 4] },
+          "created_time": { "type": "integer", "format": "int64" },
+          "accessed_time": { "type": "integer", "format": "int64" },
+          "expired_time": { "type": "integer", "format": "int64" },
+          "remain_quota": { "type": "integer" },
+          "used_quota": { "type": "integer" },
+          "unlimited_quota": { "type": "boolean" },
+          "model_limits_enabled": { "type": "boolean" },
+          "model_limits": { "type": "string" },
+          "group": { "type": "string" },
+          "owner_system": { "type": "string", "enum": ["kirobus"] },
+          "bus_id": { "type": "integer", "format": "int64", "nullable": true },
+          "trip_id": { "type": "integer", "format": "int64", "nullable": true },
+          "seat_id": { "type": "integer", "format": "int64", "nullable": true },
+          "ride_order_id": { "type": "integer", "format": "int64", "nullable": true },
+          "client_key_id": { "type": "integer", "format": "int64", "nullable": true },
+          "api_route_profile_id": { "type": "integer", "format": "int64", "nullable": true },
+          "quota_unit": { "type": "string", "nullable": true },
+          "rpm_limit": { "type": "integer", "nullable": true },
+          "concurrency_limit": { "type": "integer", "nullable": true },
+          "conversion_revision": { "type": "string", "nullable": true },
+          "idempotency_key": { "type": "string", "nullable": true }
+        },
+        "description": "Kiro.bus service Token metadata. The key field is intentionally absent."
+      },
+      "KiroBusTokenPage": {
+        "type": "object",
+        "required": ["page", "page_size", "total", "items"],
+        "properties": {
+          "page": { "type": "integer" },
+          "page_size": { "type": "integer" },
+          "total": { "type": "integer" },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KiroBusToken"
+            }
           }
         }
       },

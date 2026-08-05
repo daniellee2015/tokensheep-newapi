@@ -27,6 +27,7 @@ type Token struct {
 	AllowIps           *string        `json:"allow_ips" gorm:"default:''"`
 	UsedQuota          int            `json:"used_quota" gorm:"default:0"` // used quota
 	Group              string         `json:"group" gorm:"default:''"`
+	OwnerSystem        string         `json:"owner_system,omitempty" gorm:"type:varchar(64);default:'';index"`
 	CrossGroupRetry    bool           `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
 	BusId              *int64         `json:"bus_id,omitempty"`
 	TripId             *int64         `json:"trip_id,omitempty"`
@@ -40,6 +41,14 @@ type Token struct {
 	ConversionRevision *string        `json:"conversion_revision,omitempty" gorm:"type:varchar(191)"`
 	IdempotencyKey     *string        `json:"idempotency_key,omitempty" gorm:"type:varchar(191);uniqueIndex:idx_tokens_user_idempotency,priority:2"`
 	DeletedAt          gorm.DeletedAt `gorm:"index"`
+}
+
+const TokenOwnerSystemKiroBus = "kirobus"
+
+type TokenOwnerScope struct {
+	UserId      int
+	Group       string
+	OwnerSystem string
 }
 
 func (token *Token) BeforeCreate(_ *gorm.DB) error {
@@ -107,6 +116,112 @@ func GetAllUserTokens(userId int, startIdx int, num int) ([]*Token, error) {
 	var err error
 	err = DB.Where("user_id = ?", userId).Order("id desc").Limit(num).Offset(startIdx).Find(&tokens).Error
 	return tokens, err
+}
+
+func GetTokensByOwnerScope(scope TokenOwnerScope, offset int, limit int) ([]*Token, int64, error) {
+	if scope.UserId <= 0 || strings.TrimSpace(scope.Group) == "" || strings.TrimSpace(scope.OwnerSystem) == "" {
+		return nil, 0, errors.New("invalid token owner scope")
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 || limit > searchHardLimit {
+		limit = searchHardLimit
+	}
+
+	query := DB.Model(&Token{}).Where(&Token{
+		UserId:      scope.UserId,
+		Group:       scope.Group,
+		OwnerSystem: scope.OwnerSystem,
+	})
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var tokens []*Token
+	if err := query.Order("id desc").Offset(offset).Limit(limit).Find(&tokens).Error; err != nil {
+		return nil, 0, err
+	}
+	return tokens, total, nil
+}
+
+func GetTokenByOwnerScope(id int, scope TokenOwnerScope) (*Token, error) {
+	if id <= 0 || scope.UserId <= 0 || strings.TrimSpace(scope.Group) == "" || strings.TrimSpace(scope.OwnerSystem) == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+	var token Token
+	err := DB.Where(&Token{
+		Id:          id,
+		UserId:      scope.UserId,
+		Group:       scope.Group,
+		OwnerSystem: scope.OwnerSystem,
+	}).First(&token).Error
+	return &token, err
+}
+
+func DisableTokenByOwnerScope(id int, scope TokenOwnerScope) (*Token, error) {
+	token, err := GetTokenByOwnerScope(id, scope)
+	if err != nil {
+		return nil, err
+	}
+	result := DB.Model(&Token{}).
+		Where(&Token{
+			Id:          id,
+			UserId:      scope.UserId,
+			Group:       scope.Group,
+			OwnerSystem: scope.OwnerSystem,
+		}).
+		Update("status", common.TokenStatusDisabled)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected != 1 {
+		current, err := GetTokenByOwnerScope(id, scope)
+		if err != nil {
+			return nil, err
+		}
+		if current.Status != common.TokenStatusDisabled {
+			return nil, errors.New("token disable did not update status")
+		}
+		token = current
+	} else {
+		token.Status = common.TokenStatusDisabled
+	}
+	if common.RedisEnabled {
+		gopool.Go(func() {
+			if err := cacheSetToken(*token); err != nil {
+				common.SysLog("failed to update token cache: " + err.Error())
+			}
+		})
+	}
+	return token, nil
+}
+
+func DeleteTokenByOwnerScope(id int, scope TokenOwnerScope) error {
+	token, err := GetTokenByOwnerScope(id, scope)
+	if err != nil {
+		return err
+	}
+	result := DB.Where(&Token{
+		Id:          id,
+		UserId:      scope.UserId,
+		Group:       scope.Group,
+		OwnerSystem: scope.OwnerSystem,
+	}).Delete(&Token{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return gorm.ErrRecordNotFound
+	}
+	if common.RedisEnabled {
+		gopool.Go(func() {
+			if err := cacheDeleteToken(token.Key); err != nil {
+				common.SysLog("failed to delete token cache: " + err.Error())
+			}
+		})
+	}
+	return nil
 }
 
 // sanitizeLikePattern 校验并清洗用户输入的 LIKE 搜索模式。

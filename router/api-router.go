@@ -82,6 +82,10 @@ func SetApiRouter(router *gin.Engine) {
 			selfRoute.Use(middleware.UserAuth())
 			{
 				selfRoute.GET("/kirobus/channels/:id", controller.GetKiroBusChannelMetadata)
+				selfRoute.GET("/kirobus/tokens", controller.ListKiroBusTokens)
+				selfRoute.GET("/kirobus/tokens/:id", controller.GetKiroBusToken)
+				selfRoute.POST("/kirobus/tokens/:id/disable", controller.DisableKiroBusToken)
+				selfRoute.DELETE("/kirobus/tokens/:id", controller.DeleteKiroBusToken)
 				selfRoute.GET("/self/groups", controller.GetUserGroups)
 				selfRoute.GET("/self/tier", controller.GetMyTier)
 				selfRoute.GET("/self", controller.GetSelf)

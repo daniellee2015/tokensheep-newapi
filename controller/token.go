@@ -240,6 +240,7 @@ func AddToken(c *gin.Context) {
 		ModelLimits:        token.ModelLimits,
 		AllowIps:           token.AllowIps,
 		Group:              token.Group,
+		OwnerSystem:        token.OwnerSystem,
 		CrossGroupRetry:    token.CrossGroupRetry,
 		BusId:              token.BusId,
 		TripId:             token.TripId,
