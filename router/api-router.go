@@ -81,6 +81,7 @@ func SetApiRouter(router *gin.Engine) {
 			selfRoute := userRoute.Group("/")
 			selfRoute.Use(middleware.UserAuth())
 			{
+				selfRoute.GET("/kirobus/channels/:id", controller.GetKiroBusChannelMetadata)
 				selfRoute.GET("/self/groups", controller.GetUserGroups)
 				selfRoute.GET("/self/tier", controller.GetMyTier)
 				selfRoute.GET("/self", controller.GetSelf)
