@@ -12,17 +12,31 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GetGroups returns the list of USER TIER names (free + every key in
-// TierThresholds), used by the admin user-editor drop-down.
-//
-// Upstream new-api merges "user tier" and "channel/pricing group" into a
-// single GroupRatio map. TokenSheep separates them: tier names come from
-// `tokensheep_economy.tier_thresholds` (supporter / fan / bestie / vip …),
-// and channel-side names (gpt-supporter, claude-supporter, image, …) stay
-// in GroupRatio only for pricing lookups. The admin user-editor never
-// wants a channel name assigned to `users.group`, so we return only the
-// tier set here. `free` is always included as the default fallback tier.
+// GetGroups returns every key in GroupRatio — the full "channel-side"
+// pricing-group registry that channel editors, tag editors and channel
+// list filters need to enumerate. Matches the upstream new-api behavior;
+// tier-only listing is served by GetTierList on /api/group/tiers so the
+// two admin drop-downs (user-editor vs channel-editor) never share a
+// namespace by accident.
 func GetGroups(c *gin.Context) {
+	groupNames := make([]string, 0)
+	for groupName := range ratio_setting.GetGroupRatioCopy() {
+		groupNames = append(groupNames, groupName)
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    groupNames,
+	})
+}
+
+// GetTierList returns the list of USER TIER names (free + every key in
+// TierThresholds), consumed by the admin user-editor and subscription-plan
+// drop-downs where the value written to users.group must be a tier — not
+// a channel-side pricing group. Tier names come from
+// `tokensheep_economy.tier_thresholds`; `free` is always included as the
+// default fallback tier.
+func GetTierList(c *gin.Context) {
 	names := []string{"free"}
 	for tierName := range tokensheep_setting.GetTierThresholdsCopy() {
 		if tierName == "free" {
