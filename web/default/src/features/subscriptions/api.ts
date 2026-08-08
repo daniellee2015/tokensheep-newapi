@@ -208,7 +208,9 @@ export async function updateBillingPreference(
   return res.data
 }
 
+// Subscription plans use tiers as the downgrade target, not channel-side
+// pricing groups. See controller/group.go GetTierList.
 export async function getGroups(): Promise<ApiResponse<string[]>> {
-  const res = await api.get('/api/group')
+  const res = await api.get('/api/group/tiers')
   return res.data
 }
