@@ -56,11 +56,13 @@ func GetPricing(c *gin.Context) {
 	}
 
 	// TokenSheep promo display: when PromoDisplayGroup is set, the plaza shows
-	// every visitor the promo group's inter-group ratios (the cheapest,
-	// vip-equivalent tier) instead of their own — a display-only nudge to
-	// upgrade. Billing on the relay path is unaffected; it uses the caller's
-	// real group. See common.PromoDisplayGroup.
-	if promoGroup := common.PromoDisplayGroup; promoGroup != "" {
+	// anonymous visitors the promo group's inter-group ratios (the cheapest,
+	// vip-equivalent tier) — a display-only nudge to upgrade. Signed-in users
+	// always see their own group's ratios and usable groups so the plaza
+	// matches what they are actually charged. Billing on the relay path is
+	// unaffected either way; it uses the caller's real group.
+	// See common.PromoDisplayGroup.
+	if promoGroup := common.PromoDisplayGroup; promoGroup != "" && group == "" {
 		for g := range groupRatio {
 			if ratio, ok := ratio_setting.GetGroupGroupRatio(promoGroup, g); ok {
 				groupRatio[g] = ratio
