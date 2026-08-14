@@ -43,6 +43,19 @@ type myTierView struct {
 	NextThreshold      float64 `json:"next_threshold"`       // station $, 0 if top
 	NextProgress       float64 `json:"next_progress"`        // 0..1
 	ToNextContribution float64 `json:"to_next_contribution"` // station $ remaining
+
+	// Commercial groups (wholesale/retail) are assigned by hand and sit outside
+	// the contribution ladder, so the frontend hides the tier progress UI.
+	Commercial bool `json:"commercial"`
+}
+
+// commercialGroups are the manually-assigned reseller groups. They buy quota
+// outright instead of earning tiers through contribution, so they are excluded
+// from the tier ladder in both directions: they get no "next tier" progress,
+// and they never appear as somebody else's next tier.
+var commercialGroups = map[string]bool{
+	"wholesale": true,
+	"retail":    true,
 }
 
 func quotaToDollar(q int) float64 {
@@ -64,12 +77,12 @@ func GetMyTier(c *gin.Context) {
 	group := user.Group
 
 	view := myTierView{
-		Group:         group,
-		QuotaPaid:     quotaToDollar(user.Quota),
-		QuotaGift:     quotaToDollar(user.QuotaGift),
-		GiftPoolCap:   quotaToDollar(tokensheep_setting.GiftPoolCap()),
-		TotalDonated:  quotaToDollar(user.TotalDonated),
-		DailyGift:     quotaToDollar(tokensheep_setting.CheckinAward(group)),
+		Group:        group,
+		QuotaPaid:    quotaToDollar(user.Quota),
+		QuotaGift:    quotaToDollar(user.QuotaGift),
+		GiftPoolCap:  quotaToDollar(tokensheep_setting.GiftPoolCap()),
+		TotalDonated: quotaToDollar(user.TotalDonated),
+		DailyGift:    quotaToDollar(tokensheep_setting.CheckinAward(group)),
 	}
 
 	// today's gift consumption (resets daily; stale date = 0 used today)
@@ -84,6 +97,18 @@ func GetMyTier(c *gin.Context) {
 	}
 	view.SessionLimit = tokensheep_setting.SessionLimit(group)
 
+	// Commercial groups buy quota directly; there is no tier to climb, so skip
+	// the ladder entirely and leave the progress fields zeroed.
+	if commercialGroups[group] {
+		view.Commercial = true
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+			"data":    view,
+		})
+		return
+	}
+
 	// Next tier: walk the TierThresholds ladder for the first threshold
 	// strictly above total_donated.
 	thresholds := tokensheep_setting.GetTierThresholdsCopy()
@@ -93,7 +118,7 @@ func GetMyTier(c *gin.Context) {
 	}
 	pairs := make([]tierPair, 0, len(thresholds))
 	for name, q := range thresholds {
-		if q > 0 {
+		if q > 0 && !commercialGroups[name] {
 			pairs = append(pairs, tierPair{name, q})
 		}
 	}
