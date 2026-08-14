@@ -49,15 +49,6 @@ type myTierView struct {
 	Commercial bool `json:"commercial"`
 }
 
-// commercialGroups are the manually-assigned reseller groups. They buy quota
-// outright instead of earning tiers through contribution, so they are excluded
-// from the tier ladder in both directions: they get no "next tier" progress,
-// and they never appear as somebody else's next tier.
-var commercialGroups = map[string]bool{
-	"wholesale": true,
-	"retail":    true,
-}
-
 func quotaToDollar(q int) float64 {
 	if common.QuotaPerUnit <= 0 {
 		return 0
@@ -99,7 +90,7 @@ func GetMyTier(c *gin.Context) {
 
 	// Commercial groups buy quota directly; there is no tier to climb, so skip
 	// the ladder entirely and leave the progress fields zeroed.
-	if commercialGroups[group] {
+	if tokensheep_setting.CommercialGroups[group] {
 		view.Commercial = true
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
@@ -118,7 +109,7 @@ func GetMyTier(c *gin.Context) {
 	}
 	pairs := make([]tierPair, 0, len(thresholds))
 	for name, q := range thresholds {
-		if q > 0 && !commercialGroups[name] {
+		if q > 0 && !tokensheep_setting.CommercialGroups[name] {
 			pairs = append(pairs, tierPair{name, q})
 		}
 	}

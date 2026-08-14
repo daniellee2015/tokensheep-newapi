@@ -101,6 +101,17 @@ type TierCard struct {
 	Amount int    `json:"amount"`
 }
 
+// CommercialGroups are the manually-assigned reseller groups. They buy quota
+// outright rather than earning a tier through contribution, so they carry
+// sentinel TierThresholds (deliberately unreachable) purely to keep them
+// selectable in the admin user-group dropdown. Anything that presents the
+// contribution ladder to users must skip them, or the sentinel surfaces as a
+// nonsense purchase option (e.g. a "$1999999" unlock card).
+var CommercialGroups = map[string]bool{
+	"wholesale": true,
+	"retail":    true,
+}
+
 // IsTierContribution reports whether (tier, amountDollars) is a legitimate
 // contribution-card click: the tier name exists in TierThresholds and its
 // configured dollar amount equals amountDollars. Used to exempt tier-card
@@ -109,7 +120,7 @@ type TierCard struct {
 // amount must match the server-side config, so a client can't bypass MinTopUp
 // by sending an arbitrary tier name.
 func IsTierContribution(tier string, amountDollars int64) bool {
-	if tier == "" {
+	if tier == "" || CommercialGroups[tier] {
 		return false
 	}
 	const quotaPerDollar = 500_000
@@ -141,8 +152,9 @@ func GetTierThresholdsCopy() map[string]int {
 // divide to convert the map into station dollars for the wallet UI.
 //
 // Thresholds <= 0 are excluded (they signify "free tier" or admin-cleared
-// rows). This keeps the wallet Tier row responsive to admin panel edits
-// with no code change.
+// rows), as are CommercialGroups (their thresholds are unreachable sentinels,
+// not purchasable tiers). This keeps the wallet Tier row responsive to admin
+// panel edits with no code change.
 func TierCardsSorted() []TierCard {
 	economyMu.RLock()
 	rawThresholds := make(map[string]int, len(economySetting.TierThresholds))
@@ -157,7 +169,7 @@ func TierCardsSorted() []TierCard {
 
 	cards := make([]TierCard, 0, len(rawThresholds))
 	for tier, quota := range rawThresholds {
-		if quota <= 0 {
+		if quota <= 0 || CommercialGroups[tier] {
 			continue
 		}
 		cards = append(cards, TierCard{
