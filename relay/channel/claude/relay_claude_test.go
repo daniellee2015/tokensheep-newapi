@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/dto"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -54,6 +55,28 @@ func TestResponseOpenAI2ClaudeToolUseInputIsObject(t *testing.T) {
 			assert.Equal(t, tt.want, resp.Content[0].Input)
 		})
 	}
+}
+
+func TestAdaptorConvertOpenAIRequestUsesUpstreamModelName(t *testing.T) {
+	request := &dto.GeneralOpenAIRequest{
+		Model: "claude-opus-4-8",
+		Messages: []dto.Message{
+			{
+				Role: "user",
+			},
+		},
+	}
+	request.Messages[0].SetStringContent("hi")
+
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
+	info.UpstreamModelName = "claude-opus-4-8-medium"
+
+	converted, err := (&Adaptor{}).ConvertOpenAIRequest(nil, info, request)
+
+	require.NoError(t, err)
+	claudeRequest, ok := converted.(*dto.ClaudeRequest)
+	require.True(t, ok)
+	require.Equal(t, "claude-opus-4-8-medium", claudeRequest.Model)
 }
 
 func TestFormatClaudeResponseInfo_MessageStart(t *testing.T) {
