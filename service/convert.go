@@ -87,6 +87,10 @@ func ClaudeToOpenAIRequest(claudeRequest dto.ClaudeRequest, info *relaycommon.Re
 		openAITools = append(openAITools, openAITool)
 	}
 	openAIRequest.Tools = openAITools
+	openAIRequest.ToolChoice = claudeRequest.ToolChoice
+	if len(claudeRequest.OutputFormat) > 0 {
+		openAIRequest.ResponseFormat = claudeOutputFormatToOpenAIResponseFormat(claudeRequest.OutputFormat)
+	}
 
 	// Convert messages
 	openAIMessages := make([]dto.Message, 0)
@@ -608,7 +612,7 @@ func ResponseOpenAI2Claude(openAIResponse *dto.OpenAITextResponse, info *relayco
 	var stopReason string
 	contents := make([]dto.ClaudeMediaMessage, 0)
 	claudeResponse := &dto.ClaudeResponse{
-		Id:    openAIResponse.Id,
+		Id:    normalizeClaudeMessageID(openAIResponse.Id),
 		Type:  "message",
 		Role:  "assistant",
 		Model: openAIResponse.Model,
@@ -644,6 +648,48 @@ func ResponseOpenAI2Claude(openAIResponse *dto.OpenAITextResponse, info *relayco
 	claudeResponse.Usage = buildClaudeUsageFromOpenAIUsage(&openAIResponse.Usage)
 
 	return claudeResponse
+}
+
+func normalizeClaudeMessageID(id string) string {
+	id = strings.TrimSpace(id)
+	if strings.HasPrefix(id, "msg_") && !strings.Contains(id, "-") {
+		return id
+	}
+	return "msg_" + common.GetUUID()
+}
+
+func claudeOutputFormatToOpenAIResponseFormat(raw json.RawMessage) *dto.ResponseFormat {
+	var body map[string]any
+	if err := common.Unmarshal(raw, &body); err != nil {
+		return nil
+	}
+	if schema, ok := body["schema"]; ok {
+		name := "structured_output"
+		if rawName, ok := body["name"].(string); ok && strings.TrimSpace(rawName) != "" {
+			name = strings.TrimSpace(rawName)
+		}
+		schemaBody := dto.FormatJsonSchema{
+			Name:   name,
+			Schema: schema,
+		}
+		if description, ok := body["description"].(string); ok {
+			schemaBody.Description = description
+		}
+		if strict, ok := body["strict"]; ok {
+			if strictBytes, err := common.Marshal(strict); err == nil {
+				schemaBody.Strict = strictBytes
+			}
+		}
+		schemaBytes, err := common.Marshal(schemaBody)
+		if err != nil {
+			return nil
+		}
+		return &dto.ResponseFormat{Type: "json_schema", JsonSchema: schemaBytes}
+	}
+	if typ, ok := body["type"].(string); ok && typ != "" {
+		return &dto.ResponseFormat{Type: typ}
+	}
+	return nil
 }
 
 func stopReasonOpenAI2Claude(reason string) string {

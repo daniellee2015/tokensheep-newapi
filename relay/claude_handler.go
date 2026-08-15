@@ -52,10 +52,12 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		request.MaxTokens = &defaultMaxTokens
 	}
 
+	preserveMappedEffortVariant := shouldPreserveMappedEffortVariant(info)
 	if baseModel, effortLevel, ok := reasoning.TrimEffortSuffix(request.Model); ok && effortLevel != "" &&
 		(strings.HasPrefix(request.Model, "claude-opus-4-6") ||
 			strings.HasPrefix(request.Model, "claude-opus-4-7") ||
-			strings.HasPrefix(request.Model, "claude-opus-4-8")) {
+			strings.HasPrefix(request.Model, "claude-opus-4-8")) &&
+		!preserveMappedEffortVariant {
 		request.Model = baseModel
 		request.Thinking = &dto.Thinking{
 			Type: "adaptive",
@@ -220,4 +222,12 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 
 	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
 	return nil
+}
+
+func shouldPreserveMappedEffortVariant(info *relaycommon.RelayInfo) bool {
+	if info == nil || !info.IsModelMapped || info.ChannelMeta == nil {
+		return false
+	}
+	baseURL := strings.ToLower(strings.TrimSpace(info.ChannelMeta.ChannelBaseUrl))
+	return strings.Contains(baseURL, "cpa.muxpay.xyz") || strings.Contains(baseURL, "cli-proxy-api")
 }
