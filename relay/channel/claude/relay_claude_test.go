@@ -95,6 +95,15 @@ func TestFormatClaudeResponseInfo_MessageStart(t *testing.T) {
 	}
 }
 
+func TestNormalizeClaudeResponseMessageID(t *testing.T) {
+	got := normalizeClaudeResponseMessageID("msg_a931edb0-1609-428a-a345-fd61e4113a0c")
+
+	require.True(t, strings.HasPrefix(got, "msg_"))
+	require.NotContains(t, got, "-")
+	require.NotEqual(t, "msg_a931edb0-1609-428a-a345-fd61e4113a0c", got)
+	require.Equal(t, "msg_valid", normalizeClaudeResponseMessageID("msg_valid"))
+}
+
 func TestFormatClaudeResponseInfo_MessageDelta_FullUsage(t *testing.T) {
 	// message_start 先积累 usage
 	claudeInfo := &ClaudeResponseInfo{

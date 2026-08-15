@@ -980,7 +980,11 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 			return types.NewError(err, types.ErrorCodeBadResponseBody)
 		}
 	case types.RelayFormatClaude:
-		responseData = data
+		claudeResponse.Id = normalizeClaudeResponseMessageID(claudeResponse.Id)
+		responseData, err = common.Marshal(claudeResponse)
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeBadResponseBody)
+		}
 	}
 
 	if claudeResponse.Usage != nil && claudeResponse.Usage.ServerToolUse != nil && claudeResponse.Usage.ServerToolUse.WebSearchRequests > 0 {
@@ -989,6 +993,14 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 
 	service.IOCopyBytesGracefully(c, httpResp, responseData)
 	return nil
+}
+
+func normalizeClaudeResponseMessageID(id string) string {
+	id = strings.TrimSpace(id)
+	if strings.HasPrefix(id, "msg_") && !strings.Contains(id, "-") {
+		return id
+	}
+	return "msg_" + common.GetUUID()
 }
 
 func ClaudeHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {
