@@ -229,15 +229,30 @@ func shouldPreserveMappedEffortVariant(info *relaycommon.RelayInfo) bool {
 }
 
 func applyCursorProxyNativeToolFallback(info *relaycommon.RelayInfo, request *dto.ClaudeRequest) bool {
-	if info == nil || request == nil || !isCursorProxyClaudeChannel(info) {
+	if info == nil || request == nil {
+		return false
+	}
+	if request.ToolChoice != nil && !isCursorProxyClaudeChannel(info) {
+		baseURL := ""
+		if info.ChannelMeta != nil {
+			baseURL = info.ChannelMeta.ChannelBaseUrl
+		}
+		common.SysLog(fmt.Sprintf("cursor claude native tool fallback skipped: non_cursor_channel base_url=%s tool_choice_type=%T tools_type=%T", baseURL, request.ToolChoice, request.Tools))
+		return false
+	}
+	if !isCursorProxyClaudeChannel(info) {
 		return false
 	}
 	toolName, ok := forcedClaudeToolName(request.ToolChoice)
 	if !ok {
+		if request.ToolChoice != nil {
+			common.SysLog(fmt.Sprintf("cursor claude native tool fallback skipped: unsupported_tool_choice type=%T value=%v tools_type=%T", request.ToolChoice, request.ToolChoice, request.Tools))
+		}
 		return false
 	}
 	tool, ok := findClaudeTool(request.Tools, toolName)
 	if !ok || len(tool.InputSchema) == 0 {
+		common.SysLog(fmt.Sprintf("cursor claude native tool fallback skipped: tool_not_found name=%s tools_type=%T", toolName, request.Tools))
 		return false
 	}
 	outputFormat, err := common.Marshal(map[string]any{
