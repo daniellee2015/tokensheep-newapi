@@ -49,6 +49,9 @@ func TestApplyCursorProxyNativeToolFallback(t *testing.T) {
 			"type": "tool",
 			"name": "emit_result",
 		},
+		Messages: []dto.ClaudeMessage{
+			{Role: "user", Content: "Call emit_result with name=test."},
+		},
 	}
 
 	require.True(t, applyCursorProxyNativeToolFallback(info, request))
@@ -57,6 +60,7 @@ func TestApplyCursorProxyNativeToolFallback(t *testing.T) {
 	require.NotEmpty(t, request.OutputFormat)
 	require.Equal(t, "emit_result", info.NativeToolFallbackName)
 	require.NotEmpty(t, info.NativeToolFallbackId)
+	require.Equal(t, "Return JSON object with name=test.", request.Messages[0].Content)
 }
 
 func TestNormalizeNativeClaudeRequestAddsOutputFormatSystemInstruction(t *testing.T) {

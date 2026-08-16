@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -249,12 +250,56 @@ func applyCursorProxyNativeToolFallback(info *relaycommon.RelayInfo, request *dt
 	request.OutputFormat = outputFormat
 	request.Tools = nil
 	request.ToolChoice = nil
+	sanitizeCursorProxyNativeToolPrompt(request, tool.Name)
 	if info.ClaudeConvertInfo == nil {
 		info.ClaudeConvertInfo = &relaycommon.ClaudeConvertInfo{}
 	}
 	info.NativeToolFallbackName = tool.Name
 	info.NativeToolFallbackId = "toolu_" + common.GetRandomString(24)
 	return true
+}
+
+func sanitizeCursorProxyNativeToolPrompt(request *dto.ClaudeRequest, toolName string) {
+	if request == nil || strings.TrimSpace(toolName) == "" {
+		return
+	}
+	for msgIndex := range request.Messages {
+		if request.Messages[msgIndex].Role != "user" {
+			continue
+		}
+		switch content := request.Messages[msgIndex].Content.(type) {
+		case string:
+			request.Messages[msgIndex].Content = sanitizeCursorProxyNativeToolText(content, toolName)
+		case []any:
+			for itemIndex := range content {
+				item, ok := content[itemIndex].(map[string]any)
+				if !ok || item["type"] != dto.ContentTypeText {
+					continue
+				}
+				if text, ok := item["text"].(string); ok {
+					item["text"] = sanitizeCursorProxyNativeToolText(text, toolName)
+				}
+			}
+			request.Messages[msgIndex].Content = content
+		case []dto.ClaudeMediaMessage:
+			for itemIndex := range content {
+				if content[itemIndex].Type == dto.ContentTypeText && content[itemIndex].Text != nil {
+					sanitized := sanitizeCursorProxyNativeToolText(*content[itemIndex].Text, toolName)
+					content[itemIndex].Text = &sanitized
+				}
+			}
+			request.Messages[msgIndex].Content = content
+		}
+	}
+}
+
+func sanitizeCursorProxyNativeToolText(text string, toolName string) string {
+	pattern := regexp.MustCompile(`(?i)\b(call|invoke|use)\s+` + regexp.QuoteMeta(toolName) + `\s*(with|using)?`)
+	sanitized := pattern.ReplaceAllString(text, "Return JSON object with")
+	if sanitized == text {
+		return text
+	}
+	return sanitized
 }
 
 func isCursorProxyClaudeChannel(info *relaycommon.RelayInfo) bool {
