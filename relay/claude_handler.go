@@ -31,10 +31,6 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	if !ok {
 		return types.NewErrorWithStatusCode(fmt.Errorf("invalid request type, expected *dto.ClaudeRequest, got %T", info.Request), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 	}
-	if claudeReq.Tools != nil || claudeReq.ToolChoice != nil {
-		common.SysLog(fmt.Sprintf("claude native incoming tools: model=%s tools_type=%T tool_choice_type=%T", claudeReq.Model, claudeReq.Tools, claudeReq.ToolChoice))
-	}
-
 	request, err := common.DeepCopy(claudeReq)
 	if err != nil {
 		return types.NewError(fmt.Errorf("failed to copy request to ClaudeRequest: %w", err), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
@@ -236,11 +232,6 @@ func applyCursorProxyNativeToolFallback(info *relaycommon.RelayInfo, request *dt
 		return false
 	}
 	if request.ToolChoice != nil && !isCursorProxyClaudeChannel(info) {
-		baseURL := ""
-		if info.ChannelMeta != nil {
-			baseURL = info.ChannelMeta.ChannelBaseUrl
-		}
-		common.SysLog(fmt.Sprintf("cursor claude native tool fallback skipped: non_cursor_channel base_url=%s tool_choice_type=%T tools_type=%T", baseURL, request.ToolChoice, request.Tools))
 		return false
 	}
 	if !isCursorProxyClaudeChannel(info) {
@@ -248,14 +239,10 @@ func applyCursorProxyNativeToolFallback(info *relaycommon.RelayInfo, request *dt
 	}
 	toolName, ok := forcedClaudeToolName(request.ToolChoice)
 	if !ok {
-		if request.ToolChoice != nil {
-			common.SysLog(fmt.Sprintf("cursor claude native tool fallback skipped: unsupported_tool_choice type=%T value=%v tools_type=%T", request.ToolChoice, request.ToolChoice, request.Tools))
-		}
 		return false
 	}
 	tool, ok := findClaudeTool(request.Tools, toolName)
 	if !ok || len(tool.InputSchema) == 0 {
-		common.SysLog(fmt.Sprintf("cursor claude native tool fallback skipped: tool_not_found name=%s tools_type=%T", toolName, request.Tools))
 		return false
 	}
 	outputFormat, err := common.Marshal(map[string]any{
@@ -274,7 +261,6 @@ func applyCursorProxyNativeToolFallback(info *relaycommon.RelayInfo, request *dt
 	}
 	info.NativeToolFallbackName = tool.Name
 	info.NativeToolFallbackId = "toolu_" + common.GetRandomString(24)
-	common.SysLog(fmt.Sprintf("cursor claude native tool fallback applied: model=%s tool=%s", request.Model, tool.Name))
 	return true
 }
 

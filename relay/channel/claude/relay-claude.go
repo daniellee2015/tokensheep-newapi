@@ -678,6 +678,7 @@ type ClaudeResponseInfo struct {
 	ResponseText         strings.Builder
 	LastNativeDeltaText  string
 	LastNativeDeltaBlock int
+	NativeReplayOffset   int
 	Usage                *dto.Usage
 	Done                 bool
 }
@@ -1143,12 +1144,39 @@ func shouldSkipDuplicateNativeTextDelta(info *relaycommon.RelayInfo, claudeInfo 
 		return true
 	}
 	request, ok := info.Request.(*dto.ClaudeRequest)
-	if !ok || len(request.OutputFormat) == 0 {
+	hasNativeToolFallback := info.ClaudeConvertInfo != nil && info.NativeToolFallbackName != ""
+	if !ok || (len(request.OutputFormat) == 0 && !hasNativeToolFallback) {
 		return false
 	}
 	current := strings.TrimSpace(claudeInfo.ResponseText.String())
 	next := strings.TrimSpace(text)
-	return current != "" && next != "" && current == next
+	if current == "" || next == "" {
+		claudeInfo.NativeReplayOffset = 0
+		return false
+	}
+	if current == next {
+		claudeInfo.NativeReplayOffset = 0
+		return true
+	}
+	if claudeInfo.NativeReplayOffset > 0 {
+		if claudeInfo.NativeReplayOffset < len(current) &&
+			strings.HasPrefix(current[claudeInfo.NativeReplayOffset:], next) {
+			claudeInfo.NativeReplayOffset += len(next)
+			if claudeInfo.NativeReplayOffset >= len(current) {
+				claudeInfo.NativeReplayOffset = 0
+			}
+			return true
+		}
+		claudeInfo.NativeReplayOffset = 0
+	}
+	if strings.HasPrefix(current, next) {
+		claudeInfo.NativeReplayOffset = len(next)
+		if claudeInfo.NativeReplayOffset >= len(current) {
+			claudeInfo.NativeReplayOffset = 0
+		}
+		return true
+	}
+	return false
 }
 
 func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, claudeInfo *ClaudeResponseInfo) {

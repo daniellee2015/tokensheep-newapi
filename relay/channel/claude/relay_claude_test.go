@@ -495,6 +495,45 @@ func TestApplyNativeClaudeToolFallbackConvertsTextDeltaToToolDelta(t *testing.T)
 	require.Equal(t, "tool_use", *messageDeltaResponse.Delta.StopReason)
 }
 
+func TestShouldSkipDuplicateNativeTextDeltaSkipsFragmentedReplay(t *testing.T) {
+	info := &relaycommon.RelayInfo{
+		RelayFormat: types.RelayFormatClaude,
+		ClaudeConvertInfo: &relaycommon.ClaudeConvertInfo{
+			NativeToolFallbackName: "emit_result",
+		},
+		Request: &dto.ClaudeRequest{
+			Model: "claude-opus-4-8",
+		},
+	}
+	claudeInfo := &ClaudeResponseInfo{}
+	first := []string{`{"name":`, `"test",`, `"score":1.5`, `}`}
+	for _, text := range first {
+		response := &dto.ClaudeResponse{
+			Type:  "content_block_delta",
+			Index: common.GetPointer(0),
+			Delta: &dto.ClaudeMediaMessage{
+				Type: "text_delta",
+				Text: common.GetPointer(text),
+			},
+		}
+		require.False(t, shouldSkipDuplicateNativeTextDelta(info, claudeInfo, response))
+		FormatClaudeResponseInfo(response, nil, claudeInfo)
+	}
+
+	for _, text := range first {
+		response := &dto.ClaudeResponse{
+			Type:  "content_block_delta",
+			Index: common.GetPointer(0),
+			Delta: &dto.ClaudeMediaMessage{
+				Type: "text_delta",
+				Text: common.GetPointer(text),
+			},
+		}
+		require.True(t, shouldSkipDuplicateNativeTextDelta(info, claudeInfo, response))
+	}
+	require.Equal(t, `{"name":"test","score":1.5}`, claudeInfo.ResponseText.String())
+}
+
 func TestRequestOpenAI2ClaudeMessage_ClaudeOpus48HighUsesAdaptiveThinking(t *testing.T) {
 	request := dto.GeneralOpenAIRequest{
 		Model:       "claude-opus-4-8-high",
