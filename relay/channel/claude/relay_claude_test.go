@@ -478,6 +478,46 @@ func TestRequestOpenAI2ClaudeMessage_ClaudeOpus48HighUsesAdaptiveThinking(t *tes
 	require.Nil(t, claudeRequest.TopK)
 }
 
+func TestRequestOpenAI2ClaudeMessage_NewClaudeEffortSuffixUsesAdaptiveThinking(t *testing.T) {
+	tests := []struct {
+		name      string
+		model     string
+		wantModel string
+	}{
+		{name: "fable", model: "claude-fable-5-high", wantModel: "claude-fable-5"},
+		{name: "new order", model: "claude-5-sonnet-medium", wantModel: "claude-5-sonnet"},
+		{name: "dotted cursor order", model: "claude-4.6-sonnet-medium", wantModel: "claude-4.6-sonnet"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := dto.GeneralOpenAIRequest{
+				Model:       test.model,
+				Temperature: commonPointer(0.7),
+				TopP:        commonPointer(0.9),
+				TopK:        commonPointer(40),
+				Messages: []dto.Message{
+					{
+						Role:    "user",
+						Content: "hello",
+					},
+				},
+			}
+
+			claudeRequest, err := RequestOpenAI2ClaudeMessage(nil, request)
+
+			require.NoError(t, err)
+			require.Equal(t, test.wantModel, claudeRequest.Model)
+			require.NotNil(t, claudeRequest.Thinking)
+			require.Equal(t, "adaptive", claudeRequest.Thinking.Type)
+			require.Equal(t, "summarized", claudeRequest.Thinking.Display)
+			require.Nil(t, claudeRequest.Temperature)
+			require.Nil(t, claudeRequest.TopP)
+			require.Nil(t, claudeRequest.TopK)
+		})
+	}
+}
+
 func TestRequestOpenAI2ClaudeMessageSupportsPDFFilenameAlias(t *testing.T) {
 	pdfData := base64.StdEncoding.EncodeToString([]byte("%PDF-1.4\nBT /F1 24 Tf 72 720 Td (MAGIC_PDF_WORD: BANANA123) Tj ET"))
 	request := dto.GeneralOpenAIRequest{
@@ -570,6 +610,33 @@ func TestRequestOpenAI2ClaudeMessage_ClaudeOpus48ThinkingUsesAdaptiveHighEffort(
 	claudeRequest, err := RequestOpenAI2ClaudeMessage(nil, request)
 	require.NoError(t, err)
 	require.Equal(t, "claude-opus-4-8", claudeRequest.Model)
+	require.NotNil(t, claudeRequest.Thinking)
+	require.Equal(t, "adaptive", claudeRequest.Thinking.Type)
+	require.Equal(t, "summarized", claudeRequest.Thinking.Display)
+	require.JSONEq(t, `{"effort":"high"}`, string(claudeRequest.OutputConfig))
+	require.Nil(t, claudeRequest.Temperature)
+	require.Nil(t, claudeRequest.TopP)
+	require.Nil(t, claudeRequest.TopK)
+}
+
+func TestRequestOpenAI2ClaudeMessage_NewClaudeThinkingAliasUsesAdaptiveHighEffort(t *testing.T) {
+	request := dto.GeneralOpenAIRequest{
+		Model:       "claude-sonnet-5-thinking",
+		Temperature: commonPointer(0.7),
+		TopP:        commonPointer(0.9),
+		TopK:        commonPointer(40),
+		Messages: []dto.Message{
+			{
+				Role:    "user",
+				Content: "hello",
+			},
+		},
+	}
+
+	claudeRequest, err := RequestOpenAI2ClaudeMessage(nil, request)
+
+	require.NoError(t, err)
+	require.Equal(t, "claude-sonnet-5", claudeRequest.Model)
 	require.NotNil(t, claudeRequest.Thinking)
 	require.Equal(t, "adaptive", claudeRequest.Thinking.Type)
 	require.Equal(t, "summarized", claudeRequest.Thinking.Display)

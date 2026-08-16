@@ -157,18 +157,13 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 	}
 
 	if baseModel, effortLevel, ok := reasoning.TrimEffortSuffix(textRequest.Model); ok && effortLevel != "" &&
-		(strings.HasPrefix(textRequest.Model, "claude-opus-4-6") ||
-			strings.HasPrefix(textRequest.Model, "claude-opus-4-7") ||
-			strings.HasPrefix(textRequest.Model, "claude-opus-4-8")) {
+		reasoning.SupportsClaudeAdaptiveEffortSuffix(textRequest.Model) {
 		claudeRequest.Model = baseModel
 		claudeRequest.Thinking = &dto.Thinking{
 			Type: "adaptive",
 		}
 		claudeRequest.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":"%s"}`, effortLevel))
-		if strings.HasPrefix(baseModel, "claude-opus-4-7") ||
-			strings.HasPrefix(baseModel, "claude-opus-4-8") {
-			// Opus 4.7/4.8 reject non-default temperature/top_p/top_k with 400
-			// and defaults display to "omitted"; restore the 4.6 visible summary.
+		if !reasoning.ShouldUseClaudeLegacyAdaptiveSampling(baseModel) {
 			claudeRequest.Thinking.Display = "summarized"
 			claudeRequest.Temperature = nil
 			claudeRequest.TopP = nil
@@ -181,9 +176,7 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		strings.HasSuffix(textRequest.Model, "-thinking") {
 
 		trimmedModel := strings.TrimSuffix(textRequest.Model, "-thinking")
-		if strings.HasPrefix(trimmedModel, "claude-opus-4-7") ||
-			strings.HasPrefix(trimmedModel, "claude-opus-4-8") {
-			// Opus 4.7/4.8 reject thinking.type="enabled"; use adaptive at high effort.
+		if reasoning.SupportsClaudeAdaptiveThinkingAlias(trimmedModel) && !reasoning.ShouldUseClaudeLegacyAdaptiveSampling(trimmedModel) {
 			claudeRequest.Thinking = &dto.Thinking{Type: "adaptive", Display: "summarized"}
 			claudeRequest.OutputConfig = json.RawMessage(`{"effort":"high"}`)
 			claudeRequest.Temperature = nil
