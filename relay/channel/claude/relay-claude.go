@@ -764,64 +764,6 @@ func buildMessageDeltaPatchUsage(claudeResponse *dto.ClaudeResponse, claudeInfo 
 	return usage
 }
 
-func shouldSuppressCursorProxyCacheUsage(info *relaycommon.RelayInfo) bool {
-	if info == nil || info.ChannelMeta == nil {
-		return false
-	}
-	baseURL := strings.ToLower(strings.TrimSpace(info.ChannelMeta.ChannelBaseUrl))
-	return strings.Contains(baseURL, "cpa") ||
-		strings.Contains(baseURL, "cli-proxy-api") ||
-		strings.Contains(baseURL, "cursor")
-}
-
-func suppressCursorProxyUsageCacheDetails(info *relaycommon.RelayInfo, usage *dto.Usage) {
-	if !shouldSuppressCursorProxyCacheUsage(info) || usage == nil {
-		return
-	}
-	usage.PromptTokensDetails.CachedTokens = 0
-	usage.PromptTokensDetails.CachedCreationTokens = 0
-	if usage.InputTokensDetails != nil {
-		usage.InputTokensDetails.CachedTokens = 0
-		usage.InputTokensDetails.CachedCreationTokens = 0
-	}
-	usage.ClaudeCacheCreation5mTokens = 0
-	usage.ClaudeCacheCreation1hTokens = 0
-}
-
-func suppressCursorProxyClaudeResponseCacheDetails(info *relaycommon.RelayInfo, response *dto.ClaudeResponse) {
-	if !shouldSuppressCursorProxyCacheUsage(info) || response == nil {
-		return
-	}
-	if response.Message != nil && response.Message.Usage != nil {
-		suppressClaudeUsageCacheDetails(response.Message.Usage)
-	}
-	if response.Usage != nil {
-		suppressClaudeUsageCacheDetails(response.Usage)
-	}
-}
-
-func suppressClaudeUsageCacheDetails(usage *dto.ClaudeUsage) {
-	if usage == nil {
-		return
-	}
-	usage.CacheReadInputTokens = 0
-	usage.CacheCreationInputTokens = 0
-	usage.CacheCreation = nil
-	usage.ClaudeCacheCreation5mTokens = 0
-	usage.ClaudeCacheCreation1hTokens = 0
-}
-
-func marshalClaudeStreamData(original string, response *dto.ClaudeResponse) string {
-	if response == nil {
-		return original
-	}
-	data, err := common.Marshal(response)
-	if err != nil {
-		return original
-	}
-	return string(data)
-}
-
 func shouldSkipClaudeMessageDeltaUsagePatch(info *relaycommon.RelayInfo) bool {
 	if model_setting.GetGlobalSettings().PassThroughRequestEnabled {
 		return true
@@ -954,10 +896,6 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	if claudeResponse.Delta != nil && claudeResponse.Delta.StopReason != nil {
 		maybeMarkClaudeRefusal(c, *claudeResponse.Delta.StopReason)
 	}
-	suppressCursorProxyClaudeResponseCacheDetails(info, &claudeResponse)
-	if shouldSuppressCursorProxyCacheUsage(info) {
-		data = marshalClaudeStreamData(data, &claudeResponse)
-	}
 	if info.RelayFormat == types.RelayFormatClaude {
 		FormatClaudeResponseInfo(&claudeResponse, nil, claudeInfo)
 
@@ -1010,7 +948,6 @@ func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, clau
 	}
 	if claudeInfo.Usage != nil {
 		claudeInfo.Usage.UsageSemantic = "anthropic"
-		suppressCursorProxyUsageCacheDetails(info, claudeInfo.Usage)
 	}
 
 	if info.RelayFormat == types.RelayFormatClaude {
@@ -1065,7 +1002,6 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		claudeInfo.Usage = &dto.Usage{}
 	}
 	if claudeResponse.Usage != nil {
-		suppressCursorProxyClaudeResponseCacheDetails(info, &claudeResponse)
 		claudeInfo.Usage.PromptTokens = claudeResponse.Usage.InputTokens
 		claudeInfo.Usage.CompletionTokens = claudeResponse.Usage.OutputTokens
 		claudeInfo.Usage.TotalTokens = claudeResponse.Usage.InputTokens + claudeResponse.Usage.OutputTokens
@@ -1086,7 +1022,6 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		}
 	case types.RelayFormatClaude:
 		claudeResponse.Id = normalizeClaudeResponseMessageID(claudeResponse.Id)
-		suppressCursorProxyClaudeResponseCacheDetails(info, &claudeResponse)
 		responseData, err = common.Marshal(claudeResponse)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeBadResponseBody)
