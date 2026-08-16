@@ -31,6 +31,9 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	if !ok {
 		return types.NewErrorWithStatusCode(fmt.Errorf("invalid request type, expected *dto.ClaudeRequest, got %T", info.Request), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 	}
+	if claudeReq.Tools != nil || claudeReq.ToolChoice != nil {
+		common.SysLog(fmt.Sprintf("claude native incoming tools: model=%s tools_type=%T tool_choice_type=%T", claudeReq.Model, claudeReq.Tools, claudeReq.ToolChoice))
+	}
 
 	request, err := common.DeepCopy(claudeReq)
 	if err != nil {
