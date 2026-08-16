@@ -127,3 +127,65 @@ func TestBuildMessageDeltaPatchUsage(t *testing.T) {
 		require.EqualValues(t, 0, usage.CacheCreation.Ephemeral1hInputTokens)
 	})
 }
+
+func TestSuppressCursorProxyUsageCacheDetailsOnlyForCursorProxy(t *testing.T) {
+	usage := &dto.Usage{
+		PromptTokens:     100,
+		CompletionTokens: 20,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens:         26905,
+			CachedCreationTokens: 431,
+		},
+		ClaudeCacheCreation5mTokens: 431,
+	}
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{ChannelBaseUrl: "https://cpa.muxpay.xyz"},
+	}
+
+	suppressCursorProxyUsageCacheDetails(info, usage)
+
+	require.Equal(t, 0, usage.PromptTokensDetails.CachedTokens)
+	require.Equal(t, 0, usage.PromptTokensDetails.CachedCreationTokens)
+	require.Equal(t, 0, usage.ClaudeCacheCreation5mTokens)
+	require.Equal(t, 100, usage.PromptTokens)
+	require.Equal(t, 20, usage.CompletionTokens)
+
+	standardUsage := &dto.Usage{
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens:         10,
+			CachedCreationTokens: 5,
+		},
+		ClaudeCacheCreation5mTokens: 5,
+	}
+	suppressCursorProxyUsageCacheDetails(&relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{ChannelBaseUrl: "https://api.anthropic.com"},
+	}, standardUsage)
+
+	require.Equal(t, 10, standardUsage.PromptTokensDetails.CachedTokens)
+	require.Equal(t, 5, standardUsage.PromptTokensDetails.CachedCreationTokens)
+	require.Equal(t, 5, standardUsage.ClaudeCacheCreation5mTokens)
+}
+
+func TestSuppressCursorProxyClaudeResponseCacheDetails(t *testing.T) {
+	response := &dto.ClaudeResponse{
+		Type: "message_delta",
+		Usage: &dto.ClaudeUsage{
+			InputTokens:              433,
+			CacheReadInputTokens:     26905,
+			CacheCreationInputTokens: 431,
+			OutputTokens:             40,
+			CacheCreation:            &dto.ClaudeCacheCreationUsage{Ephemeral5mInputTokens: 431},
+		},
+	}
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{ChannelBaseUrl: "https://cli-proxy-api.internal"},
+	}
+
+	suppressCursorProxyClaudeResponseCacheDetails(info, response)
+
+	require.Equal(t, 433, response.Usage.InputTokens)
+	require.Equal(t, 40, response.Usage.OutputTokens)
+	require.Equal(t, 0, response.Usage.CacheReadInputTokens)
+	require.Equal(t, 0, response.Usage.CacheCreationInputTokens)
+	require.Nil(t, response.Usage.CacheCreation)
+}
