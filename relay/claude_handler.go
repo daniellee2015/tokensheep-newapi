@@ -256,6 +256,7 @@ func applyCursorProxyNativeToolFallback(info *relaycommon.RelayInfo, request *dt
 	}
 	info.NativeToolFallbackName = tool.Name
 	info.NativeToolFallbackId = "toolu_" + common.GetRandomString(24)
+	common.SysLog(fmt.Sprintf("cursor claude native tool fallback applied: model=%s tool=%s", request.Model, tool.Name))
 	return true
 }
 
