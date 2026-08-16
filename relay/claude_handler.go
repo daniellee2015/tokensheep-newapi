@@ -51,6 +51,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		defaultMaxTokens := uint(model_setting.GetClaudeSettings().GetDefaultMaxTokens(request.Model))
 		request.MaxTokens = &defaultMaxTokens
 	}
+	normalizeNativeClaudeRequest(request)
 
 	preserveMappedEffortVariant := shouldPreserveMappedEffortVariant(info)
 	if baseModel, effortLevel, ok := reasoning.TrimEffortSuffix(request.Model); ok && effortLevel != "" &&
@@ -230,4 +231,90 @@ func shouldPreserveMappedEffortVariant(info *relaycommon.RelayInfo) bool {
 	}
 	baseURL := strings.ToLower(strings.TrimSpace(info.ChannelMeta.ChannelBaseUrl))
 	return strings.Contains(baseURL, "cpa.muxpay.xyz") || strings.Contains(baseURL, "cli-proxy-api")
+}
+
+func normalizeNativeClaudeRequest(request *dto.ClaudeRequest) {
+	if request == nil {
+		return
+	}
+	if instruction := buildClaudeNativeOutputFormatInstruction(request.OutputFormat); instruction != "" {
+		prependClaudeSystemText(request, instruction)
+	}
+	for msgIndex := range request.Messages {
+		if request.Messages[msgIndex].IsStringContent() {
+			continue
+		}
+		contents, err := request.Messages[msgIndex].ParseContent()
+		if err != nil || len(contents) == 0 {
+			continue
+		}
+		expanded := make([]dto.ClaudeMediaMessage, 0, len(contents)+1)
+		for _, content := range contents {
+			expanded = append(expanded, content)
+			if content.Type != "document" || content.Source == nil {
+				continue
+			}
+			if !strings.HasPrefix(content.Source.MediaType, "application/pdf") {
+				continue
+			}
+			base64Data := common.Interface2String(content.Source.Data)
+			if base64Data == "" {
+				continue
+			}
+			extractedText := service.ExtractSimplePDFText(base64Data)
+			if extractedText == "" {
+				continue
+			}
+			expanded = append(expanded, dto.ClaudeMediaMessage{
+				Type: "text",
+				Text: common.GetPointer[string]("Extracted PDF text:\n" + extractedText),
+			})
+		}
+		request.Messages[msgIndex].Content = expanded
+	}
+}
+
+func prependClaudeSystemText(request *dto.ClaudeRequest, text string) {
+	newSystem := dto.ClaudeMediaMessage{Type: dto.ContentTypeText}
+	newSystem.SetText(text)
+	if request.System == nil {
+		request.System = []dto.ClaudeMediaMessage{newSystem}
+		return
+	}
+	if request.IsStringSystem() {
+		existing := strings.TrimSpace(request.GetStringSystem())
+		if existing == "" {
+			request.System = []dto.ClaudeMediaMessage{newSystem}
+		} else {
+			existingSystem := dto.ClaudeMediaMessage{Type: dto.ContentTypeText}
+			existingSystem.SetText(existing)
+			request.System = []dto.ClaudeMediaMessage{newSystem, existingSystem}
+		}
+		return
+	}
+	systemContents := request.ParseSystem()
+	request.System = append([]dto.ClaudeMediaMessage{newSystem}, systemContents...)
+}
+
+func buildClaudeNativeOutputFormatInstruction(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var outputFormat map[string]any
+	if err := common.Unmarshal(raw, &outputFormat); err != nil {
+		return ""
+	}
+	formatType, _ := outputFormat["type"].(string)
+	if formatType != "json_schema" && formatType != "json_object" {
+		if _, ok := outputFormat["schema"]; !ok {
+			return ""
+		}
+	}
+	instruction := "You must respond with a valid JSON object only. Do not include markdown, code fences, or explanatory text."
+	if schema, ok := outputFormat["schema"]; ok {
+		if schemaBytes, err := common.Marshal(schema); err == nil {
+			instruction += " The JSON object must conform to this JSON Schema: " + string(schemaBytes)
+		}
+	}
+	return instruction
 }

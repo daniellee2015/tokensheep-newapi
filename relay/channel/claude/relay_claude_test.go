@@ -424,7 +424,7 @@ func TestRequestOpenAI2ClaudeMessageSupportsPDFFilenameAlias(t *testing.T) {
 func TestExtractSimplePDFTextDecodesEscapedLiteralStrings(t *testing.T) {
 	pdfData := base64.StdEncoding.EncodeToString([]byte("%PDF-1.4\nBT (hello\\040world \\(ok\\)) Tj ET"))
 
-	text := extractSimplePDFText(pdfData)
+	text := service.ExtractSimplePDFText(pdfData)
 
 	require.Contains(t, text, "hello world (ok)")
 }
