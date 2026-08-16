@@ -382,7 +382,7 @@ func TestRequestOpenAI2ClaudeMessage_ClaudeOpus48HighUsesAdaptiveThinking(t *tes
 }
 
 func TestRequestOpenAI2ClaudeMessageSupportsPDFFilenameAlias(t *testing.T) {
-	pdfData := base64.StdEncoding.EncodeToString([]byte("%PDF-1.4 test"))
+	pdfData := base64.StdEncoding.EncodeToString([]byte("%PDF-1.4\nBT /F1 24 Tf 72 720 Td (MAGIC_PDF_WORD: BANANA123) Tj ET"))
 	request := dto.GeneralOpenAIRequest{
 		Model: "claude-opus-5",
 		Messages: []dto.Message{
@@ -411,11 +411,22 @@ func TestRequestOpenAI2ClaudeMessageSupportsPDFFilenameAlias(t *testing.T) {
 	require.Len(t, claudeRequest.Messages, 1)
 	content, ok := claudeRequest.Messages[0].Content.([]dto.ClaudeMediaMessage)
 	require.True(t, ok)
-	require.Len(t, content, 2)
+	require.Len(t, content, 3)
 	require.Equal(t, "document", content[1].Type)
 	require.NotNil(t, content[1].Source)
 	require.Equal(t, "application/pdf", content[1].Source.MediaType)
 	require.Equal(t, pdfData, content[1].Source.Data)
+	require.Equal(t, "text", content[2].Type)
+	require.NotNil(t, content[2].Text)
+	require.Contains(t, *content[2].Text, "MAGIC_PDF_WORD: BANANA123")
+}
+
+func TestExtractSimplePDFTextDecodesEscapedLiteralStrings(t *testing.T) {
+	pdfData := base64.StdEncoding.EncodeToString([]byte("%PDF-1.4\nBT (hello\\040world \\(ok\\)) Tj ET"))
+
+	text := extractSimplePDFText(pdfData)
+
+	require.Contains(t, text, "hello world (ok)")
 }
 
 func TestRequestOpenAI2ClaudeMessageAddsJSONSchemaInstruction(t *testing.T) {
