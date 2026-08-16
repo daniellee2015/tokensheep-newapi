@@ -829,6 +829,48 @@ func normalizeCursorProxyClaudeResponseUsage(info *relaycommon.RelayInfo, respon
 	return changed
 }
 
+func nativeClaudeDisplayModelName(info *relaycommon.RelayInfo) string {
+	if info == nil || !info.IsModelMapped || info.OriginModelName == "" || info.OriginModelName == info.UpstreamModelName {
+		return ""
+	}
+	return info.OriginModelName
+}
+
+func applyNativeClaudeDisplayModel(info *relaycommon.RelayInfo, response *dto.ClaudeResponse) {
+	displayModel := nativeClaudeDisplayModelName(info)
+	if displayModel == "" || response == nil {
+		return
+	}
+	if response.Type == "message_start" && response.Message != nil {
+		response.Message.Model = displayModel
+		return
+	}
+	if response.Model != "" {
+		response.Model = displayModel
+	}
+}
+
+func patchNativeClaudeModelData(data string, response *dto.ClaudeResponse) string {
+	if data == "" || response == nil {
+		return data
+	}
+	if response.Type == "message_start" && response.Message != nil && response.Message.Model != "" {
+		patchedData, err := sjson.Set(data, "message.model", response.Message.Model)
+		if err != nil {
+			return data
+		}
+		return patchedData
+	}
+	if response.Model != "" {
+		patchedData, err := sjson.Set(data, "model", response.Model)
+		if err != nil {
+			return data
+		}
+		return patchedData
+	}
+	return data
+}
+
 func patchNativeClaudeUsageData(data string, response *dto.ClaudeResponse) string {
 	if data == "" || response == nil {
 		return data
@@ -1019,6 +1061,8 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 				data = patchClaudeMessageDeltaUsageData(data, buildMessageDeltaPatchUsage(&claudeResponse, claudeInfo))
 			}
 		}
+		applyNativeClaudeDisplayModel(info, &claudeResponse)
+		data = patchNativeClaudeModelData(data, &claudeResponse)
 		helper.ClaudeChunkData(c, claudeResponse, data)
 	} else if info.RelayFormat == types.RelayFormatOpenAI {
 		response := StreamResponseClaude2OpenAI(&claudeResponse)
@@ -1156,6 +1200,7 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		}
 	case types.RelayFormatClaude:
 		claudeResponse.Id = normalizeClaudeResponseMessageID(claudeResponse.Id)
+		applyNativeClaudeDisplayModel(info, &claudeResponse)
 		responseData, err = common.Marshal(claudeResponse)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeBadResponseBody)

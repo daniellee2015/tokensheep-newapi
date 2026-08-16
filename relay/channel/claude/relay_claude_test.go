@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func commonPointer[T any](value T) *T {
@@ -406,6 +407,49 @@ func TestShouldSkipDuplicateNativeTextDeltaForCursorProxyAdjacentDuplicate(t *te
 
 	info.ChannelMeta.ChannelBaseUrl = "https://api.anthropic.com"
 	require.False(t, shouldSkipDuplicateNativeTextDelta(info, claudeInfo, claudeResponse))
+}
+
+func TestApplyNativeClaudeDisplayModelUsesRequestedMappedModel(t *testing.T) {
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "claude-opus-4-8",
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "claude-opus-4-8-medium",
+			IsModelMapped:     true,
+		},
+	}
+	claudeResponse := &dto.ClaudeResponse{
+		Type: "message_start",
+		Message: &dto.ClaudeMediaMessage{
+			Model: "claude-opus-4-8-medium",
+		},
+	}
+
+	applyNativeClaudeDisplayModel(info, claudeResponse)
+	patchedData := patchNativeClaudeModelData(
+		`{"type":"message_start","message":{"model":"claude-opus-4-8-medium"}}`,
+		claudeResponse,
+	)
+
+	require.Equal(t, "claude-opus-4-8", claudeResponse.Message.Model)
+	require.Equal(t, "claude-opus-4-8", gjson.Get(patchedData, "message.model").String())
+}
+
+func TestApplyNativeClaudeDisplayModelLeavesUnmappedModel(t *testing.T) {
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "claude-opus-4-8",
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "claude-opus-4-8",
+			IsModelMapped:     false,
+		},
+	}
+	claudeResponse := &dto.ClaudeResponse{
+		Type:  "message",
+		Model: "claude-opus-4-8",
+	}
+
+	applyNativeClaudeDisplayModel(info, claudeResponse)
+
+	require.Equal(t, "claude-opus-4-8", claudeResponse.Model)
 }
 
 func TestRequestOpenAI2ClaudeMessage_ClaudeOpus48HighUsesAdaptiveThinking(t *testing.T) {
