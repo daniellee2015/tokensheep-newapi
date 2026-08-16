@@ -5,9 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -353,6 +355,29 @@ func TestBuildOpenAIStyleUsageFromClaudeUsageDefaultsAggregateCacheCreationTo5m(
 
 	require.Equal(t, 50, openAIUsage.ClaudeCacheCreation5mTokens)
 	require.Equal(t, 0, openAIUsage.ClaudeCacheCreation1hTokens)
+}
+
+func TestShouldSkipDuplicateNativeStructuredDelta(t *testing.T) {
+	responseText := `{"answer":"ok"}`
+	info := &relaycommon.RelayInfo{
+		RelayFormat: types.RelayFormatClaude,
+		Request: &dto.ClaudeRequest{
+			OutputFormat: []byte(`{"type":"json_schema","schema":{"type":"object"}}`),
+		},
+	}
+	claudeInfo := &ClaudeResponseInfo{}
+	claudeInfo.ResponseText.WriteString(responseText)
+	claudeResponse := &dto.ClaudeResponse{
+		Type: "content_block_delta",
+		Delta: &dto.ClaudeMediaMessage{
+			Text: common.GetPointer[string](responseText),
+		},
+	}
+
+	require.True(t, shouldSkipDuplicateNativeStructuredDelta(info, claudeInfo, claudeResponse))
+
+	info.Request = &dto.ClaudeRequest{}
+	require.False(t, shouldSkipDuplicateNativeStructuredDelta(info, claudeInfo, claudeResponse))
 }
 
 func TestRequestOpenAI2ClaudeMessage_ClaudeOpus48HighUsesAdaptiveThinking(t *testing.T) {

@@ -764,6 +764,97 @@ func buildMessageDeltaPatchUsage(claudeResponse *dto.ClaudeResponse, claudeInfo 
 	return usage
 }
 
+func shouldNormalizeCursorProxyUsage(info *relaycommon.RelayInfo) bool {
+	if info == nil || info.ChannelMeta == nil || info.GetEstimatePromptTokens() <= 0 {
+		return false
+	}
+	baseURL := strings.ToLower(strings.TrimSpace(info.ChannelMeta.ChannelBaseUrl))
+	return strings.Contains(baseURL, "cpa") ||
+		strings.Contains(baseURL, "cli-proxy-api") ||
+		strings.Contains(baseURL, "cursor")
+}
+
+func normalizeCursorProxyClaudeUsage(info *relaycommon.RelayInfo, usage *dto.ClaudeUsage) bool {
+	if !shouldNormalizeCursorProxyUsage(info) || usage == nil {
+		return false
+	}
+	changed := false
+	usage.InputTokens, changed = capCursorProxyUsageValue(info, usage.InputTokens, changed)
+	usage.CacheReadInputTokens, changed = capCursorProxyUsageValue(info, usage.CacheReadInputTokens, changed)
+	usage.CacheCreationInputTokens, changed = capCursorProxyUsageValue(info, usage.CacheCreationInputTokens, changed)
+	if usage.CacheCreation != nil {
+		usage.CacheCreation.Ephemeral5mInputTokens, changed = capCursorProxyUsageValue(info, usage.CacheCreation.Ephemeral5mInputTokens, changed)
+		usage.CacheCreation.Ephemeral1hInputTokens, changed = capCursorProxyUsageValue(info, usage.CacheCreation.Ephemeral1hInputTokens, changed)
+	}
+	usage.ClaudeCacheCreation5mTokens, changed = capCursorProxyUsageValue(info, usage.ClaudeCacheCreation5mTokens, changed)
+	usage.ClaudeCacheCreation1hTokens, changed = capCursorProxyUsageValue(info, usage.ClaudeCacheCreation1hTokens, changed)
+	return changed
+}
+
+func capCursorProxyUsageValue(info *relaycommon.RelayInfo, value int, changed bool) (int, bool) {
+	if value <= 0 {
+		return value, changed
+	}
+	estimate := info.GetEstimatePromptTokens()
+	threshold := estimate * 4
+	if threshold < 4096 {
+		threshold = 4096
+	}
+	if value <= threshold {
+		return value, changed
+	}
+	return estimate, true
+}
+
+func normalizeCursorProxyClaudeResponseUsage(info *relaycommon.RelayInfo, response *dto.ClaudeResponse) bool {
+	if response == nil {
+		return false
+	}
+	changed := false
+	if response.Message != nil && response.Message.Usage != nil {
+		changed = normalizeCursorProxyClaudeUsage(info, response.Message.Usage) || changed
+	}
+	if response.Usage != nil {
+		changed = normalizeCursorProxyClaudeUsage(info, response.Usage) || changed
+	}
+	return changed
+}
+
+func patchNativeClaudeUsageData(data string, response *dto.ClaudeResponse) string {
+	if data == "" || response == nil {
+		return data
+	}
+	if response.Type == "message_start" && response.Message != nil && response.Message.Usage != nil {
+		return patchNativeClaudeUsageAtPath(data, "message.usage", response.Message.Usage)
+	}
+	if response.Type == "message_delta" && response.Usage != nil {
+		return patchNativeClaudeUsageAtPath(data, "usage", response.Usage)
+	}
+	return data
+}
+
+func patchNativeClaudeUsageAtPath(data string, basePath string, usage *dto.ClaudeUsage) string {
+	data = setNativeClaudeUsageInt(data, basePath+".input_tokens", usage.InputTokens)
+	data = setNativeClaudeUsageInt(data, basePath+".cache_read_input_tokens", usage.CacheReadInputTokens)
+	data = setNativeClaudeUsageInt(data, basePath+".cache_creation_input_tokens", usage.CacheCreationInputTokens)
+	if usage.CacheCreation != nil {
+		data = setNativeClaudeUsageInt(data, basePath+".cache_creation.ephemeral_5m_input_tokens", usage.CacheCreation.Ephemeral5mInputTokens)
+		data = setNativeClaudeUsageInt(data, basePath+".cache_creation.ephemeral_1h_input_tokens", usage.CacheCreation.Ephemeral1hInputTokens)
+	}
+	return data
+}
+
+func setNativeClaudeUsageInt(data string, path string, value int) string {
+	if value < 0 {
+		return data
+	}
+	patchedData, err := sjson.Set(data, path, value)
+	if err != nil {
+		return data
+	}
+	return patchedData
+}
+
 func shouldSkipClaudeMessageDeltaUsagePatch(info *relaycommon.RelayInfo) bool {
 	if model_setting.GetGlobalSettings().PassThroughRequestEnabled {
 		return true
@@ -896,7 +987,13 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	if claudeResponse.Delta != nil && claudeResponse.Delta.StopReason != nil {
 		maybeMarkClaudeRefusal(c, *claudeResponse.Delta.StopReason)
 	}
+	if normalizeCursorProxyClaudeResponseUsage(info, &claudeResponse) {
+		data = patchNativeClaudeUsageData(data, &claudeResponse)
+	}
 	if info.RelayFormat == types.RelayFormatClaude {
+		if shouldSkipDuplicateNativeStructuredDelta(info, claudeInfo, &claudeResponse) {
+			return nil
+		}
 		FormatClaudeResponseInfo(&claudeResponse, nil, claudeInfo)
 
 		if claudeResponse.Type == "message_start" {
@@ -925,6 +1022,22 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		}
 	}
 	return nil
+}
+
+func shouldSkipDuplicateNativeStructuredDelta(info *relaycommon.RelayInfo, claudeInfo *ClaudeResponseInfo, claudeResponse *dto.ClaudeResponse) bool {
+	if info == nil || info.RelayFormat != types.RelayFormatClaude || claudeInfo == nil || claudeResponse == nil {
+		return false
+	}
+	request, ok := info.Request.(*dto.ClaudeRequest)
+	if !ok || len(request.OutputFormat) == 0 {
+		return false
+	}
+	if claudeResponse.Type != "content_block_delta" || claudeResponse.Delta == nil || claudeResponse.Delta.Text == nil {
+		return false
+	}
+	current := strings.TrimSpace(claudeInfo.ResponseText.String())
+	next := strings.TrimSpace(*claudeResponse.Delta.Text)
+	return current != "" && next != "" && current == next
 }
 
 func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, claudeInfo *ClaudeResponseInfo) {
@@ -1002,6 +1115,7 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		claudeInfo.Usage = &dto.Usage{}
 	}
 	if claudeResponse.Usage != nil {
+		normalizeCursorProxyClaudeResponseUsage(info, &claudeResponse)
 		claudeInfo.Usage.PromptTokens = claudeResponse.Usage.InputTokens
 		claudeInfo.Usage.CompletionTokens = claudeResponse.Usage.OutputTokens
 		claudeInfo.Usage.TotalTokens = claudeResponse.Usage.InputTokens + claudeResponse.Usage.OutputTokens

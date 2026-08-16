@@ -127,3 +127,66 @@ func TestBuildMessageDeltaPatchUsage(t *testing.T) {
 		require.EqualValues(t, 0, usage.CacheCreation.Ephemeral1hInputTokens)
 	})
 }
+
+func TestNormalizeCursorProxyClaudeUsageCapsOnlyAbnormalHiddenPrompt(t *testing.T) {
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{ChannelBaseUrl: "https://cpa.muxpay.xyz"},
+	}
+	info.SetEstimatePromptTokens(1000)
+	usage := &dto.ClaudeUsage{
+		InputTokens:              27098,
+		CacheReadInputTokens:     26905,
+		CacheCreationInputTokens: 431,
+		OutputTokens:             17,
+		CacheCreation:            &dto.ClaudeCacheCreationUsage{Ephemeral5mInputTokens: 27096},
+	}
+
+	changed := normalizeCursorProxyClaudeUsage(info, usage)
+
+	require.True(t, changed)
+	require.Equal(t, 1000, usage.InputTokens)
+	require.Equal(t, 1000, usage.CacheReadInputTokens)
+	require.Equal(t, 431, usage.CacheCreationInputTokens)
+	require.Equal(t, 17, usage.OutputTokens)
+	require.NotNil(t, usage.CacheCreation)
+	require.Equal(t, 1000, usage.CacheCreation.Ephemeral5mInputTokens)
+}
+
+func TestNormalizeCursorProxyClaudeUsageLeavesNormalAnthropicCache(t *testing.T) {
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{ChannelBaseUrl: "https://api.anthropic.com"},
+	}
+	info.SetEstimatePromptTokens(1000)
+	usage := &dto.ClaudeUsage{
+		InputTokens:              1200,
+		CacheReadInputTokens:     900,
+		CacheCreationInputTokens: 100,
+	}
+
+	changed := normalizeCursorProxyClaudeUsage(info, usage)
+
+	require.False(t, changed)
+	require.Equal(t, 1200, usage.InputTokens)
+	require.Equal(t, 900, usage.CacheReadInputTokens)
+	require.Equal(t, 100, usage.CacheCreationInputTokens)
+}
+
+func TestPatchNativeClaudeUsageDataOverwritesAbnormalUsage(t *testing.T) {
+	data := `{"type":"message_delta","usage":{"input_tokens":27098,"cache_read_input_tokens":26905,"cache_creation_input_tokens":431,"output_tokens":17}}`
+	response := &dto.ClaudeResponse{
+		Type: "message_delta",
+		Usage: &dto.ClaudeUsage{
+			InputTokens:              1000,
+			CacheReadInputTokens:     1000,
+			CacheCreationInputTokens: 431,
+			OutputTokens:             17,
+		},
+	}
+
+	patched := patchNativeClaudeUsageData(data, response)
+
+	require.EqualValues(t, 1000, gjson.Get(patched, "usage.input_tokens").Int())
+	require.EqualValues(t, 1000, gjson.Get(patched, "usage.cache_read_input_tokens").Int())
+	require.EqualValues(t, 431, gjson.Get(patched, "usage.cache_creation_input_tokens").Int())
+	require.EqualValues(t, 17, gjson.Get(patched, "usage.output_tokens").Int())
+}
