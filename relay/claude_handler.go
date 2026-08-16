@@ -51,8 +51,8 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		defaultMaxTokens := uint(model_setting.GetClaudeSettings().GetDefaultMaxTokens(request.Model))
 		request.MaxTokens = &defaultMaxTokens
 	}
-	applyCursorProxyNativeToolFallback(info, request)
 	normalizeNativeClaudeRequest(request)
+	normalizeCursorProxyPDFDocuments(info, request)
 
 	preserveMappedEffortVariant := shouldPreserveMappedEffortVariant(info)
 	if baseModel, effortLevel, ok := reasoning.TrimEffortSuffix(request.Model); ok && effortLevel != "" &&
@@ -367,6 +367,12 @@ func normalizeNativeClaudeRequest(request *dto.ClaudeRequest) {
 	if instruction := buildClaudeNativeOutputFormatInstruction(request.OutputFormat); instruction != "" {
 		prependClaudeSystemText(request, instruction)
 	}
+}
+
+func normalizeCursorProxyPDFDocuments(info *relaycommon.RelayInfo, request *dto.ClaudeRequest) {
+	if request == nil || !isCursorProxyClaudeChannel(info) {
+		return
+	}
 	for msgIndex := range request.Messages {
 		if request.Messages[msgIndex].IsStringContent() {
 			continue
@@ -375,29 +381,25 @@ func normalizeNativeClaudeRequest(request *dto.ClaudeRequest) {
 		if err != nil || len(contents) == 0 {
 			continue
 		}
-		expanded := make([]dto.ClaudeMediaMessage, 0, len(contents)+1)
+		normalized := make([]dto.ClaudeMediaMessage, 0, len(contents))
 		for _, content := range contents {
-			expanded = append(expanded, content)
-			if content.Type != "document" || content.Source == nil {
-				continue
-			}
-			if !strings.HasPrefix(content.Source.MediaType, "application/pdf") {
+			if content.Type != "document" || content.Source == nil ||
+				!strings.HasPrefix(content.Source.MediaType, "application/pdf") {
+				normalized = append(normalized, content)
 				continue
 			}
 			base64Data := common.Interface2String(content.Source.Data)
-			if base64Data == "" {
-				continue
-			}
 			extractedText := service.ExtractSimplePDFText(base64Data)
 			if extractedText == "" {
+				normalized = append(normalized, content)
 				continue
 			}
-			expanded = append(expanded, dto.ClaudeMediaMessage{
+			normalized = append(normalized, dto.ClaudeMediaMessage{
 				Type: "text",
 				Text: common.GetPointer[string]("Extracted PDF text:\n" + extractedText),
 			})
 		}
-		request.Messages[msgIndex].Content = expanded
+		request.Messages[msgIndex].Content = normalized
 	}
 }
 

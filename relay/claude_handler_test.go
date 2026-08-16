@@ -82,7 +82,7 @@ func TestNormalizeNativeClaudeRequestAddsOutputFormatSystemInstruction(t *testin
 	require.Contains(t, *system[0].Text, `"required":["answer"]`)
 }
 
-func TestNormalizeNativeClaudeRequestAddsPDFTextFallback(t *testing.T) {
+func TestNormalizeCursorProxyPDFDocumentsReplacesDocument(t *testing.T) {
 	pdfData := base64.StdEncoding.EncodeToString([]byte("%PDF-1.4\nBT /F1 24 Tf 72 720 Td (MAGIC_PDF_WORD: BANANA123) Tj ET"))
 	request := &dto.ClaudeRequest{
 		Model: "claude-opus-5",
@@ -103,13 +103,13 @@ func TestNormalizeNativeClaudeRequestAddsPDFTextFallback(t *testing.T) {
 		},
 	}
 
-	normalizeNativeClaudeRequest(request)
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelBaseUrl: "https://cpa.muxpay.xyz"}}
+	normalizeCursorProxyPDFDocuments(info, request)
 
 	content, err := request.Messages[0].ParseContent()
 	require.NoError(t, err)
-	require.Len(t, content, 2)
-	require.Equal(t, "document", content[0].Type)
-	require.Equal(t, "text", content[1].Type)
-	require.NotNil(t, content[1].Text)
-	require.Contains(t, *content[1].Text, "MAGIC_PDF_WORD: BANANA123")
+	require.Len(t, content, 1)
+	require.Equal(t, "text", content[0].Type)
+	require.NotNil(t, content[0].Text)
+	require.Contains(t, *content[0].Text, "MAGIC_PDF_WORD: BANANA123")
 }
