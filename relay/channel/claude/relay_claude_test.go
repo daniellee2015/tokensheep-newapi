@@ -357,7 +357,7 @@ func TestBuildOpenAIStyleUsageFromClaudeUsageDefaultsAggregateCacheCreationTo5m(
 	require.Equal(t, 0, openAIUsage.ClaudeCacheCreation1hTokens)
 }
 
-func TestShouldSkipDuplicateNativeStructuredDelta(t *testing.T) {
+func TestShouldSkipDuplicateNativeTextDeltaForStructuredOutput(t *testing.T) {
 	responseText := `{"answer":"ok"}`
 	info := &relaycommon.RelayInfo{
 		RelayFormat: types.RelayFormatClaude,
@@ -374,10 +374,38 @@ func TestShouldSkipDuplicateNativeStructuredDelta(t *testing.T) {
 		},
 	}
 
-	require.True(t, shouldSkipDuplicateNativeStructuredDelta(info, claudeInfo, claudeResponse))
+	require.True(t, shouldSkipDuplicateNativeTextDelta(info, claudeInfo, claudeResponse))
 
 	info.Request = &dto.ClaudeRequest{}
-	require.False(t, shouldSkipDuplicateNativeStructuredDelta(info, claudeInfo, claudeResponse))
+	require.False(t, shouldSkipDuplicateNativeTextDelta(info, claudeInfo, claudeResponse))
+}
+
+func TestShouldSkipDuplicateNativeTextDeltaForCursorProxyAdjacentDuplicate(t *testing.T) {
+	index := 0
+	text := "ok"
+	info := &relaycommon.RelayInfo{
+		RelayFormat: types.RelayFormatClaude,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelBaseUrl: "https://cpa.example.com",
+		},
+		Request: &dto.ClaudeRequest{},
+	}
+	claudeInfo := &ClaudeResponseInfo{
+		LastNativeDeltaText:  text,
+		LastNativeDeltaBlock: index,
+	}
+	claudeResponse := &dto.ClaudeResponse{
+		Type:  "content_block_delta",
+		Index: &index,
+		Delta: &dto.ClaudeMediaMessage{
+			Text: common.GetPointer(text),
+		},
+	}
+
+	require.True(t, shouldSkipDuplicateNativeTextDelta(info, claudeInfo, claudeResponse))
+
+	info.ChannelMeta.ChannelBaseUrl = "https://api.anthropic.com"
+	require.False(t, shouldSkipDuplicateNativeTextDelta(info, claudeInfo, claudeResponse))
 }
 
 func TestRequestOpenAI2ClaudeMessage_ClaudeOpus48HighUsesAdaptiveThinking(t *testing.T) {

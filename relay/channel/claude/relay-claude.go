@@ -679,12 +679,14 @@ func ResponseClaude2OpenAI(claudeResponse *dto.ClaudeResponse) *dto.OpenAITextRe
 }
 
 type ClaudeResponseInfo struct {
-	ResponseId   string
-	Created      int64
-	Model        string
-	ResponseText strings.Builder
-	Usage        *dto.Usage
-	Done         bool
+	ResponseId           string
+	Created              int64
+	Model                string
+	ResponseText         strings.Builder
+	LastNativeDeltaText  string
+	LastNativeDeltaBlock int
+	Usage                *dto.Usage
+	Done                 bool
 }
 
 func cacheCreationTokensForOpenAIUsage(usage *dto.Usage) int {
@@ -765,7 +767,14 @@ func buildMessageDeltaPatchUsage(claudeResponse *dto.ClaudeResponse, claudeInfo 
 }
 
 func shouldNormalizeCursorProxyUsage(info *relaycommon.RelayInfo) bool {
-	if info == nil || info.ChannelMeta == nil || info.GetEstimatePromptTokens() <= 0 {
+	if !isCursorProxyClaudeChannel(info) || info.GetEstimatePromptTokens() <= 0 {
+		return false
+	}
+	return true
+}
+
+func isCursorProxyClaudeChannel(info *relaycommon.RelayInfo) bool {
+	if info == nil || info.ChannelMeta == nil {
 		return false
 	}
 	baseURL := strings.ToLower(strings.TrimSpace(info.ChannelMeta.ChannelBaseUrl))
@@ -926,6 +935,8 @@ func FormatClaudeResponseInfo(claudeResponse *dto.ClaudeResponse, oaiResponse *d
 		if claudeResponse.Delta != nil {
 			if claudeResponse.Delta.Text != nil {
 				claudeInfo.ResponseText.WriteString(*claudeResponse.Delta.Text)
+				claudeInfo.LastNativeDeltaText = *claudeResponse.Delta.Text
+				claudeInfo.LastNativeDeltaBlock = claudeResponse.GetIndex()
 			}
 			if claudeResponse.Delta.Thinking != nil {
 				claudeInfo.ResponseText.WriteString(*claudeResponse.Delta.Thinking)
@@ -991,7 +1002,7 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		data = patchNativeClaudeUsageData(data, &claudeResponse)
 	}
 	if info.RelayFormat == types.RelayFormatClaude {
-		if shouldSkipDuplicateNativeStructuredDelta(info, claudeInfo, &claudeResponse) {
+		if shouldSkipDuplicateNativeTextDelta(info, claudeInfo, &claudeResponse) {
 			return nil
 		}
 		FormatClaudeResponseInfo(&claudeResponse, nil, claudeInfo)
@@ -1024,19 +1035,28 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	return nil
 }
 
-func shouldSkipDuplicateNativeStructuredDelta(info *relaycommon.RelayInfo, claudeInfo *ClaudeResponseInfo, claudeResponse *dto.ClaudeResponse) bool {
+func shouldSkipDuplicateNativeTextDelta(info *relaycommon.RelayInfo, claudeInfo *ClaudeResponseInfo, claudeResponse *dto.ClaudeResponse) bool {
 	if info == nil || info.RelayFormat != types.RelayFormatClaude || claudeInfo == nil || claudeResponse == nil {
-		return false
-	}
-	request, ok := info.Request.(*dto.ClaudeRequest)
-	if !ok || len(request.OutputFormat) == 0 {
 		return false
 	}
 	if claudeResponse.Type != "content_block_delta" || claudeResponse.Delta == nil || claudeResponse.Delta.Text == nil {
 		return false
 	}
+	text := *claudeResponse.Delta.Text
+	if text == "" {
+		return false
+	}
+	if isCursorProxyClaudeChannel(info) &&
+		claudeInfo.LastNativeDeltaBlock == claudeResponse.GetIndex() &&
+		claudeInfo.LastNativeDeltaText == text {
+		return true
+	}
+	request, ok := info.Request.(*dto.ClaudeRequest)
+	if !ok || len(request.OutputFormat) == 0 {
+		return false
+	}
 	current := strings.TrimSpace(claudeInfo.ResponseText.String())
-	next := strings.TrimSpace(*claudeResponse.Delta.Text)
+	next := strings.TrimSpace(text)
 	return current != "" && next != "" && current == next
 }
 
