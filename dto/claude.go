@@ -421,6 +421,23 @@ func (c *ClaudeRequest) GetEfforts() string {
 	return ""
 }
 
+func (c *ClaudeRequest) SetEffort(effort string) error {
+	outputConfig := map[string]any{}
+	raw := strings.TrimSpace(string(c.OutputConfig))
+	if raw != "" && raw != "null" {
+		if err := common.Unmarshal(c.OutputConfig, &outputConfig); err != nil {
+			return fmt.Errorf("parse output_config: %w", err)
+		}
+	}
+	outputConfig["effort"] = effort
+	encoded, err := common.Marshal(outputConfig)
+	if err != nil {
+		return fmt.Errorf("marshal output_config: %w", err)
+	}
+	c.OutputConfig = encoded
+	return nil
+}
+
 // ProcessTools 处理工具列表，支持类型断言
 func ProcessTools(tools []any) ([]*Tool, []*ClaudeWebSearchTool) {
 	var normalTools []*Tool

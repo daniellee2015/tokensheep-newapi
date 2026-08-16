@@ -162,7 +162,9 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		claudeRequest.Thinking = &dto.Thinking{
 			Type: "adaptive",
 		}
-		claudeRequest.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":"%s"}`, effortLevel))
+		if err := claudeRequest.SetEffort(effortLevel); err != nil {
+			return nil, err
+		}
 		if !reasoning.ShouldUseClaudeLegacyAdaptiveSampling(baseModel) {
 			claudeRequest.Thinking.Display = "summarized"
 			claudeRequest.Temperature = nil
@@ -178,7 +180,9 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		trimmedModel := strings.TrimSuffix(textRequest.Model, "-thinking")
 		if reasoning.SupportsClaudeAdaptiveThinkingAlias(trimmedModel) && !reasoning.ShouldUseClaudeLegacyAdaptiveSampling(trimmedModel) {
 			claudeRequest.Thinking = &dto.Thinking{Type: "adaptive", Display: "summarized"}
-			claudeRequest.OutputConfig = json.RawMessage(`{"effort":"high"}`)
+			if err := claudeRequest.SetEffort("high"); err != nil {
+				return nil, err
+			}
 			claudeRequest.Temperature = nil
 			claudeRequest.TopP = nil
 			claudeRequest.TopK = nil

@@ -62,7 +62,9 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		request.Thinking = &dto.Thinking{
 			Type: "adaptive",
 		}
-		request.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":"%s"}`, effortLevel))
+		if err := request.SetEffort(effortLevel); err != nil {
+			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+		}
 		if !reasoning.ShouldUseClaudeLegacyAdaptiveSampling(request.Model) {
 			request.Thinking.Display = "summarized"
 			request.Temperature = nil
@@ -78,7 +80,9 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 			baseModel := strings.TrimSuffix(request.Model, "-thinking")
 			if reasoning.SupportsClaudeAdaptiveThinkingAlias(baseModel) && !reasoning.ShouldUseClaudeLegacyAdaptiveSampling(baseModel) {
 				request.Thinking = &dto.Thinking{Type: "adaptive", Display: "summarized"}
-				request.OutputConfig = json.RawMessage(`{"effort":"high"}`)
+				if err := request.SetEffort("high"); err != nil {
+					return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+				}
 				request.Temperature = nil
 				request.TopP = nil
 				request.TopK = nil
