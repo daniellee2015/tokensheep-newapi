@@ -452,6 +452,49 @@ func TestApplyNativeClaudeDisplayModelLeavesUnmappedModel(t *testing.T) {
 	require.Equal(t, "claude-opus-4-8", claudeResponse.Model)
 }
 
+func TestApplyNativeClaudeToolFallbackConvertsTextDeltaToToolDelta(t *testing.T) {
+	text := `{"name":"test"}`
+	info := &relaycommon.RelayInfo{
+		ClaudeConvertInfo: &relaycommon.ClaudeConvertInfo{
+			NativeToolFallbackName: "emit_result",
+			NativeToolFallbackId:   "toolu_test",
+		},
+	}
+	startResponse := &dto.ClaudeResponse{
+		Type: "content_block_start",
+		ContentBlock: &dto.ClaudeMediaMessage{
+			Type: "text",
+			Text: common.GetPointer(""),
+		},
+	}
+	deltaResponse := &dto.ClaudeResponse{
+		Type: "content_block_delta",
+		Delta: &dto.ClaudeMediaMessage{
+			Type: "text_delta",
+			Text: common.GetPointer(text),
+		},
+	}
+	messageDeltaResponse := &dto.ClaudeResponse{
+		Type:  "message_delta",
+		Delta: &dto.ClaudeMediaMessage{},
+	}
+
+	require.True(t, applyNativeClaudeToolFallback(info, startResponse))
+	require.Equal(t, "tool_use", startResponse.ContentBlock.Type)
+	require.Equal(t, "toolu_test", startResponse.ContentBlock.Id)
+	require.Equal(t, "emit_result", startResponse.ContentBlock.Name)
+
+	require.True(t, applyNativeClaudeToolFallback(info, deltaResponse))
+	require.Equal(t, "input_json_delta", deltaResponse.Delta.Type)
+	require.NotNil(t, deltaResponse.Delta.PartialJson)
+	require.Equal(t, text, *deltaResponse.Delta.PartialJson)
+	require.Nil(t, deltaResponse.Delta.Text)
+
+	require.True(t, applyNativeClaudeToolFallback(info, messageDeltaResponse))
+	require.NotNil(t, messageDeltaResponse.Delta.StopReason)
+	require.Equal(t, "tool_use", *messageDeltaResponse.Delta.StopReason)
+}
+
 func TestRequestOpenAI2ClaudeMessage_ClaudeOpus48HighUsesAdaptiveThinking(t *testing.T) {
 	request := dto.GeneralOpenAIRequest{
 		Model:       "claude-opus-4-8-high",

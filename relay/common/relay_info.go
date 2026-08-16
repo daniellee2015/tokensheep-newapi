@@ -43,6 +43,8 @@ type ClaudeConvertInfo struct {
 
 	ToolCallBaseIndex      int
 	ToolCallMaxIndexOffset int
+	NativeToolFallbackName string
+	NativeToolFallbackId   string
 }
 
 type RerankerInfo struct {

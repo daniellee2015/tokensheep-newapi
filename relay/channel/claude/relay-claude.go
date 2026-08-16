@@ -864,6 +864,57 @@ func patchNativeClaudeModelData(data string, response *dto.ClaudeResponse) strin
 	return data
 }
 
+func applyNativeClaudeToolFallback(info *relaycommon.RelayInfo, response *dto.ClaudeResponse) bool {
+	if info == nil || info.ClaudeConvertInfo == nil || info.NativeToolFallbackName == "" || response == nil {
+		return false
+	}
+	if info.NativeToolFallbackId == "" {
+		info.NativeToolFallbackId = "toolu_" + common.GetRandomString(24)
+	}
+	switch response.Type {
+	case "content_block_start":
+		if response.ContentBlock == nil || response.ContentBlock.Type != "text" {
+			return false
+		}
+		response.ContentBlock = &dto.ClaudeMediaMessage{
+			Type:  "tool_use",
+			Id:    info.NativeToolFallbackId,
+			Name:  info.NativeToolFallbackName,
+			Input: map[string]any{},
+		}
+		return true
+	case "content_block_delta":
+		if response.Delta == nil || response.Delta.Text == nil {
+			return false
+		}
+		response.Delta = &dto.ClaudeMediaMessage{
+			Type:        "input_json_delta",
+			PartialJson: response.Delta.Text,
+		}
+		return true
+	case "message_delta":
+		if response.Delta == nil {
+			response.Delta = &dto.ClaudeMediaMessage{}
+		}
+		stopReason := "tool_use"
+		response.Delta.StopReason = &stopReason
+		return true
+	default:
+		return false
+	}
+}
+
+func patchNativeClaudeToolFallbackData(data string, response *dto.ClaudeResponse) string {
+	if data == "" || response == nil {
+		return data
+	}
+	patchedData, err := common.Marshal(response)
+	if err != nil {
+		return data
+	}
+	return string(patchedData)
+}
+
 func patchNativeClaudeUsageData(data string, response *dto.ClaudeResponse) string {
 	if data == "" || response == nil {
 		return data
@@ -1056,6 +1107,9 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		}
 		applyNativeClaudeDisplayModel(info, &claudeResponse)
 		data = patchNativeClaudeModelData(data, &claudeResponse)
+		if applyNativeClaudeToolFallback(info, &claudeResponse) {
+			data = patchNativeClaudeToolFallbackData(data, &claudeResponse)
+		}
 		helper.ClaudeChunkData(c, claudeResponse, data)
 	} else if info.RelayFormat == types.RelayFormatOpenAI {
 		response := StreamResponseClaude2OpenAI(&claudeResponse)

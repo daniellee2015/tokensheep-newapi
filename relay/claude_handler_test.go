@@ -25,6 +25,40 @@ func TestShouldNotPreserveUnmappedEffortVariant(t *testing.T) {
 	require.False(t, shouldPreserveMappedEffortVariant(info))
 }
 
+func TestApplyCursorProxyNativeToolFallback(t *testing.T) {
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelBaseUrl: "https://cpa.muxpay.xyz",
+		},
+		ClaudeConvertInfo: &relaycommon.ClaudeConvertInfo{},
+	}
+	request := &dto.ClaudeRequest{
+		Model: "claude-opus-4-8",
+		Tools: []any{
+			map[string]any{
+				"name":        "emit_result",
+				"description": "Emit result.",
+				"input_schema": map[string]any{
+					"type":       "object",
+					"properties": map[string]any{"name": map[string]any{"type": "string"}},
+					"required":   []any{"name"},
+				},
+			},
+		},
+		ToolChoice: map[string]any{
+			"type": "tool",
+			"name": "emit_result",
+		},
+	}
+
+	require.True(t, applyCursorProxyNativeToolFallback(info, request))
+	require.Nil(t, request.Tools)
+	require.Nil(t, request.ToolChoice)
+	require.NotEmpty(t, request.OutputFormat)
+	require.Equal(t, "emit_result", info.NativeToolFallbackName)
+	require.NotEmpty(t, info.NativeToolFallbackId)
+}
+
 func TestNormalizeNativeClaudeRequestAddsOutputFormatSystemInstruction(t *testing.T) {
 	request := &dto.ClaudeRequest{
 		Model: "claude-opus-5",

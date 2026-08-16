@@ -51,6 +51,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		defaultMaxTokens := uint(model_setting.GetClaudeSettings().GetDefaultMaxTokens(request.Model))
 		request.MaxTokens = &defaultMaxTokens
 	}
+	applyCursorProxyNativeToolFallback(info, request)
 	normalizeNativeClaudeRequest(request)
 
 	preserveMappedEffortVariant := shouldPreserveMappedEffortVariant(info)
@@ -224,6 +225,85 @@ func shouldPreserveMappedEffortVariant(info *relaycommon.RelayInfo) bool {
 	}
 	baseURL := strings.ToLower(strings.TrimSpace(info.ChannelMeta.ChannelBaseUrl))
 	return strings.Contains(baseURL, "cpa.muxpay.xyz") || strings.Contains(baseURL, "cli-proxy-api")
+}
+
+func applyCursorProxyNativeToolFallback(info *relaycommon.RelayInfo, request *dto.ClaudeRequest) bool {
+	if info == nil || request == nil || !isCursorProxyClaudeChannel(info) {
+		return false
+	}
+	toolName, ok := forcedClaudeToolName(request.ToolChoice)
+	if !ok {
+		return false
+	}
+	tool, ok := findClaudeTool(request.Tools, toolName)
+	if !ok || len(tool.InputSchema) == 0 {
+		return false
+	}
+	outputFormat, err := common.Marshal(map[string]any{
+		"type":   "json_schema",
+		"schema": tool.InputSchema,
+	})
+	if err != nil {
+		return false
+	}
+	request.OutputFormat = outputFormat
+	request.Tools = nil
+	request.ToolChoice = nil
+	if info.ClaudeConvertInfo == nil {
+		info.ClaudeConvertInfo = &relaycommon.ClaudeConvertInfo{}
+	}
+	info.NativeToolFallbackName = tool.Name
+	info.NativeToolFallbackId = "toolu_" + common.GetRandomString(24)
+	return true
+}
+
+func isCursorProxyClaudeChannel(info *relaycommon.RelayInfo) bool {
+	if info == nil || info.ChannelMeta == nil {
+		return false
+	}
+	baseURL := strings.ToLower(strings.TrimSpace(info.ChannelMeta.ChannelBaseUrl))
+	return strings.Contains(baseURL, "cpa") ||
+		strings.Contains(baseURL, "cli-proxy-api") ||
+		strings.Contains(baseURL, "cursor")
+}
+
+func forcedClaudeToolName(toolChoice any) (string, bool) {
+	switch choice := toolChoice.(type) {
+	case dto.ClaudeToolChoice:
+		return strings.TrimSpace(choice.Name), choice.Type == "tool" && strings.TrimSpace(choice.Name) != ""
+	case *dto.ClaudeToolChoice:
+		if choice == nil {
+			return "", false
+		}
+		return strings.TrimSpace(choice.Name), choice.Type == "tool" && strings.TrimSpace(choice.Name) != ""
+	case map[string]any:
+		choiceType, _ := choice["type"].(string)
+		name, _ := choice["name"].(string)
+		return strings.TrimSpace(name), choiceType == "tool" && strings.TrimSpace(name) != ""
+	default:
+		return "", false
+	}
+}
+
+func findClaudeTool(rawTools any, name string) (*dto.Tool, bool) {
+	trimmedName := strings.TrimSpace(name)
+	if rawTools == nil || trimmedName == "" {
+		return nil, false
+	}
+	var tools []dto.Tool
+	data, err := common.Marshal(rawTools)
+	if err != nil {
+		return nil, false
+	}
+	if err := common.Unmarshal(data, &tools); err != nil {
+		return nil, false
+	}
+	for i := range tools {
+		if tools[i].Name == trimmedName {
+			return &tools[i], true
+		}
+	}
+	return nil, false
 }
 
 func normalizeNativeClaudeRequest(request *dto.ClaudeRequest) {
