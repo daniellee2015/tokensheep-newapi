@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -378,6 +379,70 @@ func TestRequestOpenAI2ClaudeMessage_ClaudeOpus48HighUsesAdaptiveThinking(t *tes
 	require.Nil(t, claudeRequest.Temperature)
 	require.Nil(t, claudeRequest.TopP)
 	require.Nil(t, claudeRequest.TopK)
+}
+
+func TestRequestOpenAI2ClaudeMessageSupportsPDFFilenameAlias(t *testing.T) {
+	pdfData := base64.StdEncoding.EncodeToString([]byte("%PDF-1.4 test"))
+	request := dto.GeneralOpenAIRequest{
+		Model: "claude-opus-5",
+		Messages: []dto.Message{
+			{
+				Role: "user",
+				Content: []any{
+					map[string]any{
+						"type": "text",
+						"text": "read pdf",
+					},
+					map[string]any{
+						"type": "file",
+						"file": map[string]any{
+							"filename":  "sample.pdf",
+							"file_data": pdfData,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	claudeRequest, err := RequestOpenAI2ClaudeMessage(nil, request)
+
+	require.NoError(t, err)
+	require.Len(t, claudeRequest.Messages, 1)
+	content, ok := claudeRequest.Messages[0].Content.([]dto.ClaudeMediaMessage)
+	require.True(t, ok)
+	require.Len(t, content, 2)
+	require.Equal(t, "document", content[1].Type)
+	require.NotNil(t, content[1].Source)
+	require.Equal(t, "application/pdf", content[1].Source.MediaType)
+	require.Equal(t, pdfData, content[1].Source.Data)
+}
+
+func TestRequestOpenAI2ClaudeMessageAddsJSONSchemaInstruction(t *testing.T) {
+	request := dto.GeneralOpenAIRequest{
+		Model: "claude-opus-5",
+		ResponseFormat: &dto.ResponseFormat{
+			Type:       "json_schema",
+			JsonSchema: []byte(`{"name":"answer","schema":{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}}`),
+		},
+		Messages: []dto.Message{
+			{
+				Role:    "user",
+				Content: "answer",
+			},
+		},
+	}
+
+	claudeRequest, err := RequestOpenAI2ClaudeMessage(nil, request)
+
+	require.NoError(t, err)
+	system, ok := claudeRequest.System.([]dto.ClaudeMediaMessage)
+	require.True(t, ok)
+	require.Len(t, system, 1)
+	require.NotNil(t, system[0].Text)
+	require.Contains(t, *system[0].Text, "valid JSON object only")
+	require.Contains(t, *system[0].Text, `"required":["answer"]`)
+	require.NotContains(t, *system[0].Text, `"name":"answer"`)
 }
 
 func TestRequestOpenAI2ClaudeMessage_ClaudeOpus48ThinkingUsesAdaptiveHighEffort(t *testing.T) {

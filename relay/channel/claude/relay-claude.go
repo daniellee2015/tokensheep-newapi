@@ -295,6 +295,12 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 	isFirstMessage := true
 	// 初始化system消息数组，用于累积多个system消息
 	var systemMessages []dto.ClaudeMediaMessage
+	if responseFormatInstruction := buildClaudeResponseFormatInstruction(textRequest.ResponseFormat); responseFormatInstruction != "" {
+		systemMessages = append(systemMessages, dto.ClaudeMediaMessage{
+			Type: "text",
+			Text: common.GetPointer[string](responseFormatInstruction),
+		})
+	}
 
 	for _, message := range formatMessages {
 		if message.Role == "system" {
@@ -491,6 +497,33 @@ func normalizeClaudeFileMimeType(mimeType, fileName string) string {
 
 func isClaudeSupportedFileMimeType(mimeType string) bool {
 	return strings.HasPrefix(mimeType, "text/") || strings.HasPrefix(mimeType, "application/pdf")
+}
+
+func buildClaudeResponseFormatInstruction(responseFormat *dto.ResponseFormat) string {
+	if responseFormat == nil {
+		return ""
+	}
+	switch responseFormat.Type {
+	case "json_schema":
+		instruction := "You must respond with a valid JSON object only. Do not include markdown, code fences, or explanatory text."
+		if len(responseFormat.JsonSchema) > 0 {
+			schemaBytes := responseFormat.JsonSchema
+			var schemaWrapper map[string]any
+			if err := common.Unmarshal(responseFormat.JsonSchema, &schemaWrapper); err == nil {
+				if nestedSchema, ok := schemaWrapper["schema"]; ok {
+					if nestedBytes, err := common.Marshal(nestedSchema); err == nil {
+						schemaBytes = nestedBytes
+					}
+				}
+			}
+			instruction += " The JSON object must conform to this JSON Schema: " + string(schemaBytes)
+		}
+		return instruction
+	case "json_object":
+		return "You must respond with a valid JSON object only. Do not include markdown, code fences, or explanatory text."
+	default:
+		return ""
+	}
 }
 
 func StreamResponseClaude2OpenAI(claudeResponse *dto.ClaudeResponse) *dto.ChatCompletionsStreamResponse {

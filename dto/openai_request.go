@@ -348,14 +348,24 @@ func (m *MediaContent) GetFile() *MessageFile {
 		}
 		if itemMap, ok := m.File.(map[string]any); ok {
 			out := &MessageFile{
-				FileName: common.Interface2String(itemMap["file_name"]),
-				FileData: common.Interface2String(itemMap["file_data"]),
+				FileName: firstNonEmptyString(itemMap["file_name"], itemMap["filename"], itemMap["name"]),
+				FileData: firstNonEmptyString(itemMap["file_data"], itemMap["data"]),
 				FileId:   common.Interface2String(itemMap["file_id"]),
 			}
 			return out
 		}
 	}
 	return nil
+}
+
+func firstNonEmptyString(values ...any) string {
+	for _, value := range values {
+		str := common.Interface2String(value)
+		if str != "" {
+			return str
+		}
+	}
+	return ""
 }
 
 func (m *MediaContent) GetVideoUrl() *MessageVideoUrl {
