@@ -685,6 +685,7 @@ type ClaudeResponseInfo struct {
 	NativeReplayOffset   int
 	Usage                *dto.Usage
 	Done                 bool
+	TerminalEventSeen    bool
 }
 
 func cacheCreationTokensForOpenAIUsage(usage *dto.Usage) int {
@@ -1083,6 +1084,9 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	if claudeError := claudeResponse.GetClaudeError(); claudeError != nil && claudeError.Type != "" {
 		return types.WithClaudeError(*claudeError, http.StatusInternalServerError)
 	}
+	if claudeInfo != nil && claudeResponse.Type == "message_stop" {
+		claudeInfo.TerminalEventSeen = true
+	}
 	if claudeResponse.StopReason != "" {
 		maybeMarkClaudeRefusal(c, claudeResponse.StopReason)
 	}
@@ -1238,6 +1242,29 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 	})
 	if err != nil {
 		return nil, err
+	}
+	if info.StreamStatus != nil {
+		switch info.StreamStatus.EndReason {
+		case relaycommon.StreamEndReasonTimeout:
+			return nil, types.NewError(
+				fmt.Errorf("upstream stream timeout before terminal event"),
+				types.ErrorCodeBadResponseBody,
+			)
+		case relaycommon.StreamEndReasonScannerErr,
+			relaycommon.StreamEndReasonPanic,
+			relaycommon.StreamEndReasonPingFail:
+			streamErr := info.StreamStatus.EndError
+			if streamErr == nil {
+				streamErr = fmt.Errorf("upstream stream ended abnormally: %s", info.StreamStatus.EndReason)
+			}
+			return nil, types.NewError(streamErr, types.ErrorCodeBadResponseBody)
+		}
+	}
+	if isCursorProxyClaudeChannel(info) && !claudeInfo.TerminalEventSeen {
+		return nil, types.NewError(
+			fmt.Errorf("upstream stream ended without message_stop"),
+			types.ErrorCodeBadResponseBody,
+		)
 	}
 
 	HandleStreamFinalResponse(c, info, claudeInfo)

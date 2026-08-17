@@ -231,7 +231,6 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			default:
 			}
 
-			ticker.Reset(streamingTimeout)
 			data := scanner.Text()
 			logger.LogDebug(c, "stream scanner data: %s", data)
 
@@ -247,6 +246,10 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				continue
 			}
 			if !strings.HasPrefix(data, "[DONE]") {
+				// Only a real SSE data event represents upstream progress. Comments,
+				// blank lines, and other transport keepalives must not postpone the
+				// model-output timeout indefinitely.
+				ticker.Reset(streamingTimeout)
 				info.SetFirstResponseTime()
 				info.ReceivedResponseCount++
 

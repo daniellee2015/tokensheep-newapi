@@ -90,19 +90,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if newAPIError != nil {
 			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
-			switch relayFormat {
-			case types.RelayFormatOpenAIRealtime:
-				helper.WssError(c, ws, newAPIError.ToOpenAIError())
-			case types.RelayFormatClaude:
-				c.JSON(newAPIError.StatusCode, gin.H{
-					"type":  "error",
-					"error": newAPIError.ToClaudeError(),
-				})
-			default:
-				c.JSON(newAPIError.StatusCode, gin.H{
-					"error": newAPIError.ToOpenAIError(),
-				})
-			}
+			writeRelayError(c, ws, relayFormat, newAPIError)
 		}
 	}()
 
@@ -231,6 +219,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 
+		// A retry after any response bytes have been sent would concatenate two
+		// independent streams and leave the client with a malformed HTTP 200.
+		if c.Writer.Written() {
+			break
+		}
 		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
 			break
 		}
@@ -244,6 +237,29 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	if newAPIError != nil {
 		gopool.Go(func() {
 			perfmetrics.RecordRelaySample(relayInfo, false, 0)
+		})
+	}
+}
+
+func writeRelayError(c *gin.Context, ws *websocket.Conn, relayFormat types.RelayFormat, newAPIError *types.NewAPIError) {
+	switch relayFormat {
+	case types.RelayFormatOpenAIRealtime:
+		helper.WssError(c, ws, newAPIError.ToOpenAIError())
+	case types.RelayFormatClaude:
+		if c.Writer.Written() && strings.HasPrefix(c.Writer.Header().Get("Content-Type"), "text/event-stream") {
+			_ = helper.ClaudeData(c, dto.ClaudeResponse{
+				Type:  "error",
+				Error: newAPIError.ToClaudeError(),
+			})
+			return
+		}
+		c.JSON(newAPIError.StatusCode, gin.H{
+			"type":  "error",
+			"error": newAPIError.ToClaudeError(),
+		})
+	default:
+		c.JSON(newAPIError.StatusCode, gin.H{
+			"error": newAPIError.ToOpenAIError(),
 		})
 	}
 }

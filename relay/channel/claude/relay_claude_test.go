@@ -2,14 +2,21 @@ package claude
 
 import (
 	"encoding/base64"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -356,6 +363,74 @@ func TestBuildOpenAIStyleUsageFromClaudeUsageDefaultsAggregateCacheCreationTo5m(
 
 	require.Equal(t, 50, openAIUsage.ClaudeCacheCreation5mTokens)
 	require.Equal(t, 0, openAIUsage.ClaudeCacheCreation1hTokens)
+}
+
+func TestClaudeStreamHandlerPreservesNativeWebSearchLifecycle(t *testing.T) {
+	oldTimeout := constant.StreamingTimeout
+	if constant.StreamingTimeout <= 0 {
+		constant.StreamingTimeout = 5
+	}
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+
+	events := []string{
+		`{"type":"message_start","message":{"id":"msg_test","type":"message","role":"assistant","model":"claude-opus-5","content":[],"stop_reason":null,"usage":{"input_tokens":12,"output_tokens":1}}}`,
+		`{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"srvtoolu_test","name":"web_search","input":{"query":"Cursor homepage"}}}`,
+		`{"type":"content_block_stop","index":0}`,
+		`{"type":"content_block_start","index":1,"content_block":{"type":"web_search_tool_result","tool_use_id":"srvtoolu_test","content":[{"type":"web_search_result","url":"https://www.cursor.com/","title":"Cursor","encrypted_content":"encrypted-test"}]}}`,
+		`{"type":"content_block_stop","index":1}`,
+		`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":8,"server_tool_use":{"web_search_requests":1}}}`,
+		`{"type":"message_stop"}`,
+	}
+	var upstream strings.Builder
+	for _, event := range events {
+		fmt.Fprintf(&upstream, "data: %s\n\n", event)
+	}
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	info := &relaycommon.RelayInfo{
+		RelayFormat: types.RelayFormatClaude,
+		ChannelMeta: &relaycommon.ChannelMeta{},
+		Request:     &dto.ClaudeRequest{},
+	}
+	usage, streamErr := ClaudeStreamHandler(c, &http.Response{Body: io.NopCloser(strings.NewReader(upstream.String()))}, info)
+
+	require.Nil(t, streamErr)
+	require.NotNil(t, usage)
+	body := recorder.Body.String()
+	require.Contains(t, body, `"type":"server_tool_use"`)
+	require.Contains(t, body, `"type":"web_search_tool_result"`)
+	require.Contains(t, body, `"encrypted_content":"encrypted-test"`)
+	require.Contains(t, body, `"type":"message_stop"`)
+}
+
+func TestClaudeStreamHandlerRejectsKeepaliveOnlyTimeout(t *testing.T) {
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 1
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+
+	pr, pw := io.Pipe()
+	go func() {
+		defer pw.Close()
+		for i := 0; i < 8; i++ {
+			fmt.Fprint(pw, ": upstream ping\n\n")
+			time.Sleep(250 * time.Millisecond)
+		}
+	}()
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	info := &relaycommon.RelayInfo{
+		RelayFormat: types.RelayFormatClaude,
+		ChannelMeta: &relaycommon.ChannelMeta{},
+		Request:     &dto.ClaudeRequest{},
+	}
+
+	_, streamErr := ClaudeStreamHandler(c, &http.Response{Body: pr}, info)
+
+	require.NotNil(t, streamErr)
+	require.Contains(t, streamErr.Error(), "timeout")
 }
 
 func TestShouldSkipDuplicateNativeTextDeltaForStructuredOutput(t *testing.T) {

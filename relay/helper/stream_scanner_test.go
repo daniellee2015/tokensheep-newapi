@@ -415,6 +415,37 @@ func TestStreamScannerHandler_StreamStatus_Timeout(t *testing.T) {
 	assert.False(t, info.StreamStatus.IsNormalEnd())
 }
 
+func TestStreamScannerHandler_UpstreamCommentsDoNotResetDataTimeout(t *testing.T) {
+	// Cloudflare/CPA may emit SSE comments while the model is otherwise stuck.
+	// Comments are transport keepalives, not model progress, and must not keep a
+	// relay alive indefinitely.
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 1
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+
+	pr, pw := io.Pipe()
+	go func() {
+		defer pw.Close()
+		for i := 0; i < 8; i++ {
+			fmt.Fprint(pw, ": upstream ping\n\n")
+			time.Sleep(250 * time.Millisecond)
+		}
+	}()
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	resp := &http.Response{Body: pr}
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
+
+	StreamScannerHandler(c, resp, info, func(data string, sr *StreamResult) {})
+
+	require.NotNil(t, info.StreamStatus)
+	assert.Equal(t, relaycommon.StreamEndReasonTimeout, info.StreamStatus.EndReason)
+	assert.Equal(t, 0, info.ReceivedResponseCount)
+}
+
 func TestStreamScannerHandler_StreamStatus_SoftErrors(t *testing.T) {
 	t.Parallel()
 
