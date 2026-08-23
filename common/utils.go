@@ -282,6 +282,12 @@ func NewRequestId() string {
 	return GetTimeString() + requestIdPrefix + GetRandomString(8)
 }
 
+// NewAnthropicRequestId mints the public `request-id` header Anthropic
+// clients and cctest expect. Internal billing/logs keep NewRequestId().
+func NewAnthropicRequestId() string {
+	return "req_011" + GetRandomString(24)
+}
+
 func Max(a int, b int) int {
 	if a >= b {
 		return a
