@@ -28,6 +28,19 @@
 - **影响面**：本地正在修改的 10 个文件全部经过 relaykit 迁移
 - **移植策略**：所有 tokensheep 定制的 relay/converter 逻辑需要按新的 API surface（`context.Context`, `convmeta.Meta`, `convmeta.Options`）重写
 
+### 2.1.1 前端目录重构（`31d70fca3` 及后续）
+
+Upstream 取消了双主题前端架构：
+
+- **`web/classic/` 整个被删除**（React 18 + Vite + Semi Design 主题下线）
+- **`web/default/` 提升为 `web/`**（`web/default/src/` → `web/src/`，`web/default/public/` → `web/public/`）
+- `main.go` 的 embed 指令随之简化为 `//go:embed web/dist`，不再有 `classicBuildFS` / `classicIndexPage`
+
+影响：
+- 项目文档（`AGENTS.md`）中描述的 `web/default/` 与 `web/classic/` 双主题结构已过时，需同步更新
+- tokensheep 的前端定制文件（logo/favicon/sheep SVG、tier cards、redemption card、usage policy、economy section 等）位于 `web/default/`，需整体迁移到 `web/`
+- tokensheep 对 `web/classic/` 的改动（`SettingsPaymentGatewayWaffoPancake.jsx`）随 classic 下线而失效，需确认对应功能已在新前端覆盖
+
 ### 2.2 Claude 相关（与 tokensheep 主要 WIP 重合）
 
 | Commit | 主题 | 与本地 WIP 关系 |
@@ -164,6 +177,39 @@ IdempotencyKey     *string `gorm:"type:varchar(191);uniqueIndex:idx_tokens_user_
 - `middleware/request_id_test.go`
 - `relay/channel/claude/native_passthrough_test.go`
 
+## 4.1 冲突干跑结果
+
+`git merge-tree --write-tree main upstream/main` 报告 **60 处冲突**：
+
+| 类型 | 数量 | 说明 |
+|---|---|---|
+| content | 36 | 双方都改了同一文件内容 |
+| file location | 20 | tokensheep 新增文件落在 upstream 重命名过的 `web/default/` 目录下 |
+| rename/delete | 2 | `web/default/public/favicon.ico`、`logo.png` upstream 重命名、tokensheep 删除 |
+| modify/delete | 1 | `web/classic/.../SettingsPaymentGatewayWaffoPancake.jsx` upstream 删除、tokensheep 修改 |
+| add/add | 1 | `service/convert_test.go` 双方各自新增 |
+
+### 后端 content 冲突（按优先级）
+
+| 文件 | 冲突来源 |
+|---|---|
+| `model/user.go` | tokensheep 经济字段 vs upstream `auth_version` + 排序重构 |
+| `model/token.go` | tokensheep Kiro.bus 字段 vs upstream `auto_groups` |
+| `model/topup.go` / `model/redemption.go` / `model/user_cache.go` | tokensheep 打款/兑换 vs upstream 原子结算与配额加固 |
+| `relay/channel/claude/adaptor.go` / `relay-claude.go` / `relay_claude_test.go` | tokensheep Cursor Claude 定制 vs relaykit 迁移 |
+| `relay/common/relay_info.go` | relaykit 的 `convmeta.Meta` 改造 |
+| `service/convert.go` / `convert_test.go` | relaykit 抽离 |
+| `service/billing_session.go` / `funding_source.go` | tokensheep 经济模型 vs upstream 计费加固 |
+| `middleware/auth.go` | tokensheep token 校验 vs upstream 无状态会话 |
+| `controller/token.go` / `router/api-router.go` | tokensheep Kiro.bus API vs upstream 路由调整 |
+| `setting/reasoning/suffix.go` | relaykit 把 effort 后缀移入 kit |
+| `relaykit/dto/openai_request.go` | tokensheep DTO 定制需迁入 relaykit |
+| `go.mod` / `Dockerfile` | 依赖与构建（Dockerfile 需适配新前端路径） |
+
+### 前端冲突
+
+tokensheep 的前端定制需从 `web/default/` 迁移到 `web/`，涉及 20 个 file-location 冲突 + 15 个 content 冲突（i18n locale 文件、wallet、profile、auth 等）。
+
 ## 5. 合并策略
 
 采用 **方案 C：完全 rebase 到 upstream/main**，理由：
@@ -197,12 +243,20 @@ git merge upstream/main
 
 **第 4 步：冲突解决优先级**
 
-1. `model/user.go`, `model/token.go` — 按 §3.3 清单保留 tokensheep 定制字段
-2. `model/main.go` — AutoMigrate 列表合并（tokensheep 独有 + upstream 新表）
-3. `relay/channel/claude/*` — 结合 upstream `4442bb302`, `3dda1d50c` 审 tokensheep WIP，去除重复修复
-4. `relay/channel/api_request.go` — 采用 upstream 的 relaykit 接口
-5. `controller/relay.go`, `middleware/distributor.go` — 迁移到新的 tiered retry / auto group / compact suffix 语义
-6. 其余 relaykit 导入路径调整
+见 §4.1 的完整冲突清单。解决顺序：
+
+1. `go.mod` — 先让依赖可解析，否则后续无法编译验证
+2. `model/user.go`, `model/token.go` — 按 §3.3 清单保留 tokensheep 定制字段
+3. `model/main.go` — AutoMigrate 列表合并（tokensheep 独有 + upstream 新表）
+4. `model/topup.go`, `model/redemption.go`, `model/user_cache.go` — tokensheep 经济逻辑套进 upstream 的原子结算
+5. `middleware/auth.go` — tokensheep token 校验与 upstream 无状态会话并存
+6. `relay/common/relay_info.go` — relaykit 的 `convmeta.Meta` 适配，是下面几项的前置
+7. `relay/channel/claude/*` — 结合 upstream `4442bb302`, `3dda1d50c` 审 tokensheep 定制，去除重复修复
+8. `service/convert.go`, `service/convert_test.go`, `setting/reasoning/suffix.go` — relaykit 抽离后的落位
+9. `service/billing_session.go`, `service/funding_source.go` — 经济模型与计费加固对齐
+10. `controller/token.go`, `router/api-router.go` — Kiro.bus API 路由
+11. 前端：`web/default/` → `web/` 迁移，i18n locale 三方合并
+12. `Dockerfile` — 适配单前端构建路径
 
 **第 5 步：验证**
 
@@ -243,6 +297,8 @@ SQL_DSN=local go run ./ --port 0 --exit-after-migrate  # 或等价命令
 | upstream 新会话表与 A 版本的 legacy session 并存 | 保留 legacy session 中间件，B 版本能读旧 session |
 | AutoMigrate 在生产 DB 上加索引卡住 | 预演 SQLite/MySQL/PostgreSQL 三种数据库 |
 | Frontend option migration 破坏 A 版本 UI 配置 | 备份 options 表，验证 A 版本仍能读迁移前的 key |
+| `web/classic` 下线导致 tokensheep Pancake 支付设置页丢失 | 确认对应配置项已在新前端的 payment/economy 区块覆盖，否则先补齐再切流 |
+| 前端目录迁移遗漏 tokensheep 静态资源（logo/sheep SVG） | 迁移后逐一核对 `web/public/` 下的 tokensheep 资源清单 |
 
 ## 7. 追踪
 
