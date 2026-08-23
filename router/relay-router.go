@@ -96,6 +96,9 @@ func SetRelayRouter(router *gin.Engine) {
 		httpRouter.POST("/messages", func(c *gin.Context) {
 			controller.Relay(c, types.RelayFormatClaude)
 		})
+		// Answered locally rather than relayed: most channels are not Anthropic
+		// and reject this path, which clients read as the endpoint not existing.
+		httpRouter.POST("/messages/count_tokens", controller.ClaudeCountTokens)
 
 		// chat related routes
 		httpRouter.POST("/completions", func(c *gin.Context) {
