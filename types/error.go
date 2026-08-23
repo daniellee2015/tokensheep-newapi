@@ -225,9 +225,13 @@ func (e *NewAPIError) ToClaudeError() ClaudeError {
 			result = claudeError
 		}
 	default:
+		errType := string(e.errorType)
+		if e.errorCode == ErrorCodeInvalidRequest {
+			errType = "invalid_request_error"
+		}
 		result = ClaudeError{
 			Message: e.Error(),
-			Type:    string(e.errorType),
+			Type:    errType,
 		}
 	}
 	if e.errorCode != ErrorCodeCountTokenFailed {
