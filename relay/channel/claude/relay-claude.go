@@ -921,6 +921,37 @@ func patchNativeClaudeToolFallbackData(data string, response *dto.ClaudeResponse
 	return string(patchedData)
 }
 
+// patchNativeClaudeMessageResponseData rewrites only the fields this relay
+// owns — message id, display model, normalized usage — directly on the
+// upstream JSON.
+//
+// Re-marshalling dto.ClaudeResponse instead drops every field the struct does
+// not declare, because Anthropic's message shape is wider than the subset
+// modelled here. `stop_sequence` was the visible casualty: clients and
+// conformance suites expect it on every message, and the relay silently
+// removed it. The streaming path already patches raw data for this reason;
+// this keeps the non-streaming path lossless in the same way.
+func patchNativeClaudeMessageResponseData(data []byte, response *dto.ClaudeResponse, usageNormalized bool) []byte {
+	if len(data) == 0 || response == nil {
+		return data
+	}
+	patched := string(data)
+	if response.Id != "" {
+		if next, err := sjson.Set(patched, "id", response.Id); err == nil {
+			patched = next
+		}
+	}
+	if response.Model != "" {
+		if next, err := sjson.Set(patched, "model", response.Model); err == nil {
+			patched = next
+		}
+	}
+	if usageNormalized && response.Usage != nil {
+		patched = patchNativeClaudeUsageAtPath(patched, "usage", response.Usage)
+	}
+	return []byte(patched)
+}
+
 func patchNativeClaudeUsageData(data string, response *dto.ClaudeResponse) string {
 	if data == "" || response == nil {
 		return data
@@ -1284,8 +1315,9 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	if claudeInfo.Usage == nil {
 		claudeInfo.Usage = &dto.Usage{}
 	}
+	usageNormalized := false
 	if claudeResponse.Usage != nil {
-		normalizeCursorProxyClaudeResponseUsage(info, &claudeResponse)
+		usageNormalized = normalizeCursorProxyClaudeResponseUsage(info, &claudeResponse)
 		claudeInfo.Usage.PromptTokens = claudeResponse.Usage.InputTokens
 		claudeInfo.Usage.CompletionTokens = claudeResponse.Usage.OutputTokens
 		claudeInfo.Usage.TotalTokens = claudeResponse.Usage.InputTokens + claudeResponse.Usage.OutputTokens
@@ -1307,10 +1339,7 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	case types.RelayFormatClaude:
 		claudeResponse.Id = normalizeClaudeResponseMessageID(claudeResponse.Id)
 		applyNativeClaudeDisplayModel(info, &claudeResponse)
-		responseData, err = common.Marshal(claudeResponse)
-		if err != nil {
-			return types.NewError(err, types.ErrorCodeBadResponseBody)
-		}
+		responseData = patchNativeClaudeMessageResponseData(data, &claudeResponse, usageNormalized)
 	}
 
 	if claudeResponse.Usage != nil && claudeResponse.Usage.ServerToolUse != nil && claudeResponse.Usage.ServerToolUse.WebSearchRequests > 0 {
