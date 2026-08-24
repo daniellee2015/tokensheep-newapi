@@ -43,6 +43,20 @@ export function getSavedLanguage(user: AuthUser): string | undefined {
   }
 }
 
+// Paths that must not be treated as a valid post-login destination. tokensheep
+// has a custom landing page at `/`, so an unauthenticated user who clicks the
+// header "Sign in" link arrives at /sign-in?redirect=/. If we honor that
+// redirect, login sends the user back to the landing page — the URL barely
+// changes and no dashboard chrome renders, which reads as "login didn't work".
+// The call sites use `sanitizeAuthRedirect(...) ?? '/dashboard'`, so returning
+// null for these paths falls through to the intended destination.
+const REJECTED_REDIRECT_PATHS = new Set([
+  '/',
+  '/sign-in',
+  '/sign-up',
+  '/otp',
+])
+
 export function sanitizeAuthRedirect(
   value: unknown,
   origin: string
@@ -73,6 +87,11 @@ export function sanitizeAuthRedirect(
     !allowedRedirectProtocols.has(redirectURL.protocol) ||
     redirectURL.origin !== trustedOrigin.origin
   ) {
+    return null
+  }
+
+  const normalizedPath = redirectURL.pathname.replace(/\/+$/, '') || '/'
+  if (REJECTED_REDIRECT_PATHS.has(normalizedPath)) {
     return null
   }
 

@@ -225,16 +225,20 @@ func CheckinAward(group string) int {
 // user in `group`. It intentionally uses the same operator map as check-in
 // awards. Free users cannot check in, but welcome-code gift credit still needs
 // a small daily spend allowance.
+//
+// Empty and "default" groups fall back to the free allowance. New users land
+// in `common.DefaultUserGroup = "default"` until an admin promotes them, and
+// returning zero here freezes their gift pool: GetUserQuota reports a
+// positive balance from welcome codes while every request 400s on
+// "insufficient quota". This is exactly the trap the tokensheep economy is
+// designed to prevent.
 func GiftDailyLimit(group string) int {
 	economyMu.RLock()
 	defer economyMu.RUnlock()
-	if economySetting.CheckinAwardByGroup == nil {
-		return 0
-	}
-	if limit := economySetting.CheckinAwardByGroup[group]; limit > 0 {
+	if limit, ok := economySetting.CheckinAwardByGroup[group]; ok && limit > 0 {
 		return limit
 	}
-	if group == "free" {
+	if group == "" || group == "free" || group == "default" {
 		return 50000
 	}
 	return 0

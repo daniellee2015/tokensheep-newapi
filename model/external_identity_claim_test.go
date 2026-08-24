@@ -74,7 +74,14 @@ func TestInitializeExternalIdentityClaimsIsIdempotent(t *testing.T) {
 	assert.Equal(t, user.Id, claim.UserId)
 }
 
-func TestInitializeExternalIdentityClaimsRejectsAmbiguousLegacyBindings(t *testing.T) {
+// TestInitializeExternalIdentityClaimsWarnsOnDuplicateTelegramID pins the
+// tokensheep semantics: duplicate legacy telegram bindings must not block
+// startup. The oldest user (lowest id) wins the claim, later duplicates are
+// logged via common.SysError for the operator to reconcile in the admin
+// panel. The upstream behavior was to abort the entire migration with
+// ErrExternalIdentityAlreadyClaimed, which turned any prod DB with historical
+// ambiguity into an un-deployable image.
+func TestInitializeExternalIdentityClaimsWarnsOnDuplicateTelegramID(t *testing.T) {
 	truncateTables(t)
 
 	first := User{Username: "telegram-legacy-one", Password: "password", TelegramId: "duplicate-telegram-id", AffCode: "telegram-legacy-one"}
@@ -82,10 +89,14 @@ func TestInitializeExternalIdentityClaimsRejectsAmbiguousLegacyBindings(t *testi
 	require.NoError(t, DB.Create(&first).Error)
 	require.NoError(t, DB.Create(&second).Error)
 
-	err := InitializeExternalIdentityClaims()
-	assert.ErrorIs(t, err, ErrExternalIdentityAlreadyClaimed)
+	require.NoError(t, InitializeExternalIdentityClaims())
+
+	var claim ExternalIdentityClaim
+	require.NoError(t, DB.Where("provider = ? AND subject = ?",
+		ExternalIdentityProviderTelegram, "duplicate-telegram-id").First(&claim).Error)
+	assert.Equal(t, first.Id, claim.UserId, "oldest user (lowest id) wins the claim")
 
 	var count int64
 	require.NoError(t, DB.Model(&ExternalIdentityClaim{}).Count(&count).Error)
-	assert.Zero(t, count)
+	assert.EqualValues(t, 1, count, "only one claim persists despite duplicate telegram_id")
 }

@@ -289,13 +289,15 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		return a.ConvertImageRequest(c, info, imgReq)
 	}
 	if a.RequestMode == RequestModeClaude {
-		result, err := service.ConvertRequest(c, info, types.RelayFormatClaude, request)
+		// Route through the host Claude request builder so tokensheep's
+		// tool-schema, web-search, PDF extraction, adaptive-thinking, and
+		// JSON-schema instruction pipeline survives on Vertex too. The kit
+		// registry path silently drops all of that; see
+		// relay/channel/claude/adaptor.go and relay/channel/aws/adaptor.go
+		// for the same pattern.
+		claudeReq, err := claude.RequestOpenAI2ClaudeMessage(c, *request)
 		if err != nil {
 			return nil, err
-		}
-		claudeReq, ok := result.Value.(*dto.ClaudeRequest)
-		if !ok {
-			return nil, fmt.Errorf("expected Anthropic Messages request, got %T", result.Value)
 		}
 		vertexClaudeReq := copyRequest(claudeReq, anthropicVersion)
 		c.Set("request_model", claudeReq.Model)
