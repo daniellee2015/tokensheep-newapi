@@ -58,6 +58,25 @@ describe('authentication redirect validation', () => {
     expect(sanitizeAuthRedirect('/dashboard', 'not-an-origin')).toBe(null)
     expect(sanitizeAuthRedirect('/dashboard', 'file:///tmp/app')).toBe(null)
   })
+
+  // tokensheep runs a landing page at "/" — unauthenticated users who click
+  // the header "Sign in" link arrive at /sign-in?redirect=/. Sending them
+  // back to landing after login reads as "login didn't work" because the URL
+  // barely changes and no dashboard chrome renders. The caller falls back to
+  // /dashboard when we return null.
+  test('rejects redirects that would loop back to landing or auth pages', () => {
+    for (const target of [
+      '/',
+      '/sign-in',
+      '/sign-in/',
+      '/sign-up',
+      '/otp',
+      'https://dashboard.example.com/',
+      'https://dashboard.example.com/sign-in?next=/wallet',
+    ]) {
+      expect(sanitizeAuthRedirect(target, origin)).toBe(null)
+    }
+  })
 })
 
 describe('saved authentication language', () => {
