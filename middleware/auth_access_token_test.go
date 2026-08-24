@@ -9,14 +9,20 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/gin-contrib/sessions"
-	"github.com/gin-contrib/sessions/cookie"
+
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
+// TestUserAuthProjectsGroupForAccessTokenAuthentication pins the tokensheep
+// invariant from `fix(auth): project access token user group`: authenticating
+// via the personal access token in `Authorization` puts the user's `group`
+// on the gin context, so downstream Kiro.bus channels see the right billing
+// group instead of an empty string. The upstream stateless-auth refactor
+// pulled the code path through authenticateDashboardRequest, so the test
+// now drives UserAuth directly without the retired gin-contrib session store.
 func TestUserAuthProjectsGroupForAccessTokenAuthentication(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
@@ -32,7 +38,6 @@ func TestUserAuthProjectsGroupForAccessTokenAuthentication(t *testing.T) {
 	}).Error)
 
 	router := gin.New()
-	router.Use(sessions.Sessions("session", cookie.NewStore([]byte("auth-access-token-test"))))
 	router.GET("/metadata", UserAuth(), func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"group": c.GetString("group")})
 	})

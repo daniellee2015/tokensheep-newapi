@@ -146,7 +146,7 @@ func Redeem(key string, userId int) (quota int, err error) {
 
 	common.RandomSleep()
 	err = DB.Transaction(func(tx *gorm.DB) error {
-		err := tx.Set("gorm:query_option", "FOR UPDATE").Where(commonKeyColumn()+" = ?", key).First(redemption).Error
+		err := lockForUpdate(tx).Where(commonKeyColumn()+" = ?", key).First(redemption).Error
 		if err != nil {
 			return errors.New("无效的兑换码")
 		}
@@ -183,25 +183,33 @@ func Redeem(key string, userId int) (quota int, err error) {
 			return errors.New("无效的兑换额度")
 		}
 
-		err = tx.Model(&User{}).Where("id = ?", userId).Update("quota_gift", gorm.Expr("quota_gift + ?", quota)).Error
-		if err != nil {
-			return err
+		// Compare-and-swap on status: only the transaction that flips
+		// enabled -> used may credit the gift pool, so a concurrent redeem of
+		// the same code loses here even without a row lock (e.g. on SQLite).
+		result := tx.Model(&Redemption{}).
+			Where("id = ? AND status = ?", redemption.Id, common.RedemptionCodeStatusEnabled).
+			Updates(map[string]interface{}{
+				"redeemed_time": common.GetTimestamp(),
+				"status":        common.RedemptionCodeStatusUsed,
+				"used_user_id":  userId,
+			})
+		if result.Error != nil {
+			return result.Error
 		}
-		redemption.RedeemedTime = common.GetTimestamp()
-		redemption.Status = common.RedemptionCodeStatusUsed
-		redemption.UsedUserId = userId
-		err = tx.Save(redemption).Error
-		return err
+		if result.RowsAffected == 0 {
+			return errors.New("该兑换码已被使用")
+		}
+		// Redemption credits the gift pool, not paid quota: welcome codes are
+		// promotional and share the pool's cap and idle-expiry rules.
+		return tx.Model(&User{}).Where("id = ?", userId).Update("quota_gift", gorm.Expr("quota_gift + ?", quota)).Error
 	})
 	if err != nil {
 		common.SysError("redemption failed: " + err.Error())
 		return 0, ErrRedeemFailed
 	}
-	go func() {
-		if err := cacheIncrUserQuota(userId, int64(quota)); err != nil {
-			common.SysLog("failed to increase user quota cache after redemption: " + err.Error())
-		}
-	}()
+	// The credited amount is the capped `quota`, not redemption.Quota, so the
+	// cache matches what the gift pool actually received.
+	syncCreditUserQuotaCache(userId, quota, "redemption")
 	RecordLog(userId, LogTypeTopup, fmt.Sprintf("通过欢迎码获得赠送额度 %s，兑换码ID %d", logger.LogQuota(quota), redemption.Id))
 	return quota, nil
 }

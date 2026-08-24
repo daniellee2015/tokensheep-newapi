@@ -7,11 +7,11 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/model_setting"
-	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
 )
@@ -95,6 +95,9 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 	if request == nil {
 		return nil, errors.New("request is nil")
 	}
+	// Route via the host RequestOpenAI2ClaudeMessage so tokensheep's
+	// tool-schema/webSearch/PDF/adaptive-thinking customizations survive.
+	// The upstream registry path (relayconvert.ConvertRequest) drops them.
 	claudeRequest, err := RequestOpenAI2ClaudeMessage(c, *request)
 	if err != nil {
 		return nil, err

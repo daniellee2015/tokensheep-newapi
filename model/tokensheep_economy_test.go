@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/tokensheep_setting"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,6 +25,22 @@ func setupTokenSheepEconomyTestState(t *testing.T) {
 	t.Cleanup(func() {
 		common.RedisEnabled = oldRedisEnabled
 		common.BatchUpdateEnabled = oldBatchUpdateEnabled
+	})
+}
+
+// overrideEconomySetting installs a specific EconomySetting for a single test
+// and restores whatever was there before on cleanup. Individual tests use this
+// so their assertions do not depend on the ambient defaults, which have drifted
+// over time (e.g. GiftPoolCap was 5M when TestRedeemCapsGiftPool was written
+// and is 25M today).
+func overrideEconomySetting(t *testing.T, jsonStr string) {
+	t.Helper()
+	previous := tokensheep_setting.EconomySetting2JSONString()
+	require.NoError(t, tokensheep_setting.UpdateEconomySettingByJSONString(jsonStr))
+	t.Cleanup(func() {
+		if err := tokensheep_setting.UpdateEconomySettingByJSONString(previous); err != nil {
+			t.Logf("failed to restore economy setting: %v", err)
+		}
 	})
 }
 
@@ -77,6 +95,11 @@ func TestDecreaseUserQuotaUsesGiftBeforePaid(t *testing.T) {
 
 func TestDecreaseUserQuotaHonorsDailyGiftLimit(t *testing.T) {
 	setupTokenSheepEconomyTestState(t)
+	// Pin supporter's daily gift allowance to 50k. The ambient default has
+	// drifted (currently 1.5M for supporter) so a bare-defaults run would
+	// let the full 5k debit come from the gift pool, hiding the clip logic
+	// this test exists to protect.
+	overrideEconomySetting(t, `{"checkin_award_by_group":{"supporter":50000}}`)
 
 	today := time.Now().Format("2006-01-02")
 	user := User{
@@ -174,6 +197,11 @@ func TestRedeemCreditsGiftPoolAndOnlyOncePerUser(t *testing.T) {
 
 func TestRedeemCapsGiftPool(t *testing.T) {
 	setupTokenSheepEconomyTestState(t)
+	// Pin the pool cap to 5M so the fixture's 4,999,900 seed sits exactly
+	// 100 below the ceiling; the ambient default drifted to 25M and would
+	// let the whole 200k redemption land without clipping, hiding the cap
+	// enforcement this test protects.
+	overrideEconomySetting(t, `{"gift_pool_cap":5000000}`)
 
 	user := User{
 		Id:        106,
