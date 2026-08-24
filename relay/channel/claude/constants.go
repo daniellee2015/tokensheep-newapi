@@ -43,3 +43,13 @@ var ModelList = []string{
 }
 
 var ChannelName = "claude"
+
+// Anthropic's web_search tool has a `max_uses` knob roughly proxied by the
+// OpenAI-side `search_context_size` string; these host-side constants let the
+// tokensheep RequestOpenAI2ClaudeMessage stay decoupled from the kit's
+// unexported copies of the same values.
+const (
+	WebSearchMaxUsesLow    = 1
+	WebSearchMaxUsesMedium = 5
+	WebSearchMaxUsesHigh   = 10
+)

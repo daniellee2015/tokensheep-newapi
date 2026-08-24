@@ -12,30 +12,23 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/channel/openrouter"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
-	"github.com/QuantumNous/new-api/relay/reasonmap"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/reasoning"
-	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
-	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
 
-const (
-	WebSearchMaxUsesLow    = 1
-	WebSearchMaxUsesMedium = 5
-	WebSearchMaxUsesHigh   = 10
-)
-
 func stopReasonClaude2OpenAI(reason string) string {
-	return reasonmap.ClaudeStopReasonToOpenAIFinishReason(reason)
+	return relayconvert.StopReasonClaudeToOpenAI(reason)
 }
 
 func maybeMarkClaudeRefusal(c *gin.Context, stopReason string) {
@@ -47,6 +40,10 @@ func maybeMarkClaudeRefusal(c *gin.Context, stopReason string) {
 	}
 }
 
+// RequestOpenAI2ClaudeMessage stays host-side: the tokensheep adaptor pins a
+// bespoke tool-schema/webSearch/PDF/adaptive-thinking pipeline that the shared
+// kit converter does not cover. adaptor.go routes Claude channels straight
+// through this function so the customizations survive the relaykit split.
 func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRequest) (*dto.ClaudeRequest, error) {
 	claudeTools := make([]any, 0, len(textRequest.Tools))
 
@@ -145,7 +142,7 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 
 	// 处理 tool_choice 和 parallel_tool_calls
 	if textRequest.ToolChoice != nil || textRequest.ParallelTooCalls != nil {
-		claudeToolChoice := mapToolChoice(textRequest.ToolChoice, textRequest.ParallelTooCalls)
+		claudeToolChoice := relayconvert.MapOpenAIToolChoice(textRequest.ToolChoice, textRequest.ParallelTooCalls)
 		if claudeToolChoice != nil {
 			claudeRequest.ToolChoice = claudeToolChoice
 		}
@@ -532,149 +529,17 @@ func buildClaudeResponseFormatInstruction(responseFormat *dto.ResponseFormat) st
 }
 
 func StreamResponseClaude2OpenAI(claudeResponse *dto.ClaudeResponse) *dto.ChatCompletionsStreamResponse {
-	var response dto.ChatCompletionsStreamResponse
-	response.Object = "chat.completion.chunk"
-	response.Model = claudeResponse.Model
-	response.Choices = make([]dto.ChatCompletionsStreamResponseChoice, 0)
-	tools := make([]dto.ToolCallResponse, 0)
-	fcIdx := 0
-	if claudeResponse.Index != nil {
-		fcIdx = *claudeResponse.Index
-	}
-	var choice dto.ChatCompletionsStreamResponseChoice
-	if claudeResponse.Type == "message_start" {
-		if claudeResponse.Message != nil {
-			response.Id = claudeResponse.Message.Id
-			response.Model = claudeResponse.Message.Model
-		}
-		//claudeUsage = &claudeResponse.Message.Usage
-		choice.Delta.SetContentString("")
-		choice.Delta.Role = "assistant"
-	} else if claudeResponse.Type == "content_block_start" {
-		if claudeResponse.ContentBlock != nil {
-			// 如果是文本块，尽可能发送首段文本（若存在）
-			if claudeResponse.ContentBlock.Type == "text" && claudeResponse.ContentBlock.Text != nil {
-				choice.Delta.SetContentString(*claudeResponse.ContentBlock.Text)
-			}
-			if claudeResponse.ContentBlock.Type == "tool_use" {
-				tools = append(tools, dto.ToolCallResponse{
-					Index: common.GetPointer(fcIdx),
-					ID:    claudeResponse.ContentBlock.Id,
-					Type:  "function",
-					Function: dto.FunctionResponse{
-						Name:      claudeResponse.ContentBlock.Name,
-						Arguments: "",
-					},
-				})
-			}
-		} else {
-			return nil
-		}
-	} else if claudeResponse.Type == "content_block_delta" {
-		if claudeResponse.Delta != nil {
-			choice.Delta.Content = claudeResponse.Delta.Text
-			switch claudeResponse.Delta.Type {
-			case "input_json_delta":
-				tools = append(tools, dto.ToolCallResponse{
-					Type:  "function",
-					Index: common.GetPointer(fcIdx),
-					Function: dto.FunctionResponse{
-						Arguments: *claudeResponse.Delta.PartialJson,
-					},
-				})
-			case "signature_delta":
-				// 加密的不处理
-				signatureContent := "\n"
-				choice.Delta.ReasoningContent = &signatureContent
-			case "thinking_delta":
-				choice.Delta.ReasoningContent = claudeResponse.Delta.Thinking
-			}
-		}
-	} else if claudeResponse.Type == "message_delta" {
-		if claudeResponse.Delta != nil && claudeResponse.Delta.StopReason != nil {
-			finishReason := stopReasonClaude2OpenAI(*claudeResponse.Delta.StopReason)
-			if finishReason != "null" {
-				choice.FinishReason = &finishReason
-			}
-		}
-		//claudeUsage = &claudeResponse.Usage
-	} else if claudeResponse.Type == "message_stop" {
-		return nil
-	} else {
-		return nil
-	}
-	if len(tools) > 0 {
-		choice.Delta.Content = nil // compatible with other OpenAI derivative applications, like LobeOpenAICompatibleFactory ...
-		choice.Delta.ToolCalls = tools
-	}
-	response.Choices = append(response.Choices, choice)
-
-	return &response
+	return relayconvert.StreamResponseClaude2OpenAI(claudeResponse)
 }
 
 func ResponseClaude2OpenAI(claudeResponse *dto.ClaudeResponse) *dto.OpenAITextResponse {
-	choices := make([]dto.OpenAITextResponseChoice, 0)
-	fullTextResponse := dto.OpenAITextResponse{
-		Id:      fmt.Sprintf("chatcmpl-%s", common.GetUUID()),
-		Object:  "chat.completion",
-		Created: common.GetTimestamp(),
-	}
-	var responseText string
-	var responseThinking string
-	if len(claudeResponse.Content) > 0 {
-		responseText = claudeResponse.Content[0].GetText()
-		if claudeResponse.Content[0].Thinking != nil {
-			responseThinking = *claudeResponse.Content[0].Thinking
-		}
-	}
-	tools := make([]dto.ToolCallResponse, 0)
-	thinkingContent := ""
-
-	fullTextResponse.Id = claudeResponse.Id
-	for _, message := range claudeResponse.Content {
-		switch message.Type {
-		case "tool_use":
-			args, _ := json.Marshal(message.Input)
-			tools = append(tools, dto.ToolCallResponse{
-				ID:   message.Id,
-				Type: "function", // compatible with other OpenAI derivative applications
-				Function: dto.FunctionResponse{
-					Name:      message.Name,
-					Arguments: string(args),
-				},
-			})
-		case "thinking":
-			// 加密的不管， 只输出明文的推理过程
-			if message.Thinking != nil {
-				thinkingContent = *message.Thinking
-			}
-		case "text":
-			responseText = message.GetText()
-		}
-	}
-	choice := dto.OpenAITextResponseChoice{
-		Index: 0,
-		Message: dto.Message{
-			Role: "assistant",
-		},
-		FinishReason: stopReasonClaude2OpenAI(claudeResponse.StopReason),
-	}
-	choice.SetStringContent(responseText)
-	if len(responseThinking) > 0 {
-		choice.ReasoningContent = &responseThinking
-	}
-	if len(tools) > 0 {
-		choice.Message.SetToolCalls(tools)
-	}
-	if thinkingContent != "" {
-		choice.Message.ReasoningContent = &thinkingContent
-	}
-	fullTextResponse.Model = claudeResponse.Model
-	choices = append(choices, choice)
-	fullTextResponse.Choices = choices
-	return &fullTextResponse
+	return relayconvert.ResponseClaude2OpenAI(claudeResponse)
 }
 
+// ClaudeResponseInfo stays host-local: the extra dedupe/replay/terminal
+// bookkeeping is only needed by the native Claude passthrough and no
+// converter reads these fields, so exposing them through the kit would only
+// grow its surface area.
 type ClaudeResponseInfo struct {
 	ResponseId           string
 	Created              int64
@@ -692,77 +557,37 @@ func cacheCreationTokensForOpenAIUsage(usage *dto.Usage) int {
 	if usage == nil {
 		return 0
 	}
-	splitCacheCreationTokens := usage.ClaudeCacheCreation5mTokens + usage.ClaudeCacheCreation1hTokens
-	if splitCacheCreationTokens == 0 {
-		return usage.PromptTokensDetails.CachedCreationTokens
+	openAIUsage := relayconvert.UsageFromClaudeUsage(usage)
+	if openAIUsage == nil {
+		return 0
 	}
-	if usage.PromptTokensDetails.CachedCreationTokens > splitCacheCreationTokens {
-		return usage.PromptTokensDetails.CachedCreationTokens
-	}
-	return splitCacheCreationTokens
+	return openAIUsage.PromptTokens - usage.PromptTokens - usage.PromptTokensDetails.CachedTokens
 }
 
 func buildOpenAIStyleUsageFromClaudeUsage(usage *dto.Usage) dto.Usage {
-	if usage == nil {
+	mapped := relayconvert.UsageFromClaudeUsage(usage)
+	if mapped == nil {
 		return dto.Usage{}
 	}
-	clone := *usage
-	clone.ClaudeCacheCreation5mTokens, clone.ClaudeCacheCreation1hTokens = service.NormalizeCacheCreationSplit(
-		usage.PromptTokensDetails.CachedCreationTokens,
-		usage.ClaudeCacheCreation5mTokens,
-		usage.ClaudeCacheCreation1hTokens,
-	)
-	cacheCreationTokens := cacheCreationTokensForOpenAIUsage(usage)
-	totalInputTokens := usage.PromptTokens + usage.PromptTokensDetails.CachedTokens + cacheCreationTokens
-	clone.PromptTokens = totalInputTokens
-	clone.InputTokens = totalInputTokens
-	clone.TotalTokens = totalInputTokens + usage.CompletionTokens
-	clone.UsageSemantic = "openai"
-	clone.UsageSource = "anthropic"
-	return clone
+	return *mapped
 }
 
 func buildMessageDeltaPatchUsage(claudeResponse *dto.ClaudeResponse, claudeInfo *ClaudeResponseInfo) *dto.ClaudeUsage {
-	usage := &dto.ClaudeUsage{}
-	if claudeResponse != nil && claudeResponse.Usage != nil {
-		*usage = *claudeResponse.Usage
+	// The host struct carries extra tokensheep bookkeeping (LastNativeDelta*,
+	// TerminalEventSeen, …) the kit does not know about. The kit's usage
+	// patch only reads .Usage, so hand it a minimal kit-typed shadow.
+	var kitInfo *relayconvert.ClaudeResponseInfo
+	if claudeInfo != nil {
+		kitInfo = &relayconvert.ClaudeResponseInfo{
+			ResponseId:   claudeInfo.ResponseId,
+			Created:      claudeInfo.Created,
+			Model:        claudeInfo.Model,
+			ResponseText: claudeInfo.ResponseText,
+			Usage:        claudeInfo.Usage,
+			Done:         claudeInfo.Done,
+		}
 	}
-
-	if claudeInfo == nil || claudeInfo.Usage == nil {
-		return usage
-	}
-
-	if usage.InputTokens == 0 && claudeInfo.Usage.PromptTokens > 0 {
-		usage.InputTokens = claudeInfo.Usage.PromptTokens
-	}
-	if usage.CacheReadInputTokens == 0 && claudeInfo.Usage.PromptTokensDetails.CachedTokens > 0 {
-		usage.CacheReadInputTokens = claudeInfo.Usage.PromptTokensDetails.CachedTokens
-	}
-	if usage.CacheCreationInputTokens == 0 && claudeInfo.Usage.PromptTokensDetails.CachedCreationTokens > 0 {
-		usage.CacheCreationInputTokens = claudeInfo.Usage.PromptTokensDetails.CachedCreationTokens
-	}
-	cacheCreation5m := 0
-	cacheCreation1h := 0
-	if usage.CacheCreation != nil {
-		cacheCreation5m = usage.CacheCreation.Ephemeral5mInputTokens
-		cacheCreation1h = usage.CacheCreation.Ephemeral1hInputTokens
-	} else {
-		cacheCreation5m = claudeInfo.Usage.ClaudeCacheCreation5mTokens
-		cacheCreation1h = claudeInfo.Usage.ClaudeCacheCreation1hTokens
-	}
-	cacheCreation5m, cacheCreation1h = service.NormalizeCacheCreationSplit(
-		usage.CacheCreationInputTokens,
-		cacheCreation5m,
-		cacheCreation1h,
-	)
-	if usage.CacheCreation == nil && (cacheCreation5m > 0 || cacheCreation1h > 0) {
-		usage.CacheCreation = &dto.ClaudeCacheCreationUsage{}
-	}
-	if usage.CacheCreation != nil {
-		usage.CacheCreation.Ephemeral5mInputTokens = cacheCreation5m
-		usage.CacheCreation.Ephemeral1hInputTokens = cacheCreation1h
-	}
-	return usage
+	return relayconvert.BuildMessageDeltaPatchUsage(claudeResponse, kitInfo)
 }
 
 func shouldNormalizeCursorProxyUsage(info *relaycommon.RelayInfo) bool {
@@ -829,7 +654,11 @@ func normalizeCursorProxyClaudeResponseUsage(info *relaycommon.RelayInfo, respon
 }
 
 func nativeClaudeDisplayModelName(info *relaycommon.RelayInfo) string {
-	if info == nil || !info.IsModelMapped || info.OriginModelName == "" || info.OriginModelName == info.UpstreamModelName {
+	// info.ChannelMeta is an embedded pointer that may be nil in tests and
+	// early-init paths; accessing IsModelMapped/UpstreamModelName without a
+	// nil check panics. The relaykit split turned these into ChannelMeta
+	// fields, so guard the whole pointer explicitly.
+	if info == nil || info.ChannelMeta == nil || !info.IsModelMapped || info.OriginModelName == "" || info.OriginModelName == info.UpstreamModelName {
 		return ""
 	}
 	return info.OriginModelName
@@ -921,6 +750,37 @@ func patchNativeClaudeToolFallbackData(data string, response *dto.ClaudeResponse
 	return string(patchedData)
 }
 
+// patchNativeClaudeMessageResponseData rewrites only the fields this relay
+// owns — message id, display model, normalized usage — directly on the
+// upstream JSON.
+//
+// Re-marshalling dto.ClaudeResponse instead drops every field the struct does
+// not declare, because Anthropic's message shape is wider than the subset
+// modelled here. `stop_sequence` was the visible casualty: clients and
+// conformance suites expect it on every message, and the relay silently
+// removed it. The streaming path already patches raw data for this reason;
+// this keeps the non-streaming path lossless in the same way.
+func patchNativeClaudeMessageResponseData(data []byte, response *dto.ClaudeResponse, usageNormalized bool) []byte {
+	if len(data) == 0 || response == nil {
+		return data
+	}
+	patched := string(data)
+	if response.Id != "" {
+		if next, err := sjson.Set(patched, "id", response.Id); err == nil {
+			patched = next
+		}
+	}
+	if response.Model != "" {
+		if next, err := sjson.Set(patched, "model", response.Model); err == nil {
+			patched = next
+		}
+	}
+	if usageNormalized && response.Usage != nil {
+		patched = patchNativeClaudeUsageAtPath(patched, "usage", response.Usage)
+	}
+	return []byte(patched)
+}
+
 func patchNativeClaudeUsageData(data string, response *dto.ClaudeResponse) string {
 	if data == "" || response == nil {
 		return data
@@ -967,39 +827,13 @@ func shouldSkipClaudeMessageDeltaUsagePatch(info *relaycommon.RelayInfo) bool {
 }
 
 func patchClaudeMessageDeltaUsageData(data string, usage *dto.ClaudeUsage) string {
-	if data == "" || usage == nil {
-		return data
-	}
-
-	data = setMessageDeltaUsageInt(data, "usage.input_tokens", usage.InputTokens)
-	data = setMessageDeltaUsageInt(data, "usage.cache_read_input_tokens", usage.CacheReadInputTokens)
-	data = setMessageDeltaUsageInt(data, "usage.cache_creation_input_tokens", usage.CacheCreationInputTokens)
-
-	if usage.CacheCreation != nil {
-		data = setMessageDeltaUsageInt(data, "usage.cache_creation.ephemeral_5m_input_tokens", usage.CacheCreation.Ephemeral5mInputTokens)
-		data = setMessageDeltaUsageInt(data, "usage.cache_creation.ephemeral_1h_input_tokens", usage.CacheCreation.Ephemeral1hInputTokens)
-	}
-
-	return data
+	return relayconvert.PatchClaudeMessageDeltaUsageData(data, usage)
 }
 
-func setMessageDeltaUsageInt(data string, path string, localValue int) string {
-	if localValue <= 0 {
-		return data
-	}
-
-	upstreamValue := gjson.Get(data, path)
-	if upstreamValue.Exists() && upstreamValue.Int() > 0 {
-		return data
-	}
-
-	patchedData, err := sjson.Set(data, path, localValue)
-	if err != nil {
-		return data
-	}
-	return patchedData
-}
-
+// FormatClaudeResponseInfo stays host-side: the kit's equivalent operates on
+// its own ClaudeResponseInfo struct, but this build carries extra dedupe
+// fields (LastNativeDeltaText/LastNativeDeltaBlock) that only the host
+// passthrough reads. Delegating to the kit here would drop that state.
 func FormatClaudeResponseInfo(claudeResponse *dto.ClaudeResponse, oaiResponse *dto.ChatCompletionsStreamResponse, claudeInfo *ClaudeResponseInfo) bool {
 	if claudeInfo == nil {
 		return false
@@ -1119,6 +953,7 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		if applyNativeClaudeToolFallback(info, &claudeResponse) {
 			data = patchNativeClaudeToolFallbackData(data, &claudeResponse)
 		}
+		countClaudeStreamBillableTools(c, info, &claudeResponse)
 		helper.ClaudeChunkData(c, claudeResponse, data)
 	} else if info.RelayFormat == types.RelayFormatOpenAI {
 		response := StreamResponseClaude2OpenAI(&claudeResponse)
@@ -1126,6 +961,8 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		if !FormatClaudeResponseInfo(&claudeResponse, response, claudeInfo) {
 			return nil
 		}
+
+		countClaudeStreamBillableTools(c, info, &claudeResponse)
 
 		err = helper.ObjectData(c, response)
 		if err != nil {
@@ -1187,6 +1024,26 @@ func shouldSkipDuplicateNativeTextDelta(info *relaycommon.RelayInfo, claudeInfo 
 	return false
 }
 
+// countClaudeStreamBillableTools tracks tool-use blocks and server-side web
+// search calls so billing can price them. Called from the native passthrough
+// stream loop alongside the tokensheep display-model rewrite.
+func countClaudeStreamBillableTools(c *gin.Context, info *relaycommon.RelayInfo, claudeResponse *dto.ClaudeResponse) {
+	if claudeResponse == nil {
+		return
+	}
+	if claudeResponse.Type == "content_block_start" &&
+		claudeResponse.ContentBlock != nil &&
+		claudeResponse.ContentBlock.Type == "tool_use" {
+		info.CountBillableToolCall(dto.BuildInCallToolUse, claudeResponse.ContentBlock.Name)
+	}
+	if claudeResponse.Type == "message_delta" &&
+		claudeResponse.Usage != nil &&
+		claudeResponse.Usage.ServerToolUse != nil &&
+		claudeResponse.Usage.ServerToolUse.WebSearchRequests > 0 {
+		c.Set("claude_web_search_requests", claudeResponse.Usage.ServerToolUse.WebSearchRequests)
+	}
+}
+
 func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, claudeInfo *ClaudeResponseInfo) {
 	if claudeInfo.Usage.PromptTokens == 0 {
 		//上游出错
@@ -1195,19 +1052,27 @@ func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, clau
 		if common.DebugEnabled {
 			common.SysLog("claude response usage is not complete, maybe upstream error")
 		}
-		// 只补缺失字段，不整份覆盖——保留 message_start 已拿到的 cache 字段
-		fallback := service.ResponseText2Usage(c, claudeInfo.ResponseText.String(), info.UpstreamModelName, info.GetEstimatePromptTokens())
-		if claudeInfo.Usage.CompletionTokens == 0 ||
-			(!claudeInfo.Done && fallback.CompletionTokens > claudeInfo.Usage.CompletionTokens) {
-			claudeInfo.Usage.CompletionTokens = fallback.CompletionTokens
-		}
-		if claudeInfo.Usage.PromptTokens == 0 {
-			claudeInfo.Usage.PromptTokens = fallback.PromptTokens
+		// Only compute the local tokenization fallback when the upstream never
+		// reported a count. If message_start already gave us one (e.g. the
+		// client cancelled after the first output_tokens frame), trust it: the
+		// local tokenizer's estimate is not more accurate than the real value,
+		// and mid-stream cancellations must not over-bill on tokensheep.
+		if claudeInfo.Usage.CompletionTokens == 0 || claudeInfo.Usage.PromptTokens == 0 {
+			fallback := service.ResponseText2Usage(c, claudeInfo.ResponseText.String(), info.UpstreamModelName, info.GetEstimatePromptTokens())
+			if claudeInfo.Usage.CompletionTokens == 0 {
+				claudeInfo.Usage.CompletionTokens = fallback.CompletionTokens
+			}
+			if claudeInfo.Usage.PromptTokens == 0 {
+				claudeInfo.Usage.PromptTokens = fallback.PromptTokens
+			}
 		}
 		claudeInfo.Usage.TotalTokens = claudeInfo.Usage.PromptTokens + claudeInfo.Usage.CompletionTokens
 	}
 	if claudeInfo.Usage != nil {
 		claudeInfo.Usage.UsageSemantic = "anthropic"
+	}
+	if claudeInfo.Usage != nil && claudeInfo.Usage.BillingUsage == nil {
+		claudeInfo.Usage.BillingUsage = dto.NewClaudeMessagesBillingUsage(buildMessageDeltaPatchUsage(nil, claudeInfo))
 	}
 
 	if info.RelayFormat == types.RelayFormatClaude {
@@ -1284,12 +1149,14 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	if claudeInfo.Usage == nil {
 		claudeInfo.Usage = &dto.Usage{}
 	}
+	usageNormalized := false
 	if claudeResponse.Usage != nil {
-		normalizeCursorProxyClaudeResponseUsage(info, &claudeResponse)
+		usageNormalized = normalizeCursorProxyClaudeResponseUsage(info, &claudeResponse)
 		claudeInfo.Usage.PromptTokens = claudeResponse.Usage.InputTokens
 		claudeInfo.Usage.CompletionTokens = claudeResponse.Usage.OutputTokens
 		claudeInfo.Usage.TotalTokens = claudeResponse.Usage.InputTokens + claudeResponse.Usage.OutputTokens
 		claudeInfo.Usage.UsageSemantic = "anthropic"
+		claudeInfo.Usage.BillingUsage = dto.NewClaudeMessagesBillingUsage(claudeResponse.Usage)
 		claudeInfo.Usage.PromptTokensDetails.CachedTokens = claudeResponse.Usage.CacheReadInputTokens
 		claudeInfo.Usage.PromptTokensDetails.CachedCreationTokens = claudeResponse.Usage.CacheCreationInputTokens
 		claudeInfo.Usage.ClaudeCacheCreation5mTokens = claudeResponse.Usage.GetCacheCreation5mTokens()
@@ -1300,21 +1167,24 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	case types.RelayFormatOpenAI:
 		openaiResponse := ResponseClaude2OpenAI(&claudeResponse)
 		openaiResponse.Usage = buildOpenAIStyleUsageFromClaudeUsage(claudeInfo.Usage)
-		responseData, err = json.Marshal(openaiResponse)
+		responseData, err = common.Marshal(openaiResponse)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeBadResponseBody)
 		}
 	case types.RelayFormatClaude:
 		claudeResponse.Id = normalizeClaudeResponseMessageID(claudeResponse.Id)
 		applyNativeClaudeDisplayModel(info, &claudeResponse)
-		responseData, err = common.Marshal(claudeResponse)
-		if err != nil {
-			return types.NewError(err, types.ErrorCodeBadResponseBody)
-		}
+		responseData = patchNativeClaudeMessageResponseData(data, &claudeResponse, usageNormalized)
 	}
 
 	if claudeResponse.Usage != nil && claudeResponse.Usage.ServerToolUse != nil && claudeResponse.Usage.ServerToolUse.WebSearchRequests > 0 {
 		c.Set("claude_web_search_requests", claudeResponse.Usage.ServerToolUse.WebSearchRequests)
+	}
+
+	for _, block := range claudeResponse.Content {
+		if block.Type == "tool_use" {
+			info.CountBillableToolCall(dto.BuildInCallToolUse, block.Name)
+		}
 	}
 
 	service.IOCopyBytesGracefully(c, httpResp, responseData)
@@ -1349,55 +1219,4 @@ func ClaudeHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayI
 		return nil, handleErr
 	}
 	return claudeInfo.Usage, nil
-}
-
-func mapToolChoice(toolChoice any, parallelToolCalls *bool) *dto.ClaudeToolChoice {
-	var claudeToolChoice *dto.ClaudeToolChoice
-
-	// 处理 tool_choice 字符串值
-	if toolChoiceStr, ok := toolChoice.(string); ok {
-		switch toolChoiceStr {
-		case "auto":
-			claudeToolChoice = &dto.ClaudeToolChoice{
-				Type: "auto",
-			}
-		case "required":
-			claudeToolChoice = &dto.ClaudeToolChoice{
-				Type: "any",
-			}
-		case "none":
-			claudeToolChoice = &dto.ClaudeToolChoice{
-				Type: "none",
-			}
-		}
-	} else if toolChoiceMap, ok := toolChoice.(map[string]interface{}); ok {
-		// 处理 tool_choice 对象值
-		if function, ok := toolChoiceMap["function"].(map[string]interface{}); ok {
-			if toolName, ok := function["name"].(string); ok {
-				claudeToolChoice = &dto.ClaudeToolChoice{
-					Type: "tool",
-					Name: toolName,
-				}
-			}
-		}
-	}
-
-	// 处理 parallel_tool_calls
-	if parallelToolCalls != nil {
-		if claudeToolChoice == nil {
-			// 如果没有 tool_choice，但有 parallel_tool_calls，创建默认的 auto 类型
-			claudeToolChoice = &dto.ClaudeToolChoice{
-				Type: "auto",
-			}
-		}
-
-		// Anthropic schema: tool_choice.type=none does not accept extra fields.
-		// When tools are disabled, parallel_tool_calls is irrelevant, so we drop it.
-		if claudeToolChoice.Type != "none" {
-			// 如果 parallel_tool_calls 为 true，则 disable_parallel_tool_use 为 false
-			claudeToolChoice.DisableParallelToolUse = !*parallelToolCalls
-		}
-	}
-
-	return claudeToolChoice
 }
