@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -84,18 +86,47 @@ func releaseAllExternalIdentitiesWithTx(tx *gorm.DB, userId int) error {
 }
 
 // InitializeExternalIdentityClaims imports legacy Telegram bindings after the
-// claim table is migrated. Existing duplicate ownership fails migration rather
-// than preserving an ambiguous login identity.
+// claim table is migrated.
+//
+// The upstream implementation failed the entire migration when it encountered
+// two users sharing a telegram_id, which blocked every restart on production
+// databases that had accumulated ambiguous bindings before telegram_id gained
+// a unique constraint. tokensheep prefers to start with a loud warning: the
+// oldest user (lowest id) keeps the claim, later duplicates are logged for
+// the operator to reconcile, and the rest of the backfill proceeds. The
+// warning is not silent — a duplicate telegram_id in `users` means one of
+// those accounts cannot log in via Telegram OAuth until an admin picks a
+// winner in the admin panel.
 func InitializeExternalIdentityClaims() error {
 	var users []User
 	if err := DB.Unscoped().Select("id", "telegram_id").
-		Where("telegram_id <> ?", "").Find(&users).Error; err != nil {
+		Where("telegram_id <> ?", "").
+		Order("id ASC").
+		Find(&users).Error; err != nil {
 		return err
 	}
+	// Group by telegram_id so we can pick a winner deterministically (the
+	// lowest id, i.e. the earliest-created user) and log the rest.
+	claimants := make(map[string][]int, len(users))
+	order := make([]string, 0, len(users))
+	for _, user := range users {
+		if _, seen := claimants[user.TelegramId]; !seen {
+			order = append(order, user.TelegramId)
+		}
+		claimants[user.TelegramId] = append(claimants[user.TelegramId], user.Id)
+	}
 	return DB.Transaction(func(tx *gorm.DB) error {
-		for _, user := range users {
-			if err := ClaimExternalIdentityWithTx(tx, ExternalIdentityProviderTelegram, user.TelegramId, user.Id); err != nil {
-				return fmt.Errorf("backfill Telegram identity for user %d: %w", user.Id, err)
+		for _, telegramId := range order {
+			ids := claimants[telegramId]
+			winner := ids[0]
+			if len(ids) > 1 {
+				common.SysError(fmt.Sprintf(
+					"telegram_id %q is bound to %d users %v — keeping the oldest (id=%d) and skipping the rest; reconcile in the admin panel to restore Telegram login for the others",
+					telegramId, len(ids), ids, winner,
+				))
+			}
+			if err := ClaimExternalIdentityWithTx(tx, ExternalIdentityProviderTelegram, telegramId, winner); err != nil {
+				return fmt.Errorf("backfill Telegram identity for user %d: %w", winner, err)
 			}
 		}
 		return nil

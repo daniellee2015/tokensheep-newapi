@@ -122,17 +122,18 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		return novaReq, nil
 	}
 
-	// 原有的Claude模型处理逻辑
-	result, err := service.ConvertRequest(c, info, types.RelayFormatClaude, request)
+	// Route through the host Claude request builder so tokensheep's
+	// tool-schema, web-search, PDF extraction, adaptive-thinking, and
+	// JSON-schema instruction pipeline survives on Bedrock too. The kit
+	// registry path (service.ConvertRequest → oaichat.OpenAIChatRequestToClaudeMessages)
+	// silently drops all of that; see relay/channel/claude/adaptor.go for
+	// the same pattern applied on the direct Claude adaptor.
+	claudeReq, err := claude.RequestOpenAI2ClaudeMessage(c, *request)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to convert openai request to claude request")
 	}
-	claudeReq, ok := result.Value.(*dto.ClaudeRequest)
-	if !ok {
-		return nil, fmt.Errorf("expected Anthropic Messages request, got %T", result.Value)
-	}
 	info.UpstreamModelName = claudeReq.Model
-	return claudeReq, err
+	return claudeReq, nil
 }
 
 func (a *Adaptor) ConvertRerankRequest(c *gin.Context, relayMode int, request dto.RerankRequest) (any, error) {

@@ -51,6 +51,24 @@ func handleClaudeFormat(c *gin.Context, data string, info *relaycommon.RelayInfo
 	if !ok {
 		return fmt.Errorf("expected Claude stream responses, got %T", result.Value)
 	}
+	// Anthropic clients validate the message id shape on every stream frame;
+	// the kit's stream converter copies the upstream OpenAI id
+	// (`chatcmpl-<uuid-with-dashes>`) verbatim, which the client rejects.
+	// The non-stream path normalizes at the openai adaptor boundary; do the
+	// equivalent here so message_start's id is Anthropic-shaped from the very
+	// first frame. Sub-frames leave `Id` empty so this only rewrites where a
+	// value is set.
+	for _, resp := range claudeResponses {
+		if resp == nil {
+			continue
+		}
+		if resp.Message != nil && resp.Message.Id != "" {
+			resp.Message.Id = relayconvert.NormalizeClaudeMessageID(resp.Message.Id)
+		}
+		if resp.Id != "" {
+			resp.Id = relayconvert.NormalizeClaudeMessageID(resp.Id)
+		}
+	}
 	for _, resp := range claudeResponses {
 		helper.ClaudeData(c, *resp)
 	}
@@ -191,7 +209,20 @@ func HandleFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, lastStream
 			common.SysLog(fmt.Sprintf("expected Claude stream responses, got %T", result.Value))
 			return
 		}
+		// Anthropic-shape the id on the final frames too. handleClaudeFormat
+		// already normalizes mid-stream, but this terminal helper is the last
+		// place we can catch a message_start-with-id or an assistant message
+		// wrap that came in via the tail frame.
 		for _, resp := range claudeResponses {
+			if resp == nil {
+				continue
+			}
+			if resp.Message != nil && resp.Message.Id != "" {
+				resp.Message.Id = relayconvert.NormalizeClaudeMessageID(resp.Message.Id)
+			}
+			if resp.Id != "" {
+				resp.Id = relayconvert.NormalizeClaudeMessageID(resp.Id)
+			}
 			_ = helper.ClaudeData(c, *resp)
 		}
 		info.ClaudeConvertInfo.Done = true

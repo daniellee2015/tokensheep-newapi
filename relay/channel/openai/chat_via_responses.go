@@ -67,6 +67,15 @@ func OaiResponsesToChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 		}
 		responseValue = targetResult.Value
+		// The kit converter copies the upstream Responses id verbatim into
+		// the Claude message; Anthropic clients reject anything that is not
+		// `msg_<hex>`. See relay/channel/openai/relay-openai.go for the
+		// mirror fix on the direct chat path.
+		if info.RelayFormat == types.RelayFormatClaude {
+			if claudeResp, ok := responseValue.(*dto.ClaudeResponse); ok && claudeResp != nil {
+				claudeResp.Id = relayconvert.NormalizeClaudeMessageID(claudeResp.Id)
+			}
+		}
 	}
 	responseBody, err := common.Marshal(responseValue)
 	if err != nil {
@@ -175,6 +184,15 @@ func OaiResponsesToChatBufferedStreamHandler(c *gin.Context, info *relaycommon.R
 			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 		}
 		responseValue = targetResult.Value
+		// The kit converter copies the upstream Responses id verbatim into
+		// the Claude message; Anthropic clients reject anything that is not
+		// `msg_<hex>`. See relay/channel/openai/relay-openai.go for the
+		// mirror fix on the direct chat path.
+		if info.RelayFormat == types.RelayFormatClaude {
+			if claudeResp, ok := responseValue.(*dto.ClaudeResponse); ok && claudeResp != nil {
+				claudeResp.Id = relayconvert.NormalizeClaudeMessageID(claudeResp.Id)
+			}
+		}
 	}
 	responseBody, err := common.Marshal(responseValue)
 	if err != nil {
@@ -243,6 +261,10 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			}
 			return true
 		case dto.ClaudeResponse:
+			// Normalize the message id shape on every claude stream frame; the
+			// kit converter copies the upstream Responses id verbatim and
+			// Anthropic clients reject anything that is not `msg_<hex>`.
+			normalizeClaudeStreamMessageID(&value)
 			if err := helper.ClaudeData(c, value); err != nil {
 				streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
 				return false
@@ -252,6 +274,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			if value == nil {
 				return true
 			}
+			normalizeClaudeStreamMessageID(value)
 			if err := helper.ClaudeData(c, *value); err != nil {
 				streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
 				return false
@@ -339,4 +362,20 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		helper.Done(c)
 	}
 	return usage, nil
+}
+
+// normalizeClaudeStreamMessageID rewrites the upstream OpenAI Responses id on
+// a claude stream frame so Anthropic clients accept it. Only the
+// message_start frame owns a top-level Id / Message.Id — the helper is a
+// no-op on sub-frames.
+func normalizeClaudeStreamMessageID(resp *dto.ClaudeResponse) {
+	if resp == nil {
+		return
+	}
+	if resp.Message != nil && resp.Message.Id != "" {
+		resp.Message.Id = relayconvert.NormalizeClaudeMessageID(resp.Message.Id)
+	}
+	if resp.Id != "" {
+		resp.Id = relayconvert.NormalizeClaudeMessageID(resp.Id)
+	}
 }
