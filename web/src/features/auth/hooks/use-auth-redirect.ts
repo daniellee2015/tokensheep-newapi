@@ -42,9 +42,30 @@ export function useAuthRedirect() {
     redirectTo?: string
   ) => {
     applyAuthBundle(bundle)
+    // History tokensheep users have "zh" saved in their profile from when we
+    // only supported en/zh. Upstream's new locale set uses camelCase codes
+    // (`zhCN` / `zhTW`), and calling i18n.changeLanguage() with an unsupported
+    // value under `load: 'currentOnly'` leaves the promise hanging on a
+    // missing bundle — which stalls the post-login navigate() below and looks
+    // to the user like the login button did nothing. Guard the switch on the
+    // configured supportedLngs so an unknown code is a silent no-op, and
+    // isolate any remaining rejection so navigation always runs.
     const savedLang = getSavedLanguage(bundle.user)
-    if (savedLang && savedLang !== i18n.language) {
-      await i18n.changeLanguage(savedLang)
+    const supportedList = i18n.options?.supportedLngs
+    const supported =
+      Array.isArray(supportedList) && supportedList.length > 0
+        ? new Set(supportedList.map((code) => String(code)))
+        : null
+    if (
+      savedLang &&
+      savedLang !== i18n.language &&
+      (!supported || supported.has(savedLang))
+    ) {
+      try {
+        await i18n.changeLanguage(savedLang)
+      } catch {
+        // Never let a language-load failure block the redirect.
+      }
     }
 
     const targetPath =
