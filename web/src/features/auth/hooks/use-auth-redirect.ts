@@ -70,7 +70,14 @@ export function useAuthRedirect() {
 
     const targetPath =
       sanitizeAuthRedirect(redirectTo, window.location.origin) ?? '/dashboard'
-    navigate({ href: targetPath, replace: true })
+    // Delay to next microtask so zustand's setBundle propagates to any React
+    // subtree subscribed via useAuthStore before router re-evaluates route
+    // matches. Without this, TanStack Router occasionally still sees the
+    // pre-login auth snapshot, treats /dashboard as unauthenticated, and
+    // silently drops the navigation — leaving the user on /sign-in until they
+    // hard-refresh the page.
+    await Promise.resolve()
+    await navigate({ to: targetPath, replace: true, reloadDocument: false })
   }
 
   /**
