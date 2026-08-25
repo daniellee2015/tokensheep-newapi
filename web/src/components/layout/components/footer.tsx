@@ -23,7 +23,9 @@ import { useTranslation } from 'react-i18next'
 
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
+import { parseHeaderNavModulesFromStatus } from '@/lib/nav-modules'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
 
 interface FooterLink {
   text: string
@@ -196,6 +198,42 @@ function LegalLinks(props: { leadingSeparator?: boolean }) {
   )
 }
 
+// Live status heartbeat surfaced in the footer copyright row. Renders only
+// when the admin has enabled the status entry in HeaderNavModules and, if
+// requireAuth is on, the current viewer is authenticated. The link opens the
+// external status dashboard in a new window.
+function StatusHeartbeat() {
+  const { t } = useTranslation()
+  const { status } = useStatus()
+  const { auth } = useAuthStore()
+  const isAuthed = !!auth?.user
+  const modules = parseHeaderNavModulesFromStatus(
+    status as Record<string, unknown> | null
+  )
+  const statusModule = modules.status
+  if (!statusModule || !statusModule.enabled || !statusModule.url) {
+    return null
+  }
+  if (statusModule.requireAuth && !isAuthed) {
+    return null
+  }
+  return (
+    <a
+      href={statusModule.url}
+      target='_blank'
+      rel='noopener noreferrer'
+      className='text-muted-foreground/60 hover:text-foreground inline-flex items-center gap-1.5 text-xs transition-colors duration-200'
+      aria-label={t('Service Status')}
+    >
+      <span className='relative flex h-2 w-2 shrink-0' aria-hidden='true'>
+        <span className='absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60' />
+        <span className='bg-emerald-500 relative inline-flex h-2 w-2 animate-pulse rounded-full' />
+      </span>
+      <span>{t('Status')}</span>
+    </a>
+  )
+}
+
 // inline=true returns just the inner span for composition in a parent flex
 // row. inline=false wraps in a centered/right-aligned div (default).
 function ProjectAttribution(props: { currentYear: number; inline?: boolean }) {
@@ -316,6 +354,7 @@ export function Footer(props: FooterProps) {
                 {t('Contact Us')}: hello@tokensheep.fun
               </a>
               <LegalLinks />
+              <StatusHeartbeat />
               <ProjectAttribution currentYear={currentYear} inline />
             </div>
           </div>
@@ -387,15 +426,19 @@ export function Footer(props: FooterProps) {
           </div>
         </div>
 
-        {/* Copyright row — brand copyright left, upstream attribution right.
-            Legal single-page links moved to their own column above. */}
+        {/* Copyright row — brand copyright left, status heartbeat + upstream
+            attribution right. Legal single-page links moved to their own
+            column above. */}
         <div className='border-border/30 mt-12 flex flex-col items-center justify-between gap-x-3 gap-y-2 border-t pt-6 sm:flex-row'>
           <span className='text-muted-foreground/40 text-xs'>
             &copy; {currentYear}
             {hasDisplayName && <> {displayName}.</>}{' '}
             {props.copyright ?? t('footer.defaultCopyright')}
           </span>
-          <ProjectAttribution currentYear={currentYear} />
+          <div className='flex flex-col items-center gap-x-4 gap-y-1 sm:flex-row'>
+            <StatusHeartbeat />
+            <ProjectAttribution currentYear={currentYear} />
+          </div>
         </div>
       </div>
     </footer>

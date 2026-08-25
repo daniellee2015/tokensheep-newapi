@@ -27,9 +27,11 @@ import {
   FormControl,
   FormDescription,
   FormField,
+  FormItem,
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
+import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 
 import {
@@ -55,6 +57,9 @@ const headerNavSchema = z.object({
   pricingRequireAuth: z.boolean(),
   rankingsEnabled: z.boolean(),
   rankingsRequireAuth: z.boolean(),
+  statusEnabled: z.boolean(),
+  statusRequireAuth: z.boolean(),
+  statusUrl: z.string().url().or(z.literal('')),
   docs: z.boolean(),
   about: z.boolean(),
 })
@@ -89,6 +94,18 @@ const toFormValues = (config: HeaderNavModulesConfig): HeaderNavFormValues => ({
     config.rankings?.requireAuth === undefined
       ? HEADER_NAV_DEFAULT.rankings.requireAuth
       : Boolean(config.rankings.requireAuth),
+  statusEnabled:
+    config.status?.enabled === undefined
+      ? HEADER_NAV_DEFAULT.status.enabled
+      : Boolean(config.status.enabled),
+  statusRequireAuth:
+    config.status?.requireAuth === undefined
+      ? HEADER_NAV_DEFAULT.status.requireAuth
+      : Boolean(config.status.requireAuth),
+  statusUrl:
+    typeof config.status?.url === 'string'
+      ? config.status.url
+      : HEADER_NAV_DEFAULT.status.url,
   docs:
     config.docs === undefined ? HEADER_NAV_DEFAULT.docs : Boolean(config.docs),
   about:
@@ -115,6 +132,7 @@ export function HeaderNavigationSection({
   }, [formDefaults, form])
 
   const onSubmit = async (values: HeaderNavFormValues) => {
+    const trimmedStatusUrl = values.statusUrl.trim()
     const payload: HeaderNavModulesConfig = {
       ...config,
       home: values.home,
@@ -130,6 +148,15 @@ export function HeaderNavigationSection({
         ...(config.rankings ?? HEADER_NAV_DEFAULT.rankings),
         enabled: values.rankingsEnabled,
         requireAuth: values.rankingsRequireAuth,
+      },
+      status: {
+        ...(config.status ?? HEADER_NAV_DEFAULT.status),
+        enabled: values.statusEnabled,
+        requireAuth: values.statusRequireAuth,
+        url:
+          trimmedStatusUrl.length > 0
+            ? trimmedStatusUrl
+            : HEADER_NAV_DEFAULT.status.url,
       },
     }
 
@@ -148,8 +175,14 @@ export function HeaderNavigationSection({
     form.reset(toFormValues(HEADER_NAV_DEFAULT))
   }
 
+  type HeaderNavBooleanKey = {
+    [K in keyof HeaderNavFormValues]: HeaderNavFormValues[K] extends boolean
+      ? K
+      : never
+  }[keyof HeaderNavFormValues]
+
   const simpleModules: Array<{
-    key: keyof HeaderNavFormValues
+    key: HeaderNavBooleanKey
     title: string
     description: string
   }> = [
@@ -176,8 +209,8 @@ export function HeaderNavigationSection({
   ]
 
   const accessModules: Array<{
-    enabledKey: keyof HeaderNavFormValues
-    requireAuthKey: keyof HeaderNavFormValues
+    enabledKey: HeaderNavBooleanKey
+    requireAuthKey: HeaderNavBooleanKey
     requireAuthDependsOn: 'pricingEnabled' | 'rankingsEnabled'
     title: string
     description: string
@@ -293,6 +326,90 @@ export function HeaderNavigationSection({
                 />
               </SettingsControlGroup>
             ))}
+
+            <SettingsControlGroup>
+              <FormField
+                control={form.control}
+                name='statusEnabled'
+                render={({ field }) => (
+                  <SettingsSwitchItem>
+                    <SettingsSwitchContent>
+                      <FormLabel>{t('Status')}</FormLabel>
+                      <FormDescription>
+                        {t('External status page link surfaced in navigation.')}
+                      </FormDescription>
+                    </SettingsSwitchContent>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </SettingsSwitchItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='statusRequireAuth'
+                render={({ field }) => (
+                  <SettingsControlChildren>
+                    <SettingsSwitchItem className='py-2'>
+                      <SettingsSwitchContent>
+                        <FormLabel>
+                          {t('Require login to view status')}
+                        </FormLabel>
+                        <FormDescription>
+                          {t(
+                            'Visitors must authenticate before accessing the status page link.'
+                          )}
+                        </FormDescription>
+                      </SettingsSwitchContent>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          disabled={!form.watch('statusEnabled')}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </SettingsSwitchItem>
+                  </SettingsControlChildren>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='statusUrl'
+                render={({ field }) => (
+                  <SettingsControlChildren>
+                    <FormItem className='py-2'>
+                      <FormLabel>{t('Status URL')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          type='url'
+                          inputMode='url'
+                          placeholder={HEADER_NAV_DEFAULT.status.url}
+                          autoComplete='off'
+                          disabled={!form.watch('statusEnabled')}
+                          {...field}
+                          onChange={(event) =>
+                            field.onChange(event.target.value)
+                          }
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'External status dashboard URL. Opens in a new window.'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  </SettingsControlChildren>
+                )}
+              />
+            </SettingsControlGroup>
           </div>
         </SettingsForm>
       </Form>

@@ -1,7 +1,9 @@
 {
   "landing.tier.popular": "Popular",
+  "landing.tier.standard.name": "Standard",
   "New API": "TokenSheep",
   "wallet.tierCards.bestie.badge": "Bestie Pass",
+  "wallet.tierCards.vip.badge": "VIP Pass",
   "wallet.tierCards.fan.badge": "Fan Pass",
   "wallet.tierCards.supporter.badge": "Supporter Pass"
 }

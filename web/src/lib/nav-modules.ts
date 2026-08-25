@@ -20,16 +20,21 @@ import { getStatus } from '@/lib/api'
 
 export type ModuleAccess = { enabled: boolean; requireAuth: boolean }
 
+export type StatusModuleAccess = ModuleAccess & { url: string }
+
 export type HeaderNavModule = 'rankings' | 'pricing'
+
+export const STATUS_DEFAULT_URL = 'https://status.tokensheep.fun'
 
 export type HeaderNavModules = {
   home: boolean
   console: boolean
   pricing: ModuleAccess
   rankings: ModuleAccess
+  status: StatusModuleAccess
   docs: boolean
   about: boolean
-  [key: string]: boolean | ModuleAccess
+  [key: string]: boolean | ModuleAccess | StatusModuleAccess
 }
 
 const DEFAULT_HEADER_NAV_MODULES: HeaderNavModules = {
@@ -37,6 +42,7 @@ const DEFAULT_HEADER_NAV_MODULES: HeaderNavModules = {
   console: true,
   pricing: { enabled: true, requireAuth: false },
   rankings: { enabled: true, requireAuth: false },
+  status: { enabled: true, requireAuth: true, url: STATUS_DEFAULT_URL },
   docs: true,
   about: true,
 }
@@ -51,7 +57,39 @@ function cloneHeaderNavDefaults(): HeaderNavModules {
     ...DEFAULT_HEADER_NAV_MODULES,
     pricing: { ...DEFAULT_HEADER_NAV_MODULES.pricing },
     rankings: { ...DEFAULT_HEADER_NAV_MODULES.rankings },
+    status: { ...DEFAULT_HEADER_NAV_MODULES.status },
   }
+}
+
+function parseStatus(
+  raw: unknown,
+  fallback: StatusModuleAccess
+): StatusModuleAccess {
+  if (
+    typeof raw === 'boolean' ||
+    typeof raw === 'number' ||
+    typeof raw === 'string'
+  ) {
+    return {
+      enabled: parseHeaderNavBoolean(raw, fallback.enabled),
+      requireAuth: fallback.requireAuth,
+      url: fallback.url,
+    }
+  }
+  if (raw && typeof raw === 'object') {
+    const r = raw as Record<string, unknown>
+    const rawUrl = r.url
+    const url =
+      typeof rawUrl === 'string' && rawUrl.trim().length > 0
+        ? rawUrl.trim()
+        : fallback.url
+    return {
+      enabled: parseHeaderNavBoolean(r.enabled, fallback.enabled),
+      requireAuth: parseHeaderNavBoolean(r.requireAuth, fallback.requireAuth),
+      url,
+    }
+  }
+  return { ...fallback }
 }
 
 export function parseHeaderNavBoolean(
@@ -116,6 +154,10 @@ export function parseHeaderNavModules(raw: unknown): HeaderNavModules {
     }
     if (key === 'rankings') {
       result.rankings = parseAccess(value, result.rankings)
+      return
+    }
+    if (key === 'status') {
+      result.status = parseStatus(value, result.status)
       return
     }
 

@@ -21,15 +21,22 @@ export type HeaderNavAccessConfig = {
   requireAuth: boolean
 }
 
+export type HeaderNavStatusConfig = HeaderNavAccessConfig & {
+  url: string
+}
+
 export type HeaderNavModulesConfig = {
   home: boolean
   console: boolean
   pricing: HeaderNavAccessConfig
   rankings: HeaderNavAccessConfig
+  status: HeaderNavStatusConfig
   docs: boolean
   about: boolean
-  [key: string]: boolean | HeaderNavAccessConfig
+  [key: string]: boolean | HeaderNavAccessConfig | HeaderNavStatusConfig
 }
+
+export const STATUS_DEFAULT_URL = 'https://status.tokensheep.fun'
 
 export type SidebarSectionConfig = {
   enabled: boolean
@@ -48,6 +55,11 @@ export const HEADER_NAV_DEFAULT: HeaderNavModulesConfig = {
   rankings: {
     enabled: true,
     requireAuth: false,
+  },
+  status: {
+    enabled: true,
+    requireAuth: true,
+    url: STATUS_DEFAULT_URL,
   },
   docs: true,
   about: true,
@@ -98,7 +110,39 @@ const cloneHeaderNavDefault = (): HeaderNavModulesConfig => ({
   ...HEADER_NAV_DEFAULT,
   pricing: { ...HEADER_NAV_DEFAULT.pricing },
   rankings: { ...HEADER_NAV_DEFAULT.rankings },
+  status: { ...HEADER_NAV_DEFAULT.status },
 })
+
+const parseStatusModule = (
+  raw: unknown,
+  fallback: HeaderNavStatusConfig
+): HeaderNavStatusConfig => {
+  if (
+    typeof raw === 'boolean' ||
+    typeof raw === 'string' ||
+    typeof raw === 'number'
+  ) {
+    return {
+      enabled: toBoolean(raw, fallback.enabled),
+      requireAuth: fallback.requireAuth,
+      url: fallback.url,
+    }
+  }
+  if (raw && typeof raw === 'object') {
+    const record = raw as Record<string, unknown>
+    const rawUrl = record.url
+    const url =
+      typeof rawUrl === 'string' && rawUrl.trim().length > 0
+        ? rawUrl.trim()
+        : fallback.url
+    return {
+      enabled: toBoolean(record.enabled, fallback.enabled),
+      requireAuth: toBoolean(record.requireAuth, fallback.requireAuth),
+      url,
+    }
+  }
+  return { ...fallback }
+}
 
 const parseAccessModule = (
   raw: unknown,
@@ -146,6 +190,7 @@ export function parseHeaderNavModules(
       ...base,
       pricing: { ...base.pricing },
       rankings: { ...base.rankings },
+      status: { ...base.status },
     }
 
     Object.entries(parsed).forEach(([key, raw]) => {
@@ -155,6 +200,10 @@ export function parseHeaderNavModules(
       }
       if (key === 'rankings') {
         result.rankings = parseAccessModule(raw, base.rankings)
+        return
+      }
+      if (key === 'status') {
+        result.status = parseStatusModule(raw, base.status)
         return
       }
 

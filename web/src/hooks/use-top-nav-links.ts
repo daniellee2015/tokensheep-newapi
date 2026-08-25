@@ -86,6 +86,24 @@ export function useTopNavLinks(): TopNavLink[] {
     links.push({ title: t('Rankings'), href: '/rankings', requiresAuth })
   }
 
+  // Status (external link; hidden entirely for guests when requireAuth is on)
+  const statusModule = modules?.status
+  if (
+    statusModule &&
+    typeof statusModule === 'object' &&
+    statusModule.enabled &&
+    'url' in statusModule &&
+    typeof statusModule.url === 'string' &&
+    statusModule.url.length > 0 &&
+    (!statusModule.requireAuth || isAuthed)
+  ) {
+    links.push({
+      title: t('Status'),
+      href: statusModule.url,
+      external: true,
+    })
+  }
+
   // Docs (supports external links)
   if (modules?.docs !== false) {
     if (docsLink) {
