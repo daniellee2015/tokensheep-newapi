@@ -92,6 +92,15 @@ func newRelayHTTPTransport() *http.Transport {
 	transport.MaxIdleConnsPerHost = common.RelayMaxIdleConnsPerHost
 	transport.IdleConnTimeout = time.Duration(common.RelayIdleConnTimeout) * time.Second
 	transport.ForceAttemptHTTP2 = true
+	// ResponseHeaderTimeout caps how long the relay will wait for the upstream to
+	// return the response header. Upstream aggregators (e.g. cli-proxy-api's
+	// round-based credential retry) may keep a stream connection open for minutes
+	// while cycling through 429'd accounts, holding a slot in our channel pool
+	// the whole time. Without a cap, one downstream request that never gets a
+	// first byte can occupy an upstream credential for 25~53 minutes and produce
+	// no consume log. Two minutes is generous enough for legitimate first-token
+	// latency on large prompts (observed p99 ~50s in production).
+	transport.ResponseHeaderTimeout = time.Duration(common.RelayResponseHeaderTimeout) * time.Second
 	if common.TLSInsecureSkipVerify {
 		transport.TLSClientConfig = common.InsecureTLSConfig
 	}

@@ -180,6 +180,14 @@ var RelayIdleConnTimeout int // unit is second
 var RelayMaxIdleConns int
 var RelayMaxIdleConnsPerHost int
 
+// RelayResponseHeaderTimeout caps how long the relay HTTP client waits for the
+// upstream to return the response header. See newRelayHTTPTransport for the
+// rationale; the default is chosen to be generous for legitimate first-token
+// latency on large prompts while still cutting off connections stuck in the
+// upstream aggregator's credential retry loop. Unit: seconds. 0 = no timeout
+// (legacy behaviour).
+var RelayResponseHeaderTimeout int
+
 var GeminiSafetySetting string
 
 // https://docs.cohere.com/docs/safety-modes Type; NONE/CONTEXTUAL/STRICT
