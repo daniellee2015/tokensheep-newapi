@@ -28,11 +28,14 @@ func ModelRequestRateLimitGroup2JSONString() string {
 }
 
 func UpdateModelRequestRateLimitGroupByJSONString(jsonStr string) error {
-	ModelRequestRateLimitMutex.RLock()
-	defer ModelRequestRateLimitMutex.RUnlock()
-
-	ModelRequestRateLimitGroup = make(map[string][2]int)
-	return json.Unmarshal([]byte(jsonStr), &ModelRequestRateLimitGroup)
+	newMap := make(map[string][2]int)
+	if err := json.Unmarshal([]byte(jsonStr), &newMap); err != nil {
+		return err
+	}
+	ModelRequestRateLimitMutex.Lock()
+	defer ModelRequestRateLimitMutex.Unlock()
+	ModelRequestRateLimitGroup = newMap
+	return nil
 }
 
 func GetGroupRateLimit(group string) (totalCount, successCount int, found bool) {

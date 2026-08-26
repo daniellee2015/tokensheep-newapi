@@ -91,6 +91,7 @@ func TokenRPMLimiter() gin.HandlerFunc {
 			allowed = memoryLimiter.allow(tokenId, limit, time.Now())
 		}
 		if !allowed {
+			logRateLimitedRejection(c, fmt.Sprintf("token_rpm_limit_exceeded max=%d", limit))
 			abortWithOpenAiMessage(
 				c,
 				http.StatusTooManyRequests,

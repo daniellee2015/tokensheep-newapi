@@ -79,11 +79,20 @@ func recordRedisRequest(ctx context.Context, rdb *redis.Client, key string, maxC
 func redisRateLimitHandler(duration int64, totalMaxCount, successMaxCount int) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userId := strconv.Itoa(c.GetInt("id"))
+		tokenId := strconv.Itoa(c.GetInt("token_id"))
 		ctx := context.Background()
 		rdb := common.RDB
 
 		// 1. 检查成功请求数限制
-		successKey := fmt.Sprintf("rateLimit:%s:%s", ModelRequestRateLimitSuccessCountMark, userId)
+		// 计数器带上 token_id 维度：不同 token 的额度取自不同分组，
+		// 若共用一个 key 会让 token A 的流量把 token B 锁死。tokenId == "0"
+		// 表示无 token 上下文（罕见路径），退化为原来的 userId-only key。
+		var successKey string
+		if tokenId == "0" {
+			successKey = fmt.Sprintf("rateLimit:%s:%s", ModelRequestRateLimitSuccessCountMark, userId)
+		} else {
+			successKey = fmt.Sprintf("rateLimit:%s:%s:%s", ModelRequestRateLimitSuccessCountMark, userId, tokenId)
+		}
 		allowed, err := checkRedisRateLimit(ctx, rdb, successKey, successMaxCount, duration)
 		if err != nil {
 			fmt.Println("检查成功请求数限制失败:", err.Error())
@@ -91,13 +100,19 @@ func redisRateLimitHandler(duration int64, totalMaxCount, successMaxCount int) g
 			return
 		}
 		if !allowed {
+			logRateLimitedRejection(c, fmt.Sprintf("model_success_rpm_exceeded max=%d window_minutes=%d", successMaxCount, setting.ModelRequestRateLimitDurationMinutes))
 			abortWithOpenAiMessage(c, http.StatusTooManyRequests, fmt.Sprintf("您已达到请求数限制：%d分钟内最多请求%d次", setting.ModelRequestRateLimitDurationMinutes, successMaxCount))
 			return
 		}
 
 		//2.检查总请求数限制并记录总请求（当totalMaxCount为0时会自动跳过，使用令牌桶限流器
 		if totalMaxCount > 0 {
-			totalKey := fmt.Sprintf("rateLimit:%s", userId)
+			var totalKey string
+			if tokenId == "0" {
+				totalKey = fmt.Sprintf("rateLimit:%s", userId)
+			} else {
+				totalKey = fmt.Sprintf("rateLimit:%s:%s", userId, tokenId)
+			}
 			// 初始化
 			tb := limiter.New(ctx, rdb)
 			allowed, err = tb.Allow(
@@ -115,6 +130,7 @@ func redisRateLimitHandler(duration int64, totalMaxCount, successMaxCount int) g
 			}
 
 			if !allowed {
+				logRateLimitedRejection(c, fmt.Sprintf("model_total_rpm_exceeded max=%d window_minutes=%d", totalMaxCount, setting.ModelRequestRateLimitDurationMinutes))
 				abortWithOpenAiMessage(c, http.StatusTooManyRequests, fmt.Sprintf("您已达到总请求数限制：%d分钟内最多请求%d次，包括失败次数，请检查您的请求是否正确", setting.ModelRequestRateLimitDurationMinutes, totalMaxCount))
 			}
 		}
@@ -135,8 +151,18 @@ func memoryRateLimitHandler(duration int64, totalMaxCount, successMaxCount int) 
 
 	return func(c *gin.Context) {
 		userId := strconv.Itoa(c.GetInt("id"))
-		totalKey := ModelRequestRateLimitCountMark + userId
-		successKey := ModelRequestRateLimitSuccessCountMark + userId
+		tokenId := strconv.Itoa(c.GetInt("token_id"))
+		// 内存限流也按 token_id 分桶：同 user 不同 token 走各自分组的额度，
+		// 共用一个 key 会让 token A 的流量把 token B 锁死。tokenId == "0"
+		// 时退化为原来的 userId-only key，保持无 token 场景的兼容。
+		var suffix string
+		if tokenId == "0" {
+			suffix = userId
+		} else {
+			suffix = userId + ":" + tokenId
+		}
+		totalKey := ModelRequestRateLimitCountMark + suffix
+		successKey := ModelRequestRateLimitSuccessCountMark + suffix
 
 		// 1. 检查总请求数限制（当totalMaxCount为0时跳过）
 		if totalMaxCount > 0 && !inMemoryRateLimiter.Request(totalKey, totalMaxCount, duration) {

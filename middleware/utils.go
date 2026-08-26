@@ -7,7 +7,9 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 )
 
@@ -87,6 +89,29 @@ func anthropicErrorType(statusCode int) string {
 	default:
 		return "api_error"
 	}
+}
+
+// logRateLimitedRejection 异步落一条 LogTypeRateLimited 日志。
+// 从 gin.Context 里取 userId / tokenId / tokenName / path 快照，避免限流器
+// 拒绝时 relay 主链路还没写入这些字段导致日志缺失。userId<=0 时不写日志，
+// 因为限流器本身允许匿名请求走 IP 桶，那类拒绝不属于账户级审计范畴。
+func logRateLimitedRejection(c *gin.Context, reason string) {
+	if c == nil {
+		return
+	}
+	userId := c.GetInt("id")
+	if userId <= 0 {
+		return
+	}
+	tokenId := c.GetInt("token_id")
+	tokenName := c.GetString("token_name")
+	path := ""
+	if c.Request != nil && c.Request.URL != nil {
+		path = c.Request.URL.Path
+	}
+	gopool.Go(func() {
+		model.RecordRateLimitedLog(userId, tokenId, tokenName, path, reason)
+	})
 }
 
 func abortWithMidjourneyMessage(c *gin.Context, statusCode int, code int, description string) {

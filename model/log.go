@@ -82,14 +82,15 @@ type Log struct {
 
 // don't use iota, avoid change log type value
 const (
-	LogTypeUnknown = 0
-	LogTypeTopup   = 1
-	LogTypeConsume = 2
-	LogTypeManage  = 3
-	LogTypeSystem  = 4
-	LogTypeError   = 5
-	LogTypeRefund  = 6
-	LogTypeLogin   = 7
+	LogTypeUnknown     = 0
+	LogTypeTopup       = 1
+	LogTypeConsume     = 2
+	LogTypeManage      = 3
+	LogTypeSystem      = 4
+	LogTypeError       = 5
+	LogTypeRefund      = 6
+	LogTypeLogin       = 7
+	LogTypeRateLimited = 8
 )
 
 func ensureLogRequestId(log *Log) {
@@ -322,6 +323,33 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 	err := createLog(log)
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
+	}
+}
+
+// RecordRateLimitedLog 记录被限流中间件提前 abort 的请求（type=LogTypeRateLimited）。
+// 调用方通常拿不到完整的 gin.Context 上下文（rate-limit 拒绝时还没进 relay 主链路），
+// 因此只传最必要的字段。content 采用固定英文模板，reason 用来区分具体限流分支。
+func RecordRateLimitedLog(userId int, tokenId int, tokenName string, path string, reason string) {
+	username, _ := GetUsernameById(userId, false)
+	content := fmt.Sprintf("status_code=429, rate_limited, reason: %s", reason)
+	other := map[string]interface{}{
+		"admin_info": map[string]interface{}{
+			"path":   path,
+			"reason": reason,
+		},
+	}
+	log := &Log{
+		UserId:    userId,
+		Username:  username,
+		CreatedAt: common.GetTimestamp(),
+		Type:      LogTypeRateLimited,
+		Content:   content,
+		TokenName: tokenName,
+		TokenId:   tokenId,
+		Other:     common.MapToJsonStr(other),
+	}
+	if err := createLog(log); err != nil {
+		common.SysLog("failed to record rate-limited log: " + err.Error())
 	}
 }
 
