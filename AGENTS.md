@@ -100,6 +100,15 @@ Do NOT directly import or call `encoding/json` in business code. `json.RawMessag
 - Preserve explicit zero values in upstream relay request DTOs: absent client JSON fields must become `nil` and be omitted, while explicit `0`, `0.0`, or `false` values must remain non-`nil` and be sent upstream.
 - Avoid non-pointer scalars with `omitempty` for optional request parameters, because zero values will be silently dropped during marshal.
 
+**Channel and abilities mutations:** Do NOT modify `channels` or `abilities` tables with raw SQL. The `abilities` table is a derived index rebuilt from `channels.group × channels.models` inside `channel.Update()` (`model/ability.go:243-311`); any direct SQL write bypasses this and desynchronizes the model marketplace from routing. All channel mutations MUST go through the official admin API:
+
+- `PUT /api/channel/` (trailing slash required, otherwise 307 drops the body) for field patches. The endpoint does a full-object update, so a patch that omits fields will overwrite them with zero values.
+- `POST /api/channel/:id/status` or `POST /api/channel/status/batch` for enable/disable. `status` sent in the PUT body is rejected with 400.
+- `POST /api/channel/fix` to force a full rebuild of `abilities` when suspecting desync.
+- Sensitive fields (`key`, `setting`, `param_override`, `header_override`, `other`, `base_url`, `type`, `openai_organization`, `settings`, `key_mode`) require `ChannelSensitiveWrite`; without it the field is silently filtered — verify with a follow-up GET.
+
+Use `bin/channel-patch.sh` (which does GET → deep-merge → strip read-only → PUT) rather than hand-crafted `curl` when scripting channel edits, so field-drop bugs stay off the operator.
+
 **Billing expression system:** When working on tiered/dynamic billing (expression-based pricing), MUST read `pkg/billingexpr/expr.md` first. It documents the design philosophy, expression language, full architecture, token normalization rules, quota conversion, and expression versioning. All billing expression changes must follow that document.
 
 **Billing safety invariants:** Quota/billing code MUST never produce a negative charge (a credit) from arithmetic overflow or unvalidated input. Apply defense in depth:
