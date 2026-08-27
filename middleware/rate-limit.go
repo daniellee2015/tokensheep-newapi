@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -165,10 +167,58 @@ func GlobalWebRateLimit() func(c *gin.Context) {
 }
 
 func GlobalAPIRateLimit() func(c *gin.Context) {
-	if common.GlobalApiRateLimitEnable {
-		return rateLimitFactory(common.GlobalApiRateLimitNum, common.GlobalApiRateLimitDuration, "GA")
+	if !common.GlobalApiRateLimitEnable {
+		return defNext
 	}
-	return defNext
+	return hybridGlobalAPIRateLimit
+}
+
+// hybridGlobalAPIRateLimit 是 GlobalAPIRateLimit 的实际实现。
+// 优先按已登录用户分桶: 从 Authorization Bearer 里 unverified 地解出 userID
+// (只用来 keying, 不承担安全语义), 让同一账号在多 tab / 多设备 / IPv4↔IPv6
+// 切换时不再互相挤压额度。解不出就回落到 IP-based, 阈值和窗口保持一致。
+//
+// 这一层在 UserAuth 之前跑, 所以不能依赖 c.GetInt("id"); 真正的鉴权由
+// 后续中间件完成, 这里的 userID 仅作为限流 bucket key。
+func hybridGlobalAPIRateLimit(c *gin.Context) {
+	num := common.GlobalApiRateLimitNum
+	duration := common.GlobalApiRateLimitDuration
+
+	if userID, ok := peekBearerUserID(c); ok {
+		if common.RedisEnabled {
+			userRedisRateLimiter(c, num, duration, redisUserRateLimitKey("GA", userID))
+			return
+		}
+		inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
+		key := fmt.Sprintf("GA:user:%d", userID)
+		if !inMemoryRateLimiter.Request(key, num, duration) {
+			writeRateLimited(c, duration)
+		}
+		return
+	}
+
+	// 未登录或非 dashboard token: 沿用原来的 IP 桶, 阈值不变。
+	if common.RedisEnabled {
+		redisRateLimiter(c, num, duration, "GA")
+		return
+	}
+	inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
+	memoryRateLimiter(c, num, duration, "GA")
+}
+
+// peekBearerUserID 从请求头里嗅出 dashboard 用户 ID, 只用于限流 key。
+// 严格拒绝非 dashboard JWT (relay token / PAT), 避免误把大流量的
+// API key 请求全部塞进同一个用户桶。
+func peekBearerUserID(c *gin.Context) (int, bool) {
+	raw := c.GetHeader("Authorization")
+	if raw == "" {
+		return 0, false
+	}
+	parts := strings.Fields(raw)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return 0, false
+	}
+	return service.PeekAccessTokenUserID(parts[1])
 }
 
 func CriticalRateLimit() func(c *gin.Context) {
@@ -176,6 +226,75 @@ func CriticalRateLimit() func(c *gin.Context) {
 		return rateLimitFactory(common.CriticalRateLimitNum, common.CriticalRateLimitDuration, "CT")
 	}
 	return defNext
+}
+
+// RefreshRateLimit 专用于 /api/user/auth/refresh。
+// 以 sid 为限流 key: 同一浏览器 session 无论 IP 怎么切都是同一个 sid,
+// 多 tab / IPv4↔IPv6 切换不再误触发 429。拿不到 sid (cookie 缺失/损坏)
+// 回落到 IP-based 保底 bucket, 防止恶意刷 refresh 端点。
+//
+// 依赖: service.RefreshTokenSID (纯字符串拆分, 不校验签名, 因此安全前置于
+// RefreshLoginSession 的哈希校验)。使用前提是 SessionCookieOriginGuard
+// 已在同一路由链上, 阻止 cross-site 的 sid 冒用。
+func RefreshRateLimit() func(c *gin.Context) {
+	if !common.RefreshRateLimitEnable {
+		return defNext
+	}
+	return refreshRateLimiter
+}
+
+func refreshRateLimiter(c *gin.Context) {
+	sid := extractRefreshSID(c)
+	mark := "RF"
+	num := common.RefreshRateLimitNum
+	duration := common.RefreshRateLimitDuration
+
+	if sid == "" {
+		// 无 sid 走 IP 保底桶, 阈值不变但 mark 独立, 不再污染 CT
+		if common.RedisEnabled {
+			redisRateLimiter(c, num, duration, mark+":ip")
+			return
+		}
+		inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
+		memoryRateLimiter(c, num, duration, mark+":ip")
+		return
+	}
+
+	if common.RedisEnabled {
+		key := fmt.Sprintf("%s:sid:%s:%s", redisRateLimitNamespace, mark, sid)
+		allowed, _, ttlSeconds, err := redisFixedWindowTake(c.Request.Context(), key, num, duration)
+		if err != nil {
+			logger.LogError(c.Request.Context(), fmt.Sprintf("refresh rate limit check failed: %v", err))
+			c.Status(http.StatusInternalServerError)
+			c.Abort()
+			return
+		}
+		if !allowed {
+			writeRateLimited(c, ttlSeconds)
+		}
+		return
+	}
+
+	inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
+	key := fmt.Sprintf("%s:sid:%s", mark, sid)
+	if !inMemoryRateLimiter.Request(key, num, duration) {
+		writeRateLimited(c, duration)
+	}
+}
+
+// extractRefreshSID 从 refresh cookie 或 X-Auth-Session header 里推 sid,
+// 都拿不到返回空串。写法上不做 hex/base64 校验, 因为限流 key 只需要稳定,
+// 不需要"合法"; 后续 RefreshLoginSession 会做真正的校验。
+func extractRefreshSID(c *gin.Context) string {
+	if raw, err := c.Cookie(service.RefreshCookieName); err == nil && raw != "" {
+		if sid, ok := service.RefreshTokenSID(raw); ok {
+			return sid
+		}
+	}
+	if h := c.GetHeader("X-Auth-Session"); h != "" {
+		return h
+	}
+	return ""
 }
 
 func UserCriticalRateLimit(scope string) func(c *gin.Context) {

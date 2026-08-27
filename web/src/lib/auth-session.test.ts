@@ -145,11 +145,16 @@ describe('authentication session coordination', () => {
     expect(transientCount).toBe(1)
   })
 
-  test('a rate limited refresh remains retryable without clearing the session', async () => {
+  test('rate limited refresh backs off before giving up as a transient error', async () => {
+    let attempts = 0
     let transientCount = 0
     let clearCount = 0
+    const delays: number[] = []
     const runtime: AuthRefreshRuntime = {
-      request: async () => ({ status: 429 }),
+      request: async () => {
+        attempts += 1
+        return { status: 429 }
+      },
       getExpectedSID: () => bundle.session.sid,
       parseBundle: () => null,
       acceptBundle: () => undefined,
@@ -159,14 +164,101 @@ describe('authentication session coordination', () => {
       markTransient: () => {
         transientCount += 1
       },
+      wait: async (delay) => {
+        delays.push(delay)
+      },
+    }
+
+    const outcome = await createRefreshRunner(runtime)()
+
+    // 3 次退避 + 第 4 次尝试后放弃, 会话不清除, markTransient 触发一次
+    expect(outcome.kind).toBe('transient_error')
+    expect(attempts).toBe(4)
+    expect(delays).toEqual([400, 900, 1600])
+    expect(clearCount).toBe(0)
+    expect(transientCount).toBe(1)
+  })
+
+  test('rate limited refresh recovers when a retry succeeds', async () => {
+    let attempts = 0
+    const accepted: AuthBundle[] = []
+    const runtime: AuthRefreshRuntime = {
+      request: async () => {
+        attempts += 1
+        if (attempts === 1) {
+          return { status: 429 }
+        }
+        return { status: 200, data: { success: true, data: bundle } }
+      },
+      getExpectedSID: () => bundle.session.sid,
+      parseBundle: (value) => (isAuthBundle(value) ? value : null),
+      acceptBundle: (b) => accepted.push(b),
+      clear: () => undefined,
+      markTransient: () => undefined,
       wait: async () => undefined,
     }
 
     const outcome = await createRefreshRunner(runtime)()
 
-    expect(outcome.kind).toBe('transient_error')
-    expect(clearCount).toBe(0)
-    expect(transientCount).toBe(1)
+    // 一次 429 后立刻恢复, 不能走到 transient_error
+    expect(outcome.kind).toBe('authenticated')
+    expect(attempts).toBe(2)
+    expect(accepted).toEqual([bundle])
+  })
+
+  test('rate limited refresh honors server-provided Retry-After', async () => {
+    let attempts = 0
+    const delays: number[] = []
+    const runtime: AuthRefreshRuntime = {
+      request: async () => {
+        attempts += 1
+        if (attempts === 1) {
+          // 服务端明确要求等 2 秒
+          return { status: 429, retryAfterSeconds: 2 }
+        }
+        return { status: 200, data: { success: true, data: bundle } }
+      },
+      getExpectedSID: () => bundle.session.sid,
+      parseBundle: (value) => (isAuthBundle(value) ? value : null),
+      acceptBundle: () => undefined,
+      clear: () => undefined,
+      markTransient: () => undefined,
+      wait: async (delay) => {
+        delays.push(delay)
+      },
+    }
+
+    await createRefreshRunner(runtime)()
+
+    expect(delays).toEqual([2000])
+  })
+
+  test('rate limited refresh caps a hostile Retry-After', async () => {
+    const delays: number[] = []
+    let attempts = 0
+    const runtime: AuthRefreshRuntime = {
+      request: async () => {
+        attempts += 1
+        if (attempts === 1) {
+          // 恶意/错误配置的 Retry-After = 3600s, 前端必须 clamp
+          return { status: 429, retryAfterSeconds: 3600 }
+        }
+        return { status: 200, data: { success: true, data: bundle } }
+      },
+      getExpectedSID: () => bundle.session.sid,
+      parseBundle: (value) => (isAuthBundle(value) ? value : null),
+      acceptBundle: () => undefined,
+      clear: () => undefined,
+      markTransient: () => undefined,
+      wait: async (delay) => {
+        delays.push(delay)
+      },
+    }
+
+    await createRefreshRunner(runtime)()
+
+    // 5000ms 是 refresh429MaxWaitMs 的上限
+    expect(delays).toEqual([5000])
   })
 
   test('an exhausted refresh race clears the unusable local session', async () => {

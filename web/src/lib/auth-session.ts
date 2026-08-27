@@ -39,6 +39,11 @@ export interface AuthRefreshHTTPResponse {
   status: number
   data?: unknown
   error?: unknown
+  /**
+   * 429 响应里 server 返回的 Retry-After (秒), 用于前端退避重试。
+   * 缺失或非法值走前端本地默认退避表。
+   */
+  retryAfterSeconds?: number
 }
 
 export interface AuthRefreshRuntime {
@@ -75,6 +80,12 @@ const authClient = axios.create({
 })
 
 const refreshRaceDelays = [80, 200, 500] as const
+// refresh 遇到 429 时的本地退避表 (ms), 用于服务端未返回 Retry-After 时兜底。
+// 三次都失败才把 outcome 交给上层, 上层根据 kind 决定 toast/redirect。
+const refresh429FallbackDelays = [400, 900, 1600] as const
+// 拒绝服务端 Retry-After 超过这个上限, 防止一个错误配置把用户卡死。
+const refresh429MaxWaitMs = 5000
+
 let refreshPromise: Promise<RefreshOutcome> | null = null
 let authEpoch = 0
 
@@ -206,6 +217,30 @@ function waitForRefreshRace(delay: number): Promise<void> {
   return new Promise((resolve) => globalThis.setTimeout(resolve, delay))
 }
 
+/**
+ * 计算 refresh 遇到 429 时的下次重试等待 (ms)。
+ * 优先使用服务端 Retry-After (秒), 超过上限 clamp;
+ * Retry-After 缺失或非法值则查本地退避表。
+ * 返回 0 表示"退避次数用尽, 不再重试"。
+ */
+export function pickBackoffDelay(
+  retryAfterSeconds: number | undefined,
+  attempt: number
+): number {
+  if (
+    retryAfterSeconds !== undefined &&
+    Number.isFinite(retryAfterSeconds) &&
+    retryAfterSeconds > 0
+  ) {
+    const ms = Math.floor(retryAfterSeconds * 1000)
+    // 只允许 clamp 后的等待, 但至少要有一次真正的重试机会
+    if (attempt >= refresh429FallbackDelays.length) return 0
+    return Math.min(ms, refresh429MaxWaitMs)
+  }
+  const fallback = refresh429FallbackDelays[attempt]
+  return fallback ?? 0
+}
+
 export function createRefreshRunner(
   runtime: AuthRefreshRuntime
 ): () => Promise<RefreshOutcome> {
@@ -215,7 +250,8 @@ export function createRefreshRunner(
   })
   const run = async (
     raceAttempt: number,
-    allowMismatchRetry: boolean
+    allowMismatchRetry: boolean,
+    tooManyAttempt = 0
   ): Promise<RefreshOutcome> => {
     if (runtime.isCurrent && !runtime.isCurrent()) return superseded()
     const response = await runtime.request(runtime.getExpectedSID())
@@ -233,7 +269,7 @@ export function createRefreshRunner(
       const delay = refreshRaceDelays[raceAttempt]
       if (delay !== undefined) {
         await runtime.wait(delay)
-        return run(raceAttempt + 1, allowMismatchRetry)
+        return run(raceAttempt + 1, allowMismatchRetry, tooManyAttempt)
       }
       runtime.clear(false)
       return { kind: 'out_of_sync', code }
@@ -242,7 +278,7 @@ export function createRefreshRunner(
     if (response.status === 409 && code === 'AUTH_SESSION_MISMATCH') {
       if (allowMismatchRetry) {
         runtime.clear(false, 'idle')
-        return run(0, false)
+        return run(0, false, tooManyAttempt)
       }
       runtime.clear(false)
       return { kind: 'out_of_sync', code }
@@ -253,7 +289,28 @@ export function createRefreshRunner(
       return { kind: 'anonymous' }
     }
 
-    if (!response.status || response.status >= 500 || response.status === 429) {
+    // 429: 后端限流命中。之前这里直接返回 transient_error,
+    // 业务侧看到的是 refresh 失败 + 页面卡住。现在按 Retry-After
+    // (或本地回退表) 退避重试若干次, 让"多 tab 同时刷 / 切网络"
+    // 这类正常突发不再被误诊为 session 过期。
+    if (response.status === 429) {
+      const nextDelay = pickBackoffDelay(
+        response.retryAfterSeconds,
+        tooManyAttempt
+      )
+      if (nextDelay > 0) {
+        await runtime.wait(nextDelay)
+        return run(raceAttempt, allowMismatchRetry, tooManyAttempt + 1)
+      }
+      // 用完所有退避机会仍是 429: 交给上层 toast/等下轮, 不 redirect
+      runtime.markTransient()
+      return {
+        kind: 'transient_error',
+        error: response.error ?? response.data,
+      }
+    }
+
+    if (!response.status || response.status >= 500) {
       runtime.markTransient()
       return {
         kind: 'transient_error',
@@ -271,6 +328,14 @@ export function createRefreshRunner(
   return () => run(0, true)
 }
 
+function readRetryAfter(headers: unknown): number | undefined {
+  if (!isRecord(headers)) return undefined
+  const raw = headers['retry-after'] ?? headers['Retry-After']
+  if (typeof raw !== 'string' || raw.length === 0) return undefined
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
+}
+
 async function requestRefresh(
   expectedSID?: string
 ): Promise<AuthRefreshHTTPResponse> {
@@ -282,12 +347,17 @@ async function requestRefresh(
         headers: expectedSID ? { 'X-Auth-Session': expectedSID } : undefined,
       }
     )
-    return { status: response.status, data: response.data }
+    return {
+      status: response.status,
+      data: response.data,
+      retryAfterSeconds: readRetryAfter(response.headers),
+    }
   } catch (error: unknown) {
     if (!axios.isAxiosError(error)) return { status: 0, error }
     return {
       status: error.response?.status ?? 0,
       data: error.response?.data,
+      retryAfterSeconds: readRetryAfter(error.response?.headers),
       error,
     }
   }

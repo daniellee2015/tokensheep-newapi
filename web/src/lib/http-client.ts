@@ -120,6 +120,13 @@ api.interceptors.response.use(
         if (outcome.kind === 'anonymous' || outcome.kind === 'out_of_sync') {
           if (!skipErrorHandler) toast.error(t('Session expired!'))
           redirectToSignIn()
+        } else if (outcome.kind === 'transient_error') {
+          // refresh 被 429/5xx/网络异常挡住, 但用户 session 依然有效。
+          // 不能弹 "Session expired!" 误导用户以为真掉了; 更不能 redirect
+          // 到登录页 —— 那会让 IPv4↔IPv6 切换和多 tab 场景都退化为
+          // "被踢到登录页"。用一个短暂的繁忙提示即可, 用户下一次动作
+          // 会自然触发新的 refresh。
+          if (!skipErrorHandler) toast.error(t('Network busy, please retry'))
         }
       } else if (config?.authRetry) {
         clearAuthentication(false)
@@ -129,13 +136,21 @@ api.interceptors.response.use(
         toast.error(t('Session expired!'))
       }
     } else if (!skipErrorHandler) {
-      const messageKey = getServerErrorMessageKey(error)
-      const message = messageKey
-        ? t(messageKey)
-        : error?.response?.data?.message ||
-          error?.message ||
-          t('Request failed')
-      toast.error(message)
+      if (status === 429) {
+        // 页面高频动作 (快速翻页/切筛选) 撞到全局 API 限流时, axios 每个
+        // 失败请求都会走到这里。给 429 一个稳定 toast id 让 sonner 去重,
+        // 避免屏幕上叠 3-5 条一样的红条; 同时用"繁忙"文案代替
+        // "Request failed with status code 429", 减少误导。
+        toast.error(t('Network busy, please retry'), { id: 'http-429' })
+      } else {
+        const messageKey = getServerErrorMessageKey(error)
+        const message = messageKey
+          ? t(messageKey)
+          : error?.response?.data?.message ||
+            error?.message ||
+            t('Request failed')
+        toast.error(message)
+      }
     }
     throw error
   }

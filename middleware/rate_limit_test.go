@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
@@ -193,6 +194,186 @@ func TestRedisFixedWindowRepairsCounterWithoutTTL(t *testing.T) {
 
 	redisServer.FastForward(time.Duration(duration) * time.Second)
 	assert.False(t, redisServer.Exists(key), "a recovered counter must not remain permanently rate-limited")
+}
+
+func TestRefreshRateLimitBucketsBySID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	redisServer, _ := useRateLimitMiniRedis(t)
+
+	prevEnable := common.RefreshRateLimitEnable
+	prevNum := common.RefreshRateLimitNum
+	prevDur := common.RefreshRateLimitDuration
+	common.RefreshRateLimitEnable = true
+	common.RefreshRateLimitNum = 2
+	common.RefreshRateLimitDuration = 30
+	t.Cleanup(func() {
+		common.RefreshRateLimitEnable = prevEnable
+		common.RefreshRateLimitNum = prevNum
+		common.RefreshRateLimitDuration = prevDur
+	})
+
+	router := gin.New()
+	require.NoError(t, router.SetTrustedProxies(nil))
+	router.POST("/auth/refresh", RefreshRateLimit(), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	do := func(sid, remoteAddr string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
+		req.RemoteAddr = remoteAddr
+		if sid != "" {
+			req.Header.Set("X-Auth-Session", sid)
+		}
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// sid=A 的两次通过, 第三次 429
+	assert.Equal(t, http.StatusNoContent, do("sid-A", "192.0.2.100:1").Code)
+	assert.Equal(t, http.StatusNoContent, do("sid-A", "192.0.2.100:1").Code)
+	assert.Equal(t, http.StatusTooManyRequests, do("sid-A", "192.0.2.100:1").Code)
+
+	// sid=B 独立计数, 即使同一 IP 也不受 sid-A 的桶影响
+	assert.Equal(t, http.StatusNoContent, do("sid-B", "192.0.2.100:1").Code)
+
+	// 无 sid 走 IP 回落桶, 跟 sid 桶隔离
+	assert.Equal(t, http.StatusNoContent, do("", "192.0.2.101:1").Code)
+	assert.Equal(t, http.StatusNoContent, do("", "192.0.2.101:1").Code)
+	assert.Equal(t, http.StatusTooManyRequests, do("", "192.0.2.101:1").Code)
+
+	assert.True(t, redisServer.Exists("rateLimit:v2:sid:RF:sid-A"))
+	assert.True(t, redisServer.Exists("rateLimit:v2:sid:RF:sid-B"))
+	assert.True(t, redisServer.Exists("rateLimit:v2:ip:RF:ip:192.0.2.101"))
+}
+
+func TestRefreshRateLimitDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	prevEnable := common.RefreshRateLimitEnable
+	common.RefreshRateLimitEnable = false
+	t.Cleanup(func() { common.RefreshRateLimitEnable = prevEnable })
+
+	router := gin.New()
+	require.NoError(t, router.SetTrustedProxies(nil))
+	router.POST("/auth/refresh", RefreshRateLimit(), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	for i := 0; i < 100; i++ {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
+		req.Header.Set("X-Auth-Session", "sid-any")
+		req.RemoteAddr = "192.0.2.200:1"
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusNoContent, rec.Code)
+	}
+}
+
+func TestGlobalAPIRateLimitBucketsByUser(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	redisServer, _ := useRateLimitMiniRedis(t)
+
+	prevEnable := common.GlobalApiRateLimitEnable
+	prevNum := common.GlobalApiRateLimitNum
+	prevDur := common.GlobalApiRateLimitDuration
+	common.GlobalApiRateLimitEnable = true
+	common.GlobalApiRateLimitNum = 2
+	common.GlobalApiRateLimitDuration = 30
+	t.Cleanup(func() {
+		common.GlobalApiRateLimitEnable = prevEnable
+		common.GlobalApiRateLimitNum = prevNum
+		common.GlobalApiRateLimitDuration = prevDur
+	})
+
+	router := gin.New()
+	require.NoError(t, router.SetTrustedProxies(nil))
+	router.GET("/api/x", GlobalAPIRateLimit(), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	issueToken := func(t *testing.T, userID int, sid string) string {
+		t.Helper()
+		token, _, err := service.IssueAccessToken(service.AuthIdentity{
+			UserID:          userID,
+			SessionID:       sid,
+			UserAuthVersion: 1,
+			SessionVersion:  1,
+		})
+		require.NoError(t, err)
+		return token
+	}
+	do := func(bearer, ip string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/x", nil)
+		req.RemoteAddr = ip + ":1"
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+
+	tokenA := issueToken(t, 42, "sid-a")
+	tokenB := issueToken(t, 43, "sid-b")
+
+	// 用户 42 消耗 2 次后触发 429, 换 IP 也不影响 (证明按 user 分桶)
+	assert.Equal(t, http.StatusNoContent, do(tokenA, "192.0.2.10").Code)
+	assert.Equal(t, http.StatusNoContent, do(tokenA, "192.0.2.11").Code)
+	assert.Equal(t, http.StatusTooManyRequests, do(tokenA, "192.0.2.12").Code)
+
+	// 用户 43 独立桶, 仍能通过
+	assert.Equal(t, http.StatusNoContent, do(tokenB, "192.0.2.10").Code)
+
+	// 未带 Authorization 走 IP 桶, 跟用户桶隔离
+	assert.Equal(t, http.StatusNoContent, do("", "192.0.2.20").Code)
+	assert.Equal(t, http.StatusNoContent, do("", "192.0.2.20").Code)
+	assert.Equal(t, http.StatusTooManyRequests, do("", "192.0.2.20").Code)
+
+	// Bearer 但不是 dashboard token 时回落 IP (非 dashboard issuer 的 JWT
+	// 或不透明 PAT 都不能污染用户桶)
+	assert.True(t, redisServer.Exists(redisUserRateLimitKey("GA", 42)))
+	assert.True(t, redisServer.Exists(redisUserRateLimitKey("GA", 43)))
+	assert.True(t, redisServer.Exists(redisIPRateLimitKey("GA", "192.0.2.20")))
+}
+
+func TestGlobalAPIRateLimitIgnoresNonDashboardToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	redisServer, _ := useRateLimitMiniRedis(t)
+
+	prevEnable := common.GlobalApiRateLimitEnable
+	prevNum := common.GlobalApiRateLimitNum
+	prevDur := common.GlobalApiRateLimitDuration
+	common.GlobalApiRateLimitEnable = true
+	common.GlobalApiRateLimitNum = 2
+	common.GlobalApiRateLimitDuration = 30
+	t.Cleanup(func() {
+		common.GlobalApiRateLimitEnable = prevEnable
+		common.GlobalApiRateLimitNum = prevNum
+		common.GlobalApiRateLimitDuration = prevDur
+	})
+
+	router := gin.New()
+	require.NoError(t, router.SetTrustedProxies(nil))
+	router.GET("/api/x", GlobalAPIRateLimit(), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	// 不透明 PAT 字符串, 完全不是 JWT
+	do := func(bearer, ip string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/x", nil)
+		req.RemoteAddr = ip + ":1"
+		req.Header.Set("Authorization", "Bearer "+bearer)
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+	assert.Equal(t, http.StatusNoContent, do("sk-not-a-jwt-just-opaque", "192.0.2.30").Code)
+	assert.Equal(t, http.StatusNoContent, do("sk-not-a-jwt-just-opaque", "192.0.2.30").Code)
+	assert.Equal(t, http.StatusTooManyRequests, do("sk-not-a-jwt-just-opaque", "192.0.2.30").Code)
+
+	// 全部计到 IP 桶, 没有创建任何 user 桶
+	assert.True(t, redisServer.Exists(redisIPRateLimitKey("GA", "192.0.2.30")))
 }
 
 func TestRedisFailurePolicies(t *testing.T) {

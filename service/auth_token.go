@@ -99,6 +99,46 @@ func ParseAccessToken(raw string) (AuthIdentity, error) {
 	}, nil
 }
 
+// PeekAccessTokenUserID 只做未验证的 JWT 解析, 返回 (userID, ok)。
+// 用于限流 key 之类的"只需要稳定分桶不需要真实性"的场景 —— 后续
+// UserAuth 中间件会做完整的签名校验和 session 验证。这里失败一律返回
+// (0, false), 让调用方回落 IP-based key。
+//
+// 拒绝签发者/受众不匹配的 token, 防止无关 JWT (relay token, PAT 等)
+// 被误用作 dashboard 用户 key。
+func PeekAccessTokenUserID(raw string) (int, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, false
+	}
+	claims := &authClaims{}
+	parsed, _, err := jwt.NewParser().ParseUnverified(raw, claims)
+	if err != nil || parsed == nil {
+		return 0, false
+	}
+	if claims.Issuer != authTokenIssuer {
+		return 0, false
+	}
+	audienceMatches := false
+	for _, aud := range claims.Audience {
+		if aud == authTokenAudience {
+			audienceMatches = true
+			break
+		}
+	}
+	if !audienceMatches {
+		return 0, false
+	}
+	if claims.TokenUse != accessTokenUse && claims.TokenUse != securityProofTokenUse {
+		return 0, false
+	}
+	uid, err := strconv.Atoi(claims.Subject)
+	if err != nil || uid <= 0 {
+		return 0, false
+	}
+	return uid, true
+}
+
 // ParseDashboardAccessToken distinguishes new-api dashboard JWTs from opaque
 // credentials. A token carrying the dashboard issuer, audience and a known
 // token use is always treated as internal, even when its signature, lifetime

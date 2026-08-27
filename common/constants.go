@@ -231,6 +231,15 @@ var (
 	CriticalRateLimitNum            = 20
 	CriticalRateLimitDuration int64 = 20 * 60
 
+	// Refresh 端点独立限流。之前 refresh 走 CriticalRateLimit,
+	// 跟 login/logout/verify 共享同一个 IP-based "CT" bucket, 用户
+	// 多 tab 或 IPv4↔IPv6 切换时会触发 429 → 前端体感"session 掉了"。
+	// 现按 sid 限流, 拿不到 sid 才回落 IP。默认 60 次 / 5 分钟, 一个
+	// 正常浏览器远远够用, 恶意刷 refresh (换 sid 需要合法 refresh token) 仍被拦。
+	RefreshRateLimitEnable         = true
+	RefreshRateLimitNum            = 60
+	RefreshRateLimitDuration int64 = 5 * 60
+
 	UploadRateLimitNum            = 10
 	UploadRateLimitDuration int64 = 60
 

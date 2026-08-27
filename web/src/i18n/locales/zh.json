@@ -3021,6 +3021,7 @@
     "Nested JSON: source group →": "嵌套 JSON：源分组 →",
     "Network connection failed or server not responding": "网络连接失败或服务器未响应",
     "Network proxy for this channel (supports HTTP, HTTPS, SOCKS5, and SOCKS5H)": "此渠道的网络代理（支持 HTTP、HTTPS、SOCKS5 和 SOCKS5H）",
+    "Network busy, please retry": "网络繁忙，请稍后重试",
     "Never": "永不",
     "Never expires": "永不过期",
     "Never used an API Gateway?": "从未使用过 API 网关/中转 API？",
