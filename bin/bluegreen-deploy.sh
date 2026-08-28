@@ -67,7 +67,7 @@ source "$ENV_FILE"
 : "${HEALTH_ENDPOINT:?HEALTH_ENDPOINT not set in $ENV_FILE}"
 : "${CADDYFILE:?CADDYFILE not set in $ENV_FILE}"
 : "${CADDY_CONTAINER:?CADDY_CONTAINER not set in $ENV_FILE}"
-: "${HEALTH_TIMEOUT_SEC:=60}"
+: "${HEALTH_TIMEOUT_SEC:=180}"
 
 is_dry_run=0
 if [[ "$DRY_RUN" == "--dry-run" ]]; then
@@ -169,12 +169,21 @@ log "Step 7: switch Caddy upstream $OLD_CONTAINER -> $NEXT_CONTAINER in $CADDYFI
 run "sed -i.bak-$(date +%Y%m%d-%H%M%S) 's|${OLD_CONTAINER}:|${NEXT_CONTAINER}:|g' '$CADDYFILE'"
 run "docker restart $CADDY_CONTAINER"
 
-# Step 8: stop old container
-log "Step 8: stop old $OLD_CONTAINER (in-flight requests still complete on their own connection)"
+# Step 8: rebind sidecar (if configured)
+# SIDECAR_CONTAINER + SIDECAR_OVERRIDE_FILE in .env: 有 sidecar 用 network_mode: service:<active>
+# 需要在停旧 active 之前先把 sidecar 迁到新 active 的 namespace, 否则 sidecar 会跟着挂
+if [[ -n "${SIDECAR_CONTAINER:-}" && -n "${SIDECAR_OVERRIDE_FILE:-}" ]]; then
+    log "Step 8: rebind sidecar $SIDECAR_CONTAINER: $OLD_CONTAINER -> $NEXT_CONTAINER"
+    run "sed -i.bak-sidecar-$(date +%Y%m%d-%H%M%S) 's|service:${OLD_CONTAINER}|service:${NEXT_CONTAINER}|g; s|- ${OLD_CONTAINER}$|- ${NEXT_CONTAINER}|g' '$SIDECAR_OVERRIDE_FILE'"
+    run "docker compose up -d --force-recreate --no-deps $SIDECAR_CONTAINER"
+fi
+
+# Step 9: stop old container
+log "Step 9: stop old $OLD_CONTAINER (in-flight requests still complete on their own connection)"
 run "docker compose stop $OLD_CONTAINER"
 
-# Step 9: flip ACTIVE_COLOR
-log "Step 9: update .env ACTIVE_COLOR=$NEXT_COLOR"
+# Step 10: flip ACTIVE_COLOR
+log "Step 10: update .env ACTIVE_COLOR=$NEXT_COLOR"
 run "sed -i 's|^ACTIVE_COLOR=.*|ACTIVE_COLOR=${NEXT_COLOR}|' '$ENV_FILE'"
 
 log ""
