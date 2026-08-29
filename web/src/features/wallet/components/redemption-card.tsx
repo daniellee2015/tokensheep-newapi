@@ -51,11 +51,19 @@ export function RedemptionCard({
 }: RedemptionCardProps) {
   const { t } = useTranslation()
 
+  // v4 B6: make the destination explicit. Redemption credits land in the
+  // Gift Pool, not the paid wallet. Gift is a separate sub-pool with a $50
+  // cap, per-tier daily spend limit, and 30-day inactivity zeroing — users
+  // routinely conflate it with the wallet balance without that context.
+  const cardDescription = t(
+    'Codes credit the Gift Pool — a separate sub-pool from your paid wallet, capped at $50, with a per-tier daily spend limit and zeroed after 30 days idle.'
+  )
+
   if (loading) {
     return (
       <TitledCard
-        title={t('Redemption Code')}
-        description={t('Redeem a welcome code to top up your gift balance')}
+        title={t('Redemption Code → Gift Pool')}
+        description={cardDescription}
         icon={<Gift className='h-4 w-4' />}
         disableHoverEffect
       >
@@ -72,8 +80,8 @@ export function RedemptionCard({
 
   return (
     <TitledCard
-      title={t('Redemption Code')}
-      description={t('Redeem a welcome code to top up your gift balance')}
+      title={t('Redemption Code → Gift Pool')}
+      description={cardDescription}
       icon={<Gift className='h-4 w-4' />}
       disableHoverEffect
     >

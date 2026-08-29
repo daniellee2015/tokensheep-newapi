@@ -30,6 +30,41 @@ import { TitledCard } from '@/components/ui/titled-card'
 
 import { formatUSD, getMyTier, tierDisplayName } from './api'
 
+// TierBadge renders the small right-aligned tag next to the tier name.
+// Extracted from the header row so linting can see it as one branch each
+// (avoids the nested-ternary rule while keeping the same three states).
+function TierBadge({
+  commercial,
+  hasNext,
+  nextTier,
+  t,
+}: {
+  commercial: boolean
+  hasNext: boolean
+  nextTier: string
+  t: (key: string) => string
+}) {
+  if (commercial) {
+    return (
+      <Badge variant='outline' className='text-xs'>
+        {t('Commercial')}
+      </Badge>
+    )
+  }
+  if (hasNext) {
+    return (
+      <Badge variant='outline' className='text-xs'>
+        {t('Next')}: {tierDisplayName(nextTier, t)}
+      </Badge>
+    )
+  }
+  return (
+    <Badge variant='outline' className='text-xs'>
+      {t('Top tier')}
+    </Badge>
+  )
+}
+
 // TokenSheep tier card — contribution-triggered tier, dual wallet pool,
 // daily-gift progress. Unlike 100b (spend + daily gates), everything here is
 // driven by total_donated crossing TierThresholds. See economy-model.md §2/§10.
@@ -59,6 +94,7 @@ export function TierCard() {
   }
 
   const hasNext = data.next_tier !== '' && data.next_tier !== data.group
+  const isCommercial = data.commercial === true
   const dailyPct =
     data.gift_daily_limit > 0
       ? Math.min(
@@ -75,33 +111,42 @@ export function TierCard() {
       disableHoverEffect
       contentClassName='space-y-5'
     >
-      {/* Current tier headline + contribution progress */}
+      {/* Current tier headline + contribution progress. Commercial users sit
+          outside the contribution ladder (retail / wholesale / wholesale-plus
+          are admin-assigned via contract) so we swap the progress bar for a
+          static "commercial tier" banner. See docs/spec/economy-model-v4.md
+          §五 5.5 + §六 6.3. */}
         <div className='space-y-2'>
           <div className='flex items-center justify-between'>
             <span className='text-lg font-semibold'>
               {tierDisplayName(data.group, t)}
             </span>
-            {hasNext ? (
-              <Badge variant='outline' className='text-xs'>
-                {t('Next')}: {tierDisplayName(data.next_tier, t)}
-              </Badge>
-            ) : (
-              <Badge variant='outline' className='text-xs'>
-                {t('Top tier')}
-              </Badge>
-            )}
+            <TierBadge
+              commercial={isCommercial}
+              hasNext={hasNext}
+              nextTier={data.next_tier}
+              t={t}
+            />
           </div>
-          {hasNext && (
-            <>
-              <Progress value={Math.round(data.next_progress * 100)} />
-              <div className='text-muted-foreground flex justify-between text-xs'>
-                <span>{formatUSD(data.total_donated)}</span>
-                <span>
-                  {t('To next tier')} {formatUSD(data.to_next_contribution)}
-                </span>
-                <span>{formatUSD(data.next_threshold)}</span>
-              </div>
-            </>
+          {isCommercial ? (
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'Commercial tier — quota is negotiated by contract, not by the contribution ladder. Contact ops for changes.'
+              )}
+            </p>
+          ) : (
+            hasNext && (
+              <>
+                <Progress value={Math.round(data.next_progress * 100)} />
+                <div className='text-muted-foreground flex justify-between text-xs'>
+                  <span>{formatUSD(data.total_donated)}</span>
+                  <span>
+                    {t('To next tier')} {formatUSD(data.to_next_contribution)}
+                  </span>
+                  <span>{formatUSD(data.next_threshold)}</span>
+                </div>
+              </>
+            )
           )}
         </div>
 
@@ -147,14 +192,18 @@ export function TierCard() {
           </div>
         )}
 
-        {/* Contribute-to-upgrade CTA — centered grey button */}
-        <Button
-          variant='secondary'
-          className='w-full'
-          onClick={() => navigate({ to: '/wallet' })}
-        >
-          {t('Contribute to upgrade')}
-        </Button>
+        {/* Contribute-to-upgrade CTA — centered grey button. Hidden for
+            commercial users since their tier is contract-negotiated (there's
+            no ladder to climb via the wallet). */}
+        {!isCommercial && (
+          <Button
+            variant='secondary'
+            className='w-full'
+            onClick={() => navigate({ to: '/wallet' })}
+          >
+            {t('Contribute to upgrade')}
+          </Button>
+        )}
     </TitledCard>
   )
 }
