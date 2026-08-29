@@ -35,6 +35,11 @@ export type MyTierView = {
   next_threshold: number
   next_progress: number
   to_next_contribution: number
+  // v4 B3: true when the user is in a reseller / bulk-contract group (retail /
+  // wholesale / wholesale-plus). Wallet UI uses this to hide the contribution
+  // ladder and subscription plan cards — commercial users negotiate quota via
+  // signed contracts, not the tier ladder or subscription checkout.
+  commercial?: boolean
 }
 
 type MyTierResponse = {

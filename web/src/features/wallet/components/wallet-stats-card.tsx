@@ -76,9 +76,14 @@ export function WalletStatsCard(props: WalletStatsCardProps) {
       tone: 'success',
     },
     {
+      // v4 B6: emphasise that Gift Pool is a separate sub-pool from the paid
+      // wallet. The label prefix + explicit description keep the two funds
+      // visually distinct in the four-cell layout.
       label: t('wallet.pool.gift.label'),
       value: giftLabel,
-      description: t('wallet.pool.gift.description'),
+      description: t(
+        'Separate from paid wallet · fills from check-in + redemption codes · $50 cap · spent first, up to a per-tier daily limit · zeroed after 30 days idle'
+      ),
       icon: Gift,
       tone: 'chart-3',
     },

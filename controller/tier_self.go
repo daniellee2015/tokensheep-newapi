@@ -90,7 +90,7 @@ func GetMyTier(c *gin.Context) {
 
 	// Commercial groups buy quota directly; there is no tier to climb, so skip
 	// the ladder entirely and leave the progress fields zeroed.
-	if tokensheep_setting.CommercialGroups[group] {
+	if tokensheep_setting.IsCommercialGroup(group) {
 		view.Commercial = true
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
@@ -109,9 +109,16 @@ func GetMyTier(c *gin.Context) {
 	}
 	pairs := make([]tierPair, 0, len(thresholds))
 	for name, q := range thresholds {
-		if q > 0 && !tokensheep_setting.CommercialGroups[name] {
-			pairs = append(pairs, tierPair{name, q})
+		if q <= 0 {
+			continue
 		}
+		if tokensheep_setting.IsCommercialGroup(name) {
+			continue
+		}
+		if tokensheep_setting.IsTierDisabled(name) {
+			continue
+		}
+		pairs = append(pairs, tierPair{name, q})
 	}
 	sort.Slice(pairs, func(i, j int) bool { return pairs[i].quota < pairs[j].quota })
 
