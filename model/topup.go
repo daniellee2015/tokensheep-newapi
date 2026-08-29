@@ -699,27 +699,76 @@ func RechargeWaffoPancake(tradeNo string) (err error) {
 			return err
 		}
 
-		// Credit paid quota + track cumulative donation total. Routed through
-		// creditTopUpQuota so the saturation guard applies to donations too.
-		if err := creditTopUpQuota(tx, topUp.UserId, quotaToAdd, map[string]interface{}{
-			"total_donated": gorm.Expr("total_donated + ?", quotaToAdd),
-		}); err != nil {
-			return err
-		}
+		// v4: TradeNo prefix decides whether this Pancake payment is a tier
+		// contribution (accumulates total_donated + retriggers tier upgrade)
+		// or a standard top-up (only credits paid quota). Frontend picks the
+		// prefix in controller/topup_waffo_pancake.go based on the tier flag.
+		// See docs/spec/economy-model-v4.md §八 B10.
+		isTierContribution := strings.HasPrefix(topUp.TradeNo, "WAFFO_PANCAKE_TIER-")
 
-		// Re-evaluate the users tier now that they have a fresh donation.
-		// The webhook is the natural point for this — waiting for the daily
-		// cron would delay upgrade by up to a day for a paying user, which
-		// nobody wants. See docs/spec/economy-model.md §4.1.
+		// Load the current user row up front — we need the group to gate the
+		// contribution logic (commercial users never accumulate total_donated,
+		// subscription-active users don't have their group overwritten).
 		var freshUser User
 		if err := tx.Select("id, "+commonGroupColumn()+", total_donated, role").
 			Where("id = ?", topUp.UserId).First(&freshUser).Error; err != nil {
 			return err
 		}
-		// Admins/root (role >= 10) keep any manually-granted tier; skip the
-		// contribution-based recompute for them (matches the daily cron).
-		newTier := tokensheep_setting.TierForDonation(freshUser.TotalDonated)
-		if freshUser.Role < common.RoleAdminUser && newTier != freshUser.Group {
+
+		// v4 B2: commercial groups (retail / wholesale / wholesale-plus) live
+		// outside the contribution ladder. Even if a legacy TradeNo somehow
+		// carries the TIER prefix for a commercial user, we refuse to bump
+		// their donation counter — their tier is admin-assigned, not earned.
+		if tokensheep_setting.IsCommercialGroup(freshUser.Group) {
+			isTierContribution = false
+		}
+
+		// Credit paid quota. Only tier contributions also bump total_donated;
+		// standard top-ups leave it untouched so the "does not count toward
+		// contribution tiers" copy on the standard-topup card is truthful.
+		updates := map[string]interface{}{}
+		if isTierContribution {
+			updates["total_donated"] = gorm.Expr("total_donated + ?", quotaToAdd)
+		}
+		if err := creditTopUpQuota(tx, topUp.UserId, quotaToAdd, updates); err != nil {
+			return err
+		}
+
+		// Tier recompute only runs for tier contributions. Standard top-ups
+		// never move the user's group. Admins/root (role >= 10) keep any
+		// manually-granted tier regardless.
+		if !isTierContribution || freshUser.Role >= common.RoleAdminUser {
+			return nil
+		}
+
+		// v4 B12: if the user is currently inside an active subscription (their
+		// group matches the subscription's UpgradeGroup), leave the group alone
+		// so the subscription's expiry hook can still revert to PrevUserGroup
+		// cleanly. total_donated has already been accumulated above, so the
+		// daily maintenance cron will pick up the new tier after the sub ends.
+		//
+		// We query the subscription table on `tx` (not the outer DB) so this
+		// stays inside the enclosing transaction — routing through the shared
+		// connection avoids SQLite lock contention.
+		var activeSubCount int64
+		if err := tx.Model(&UserSubscription{}).
+			Where("user_id = ? AND status = ? AND end_time > ?",
+				topUp.UserId, "active", common.GetTimestamp()).
+			Count(&activeSubCount).Error; err != nil {
+			return err
+		}
+		if activeSubCount > 0 {
+			return nil
+		}
+
+		// Refresh total_donated (creditTopUpQuota just bumped it via SQL expr).
+		var latest User
+		if err := tx.Select("total_donated").
+			Where("id = ?", topUp.UserId).First(&latest).Error; err != nil {
+			return err
+		}
+		newTier := tokensheep_setting.TierForDonation(latest.TotalDonated)
+		if newTier != freshUser.Group {
 			if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).
 				Update("group", newTier).Error; err != nil {
 				return err

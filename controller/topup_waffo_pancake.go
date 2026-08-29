@@ -419,7 +419,26 @@ func RequestWaffoPancakePay(c *gin.Context) {
 		return
 	}
 
-	tradeNo := fmt.Sprintf("WAFFO_PANCAKE-%d-%d-%s", id, time.Now().UnixMilli(), randstr.String(6))
+	// v4: mark the trade number with a distinct prefix when the frontend
+	// submits a tier-card contribution. RechargeWaffo settlement then knows
+	// to accumulate total_donated + trigger tier upgrade only for TIER
+	// prefixes. Standard "Add Funds" top-ups keep the plain prefix and only
+	// credit quota_paid — matches the "does not count toward contribution
+	// tiers" UI copy on the standard card. See B10 in
+	// docs/spec/economy-model-v4.md §八.
+	isTierContribution := tokensheep_setting.IsTierContribution(req.Tier, req.Amount)
+	// Commercial users are ineligible for tier contributions (their group is
+	// a manually-assigned reseller identity). Silently coerce any tier flag
+	// off so a wholesale user hitting the tier flow can never bump their
+	// total_donated. See B2 / B3.
+	if isTierContribution && tokensheep_setting.IsCommercialGroup(group) {
+		isTierContribution = false
+	}
+	tradePrefix := "WAFFO_PANCAKE"
+	if isTierContribution {
+		tradePrefix = "WAFFO_PANCAKE_TIER"
+	}
+	tradeNo := fmt.Sprintf("%s-%d-%d-%s", tradePrefix, id, time.Now().UnixMilli(), randstr.String(6))
 	topUp := &model.TopUp{
 		UserId:          id,
 		Amount:          normalizeWaffoPancakeTopUpAmount(req.Amount),
