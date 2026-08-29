@@ -9,9 +9,36 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/setting/tokensheep_setting"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+// rejectSubscriptionForCommercialUser writes an error response and returns
+// true when the authenticated user's current group is a reseller / bulk-
+// contract group. Commercial users are admin-assigned and negotiate quota
+// through separate contracts; letting them buy a subscription plan would
+// swap their group to the plan's UpgradeGroup (typically "sub"), wiping the
+// commercial GGR / RPM / concurrency profile that was the whole point of
+// the contract. See docs/spec/economy-model-v4.md §五 5.5 and §八 B3.
+//
+// Callers should invoke this immediately after resolving `userId` and abort
+// if it returns true. Admin manual assignments (POST /api/subscription/admin
+// /users/:id/subscriptions) skip this guard on purpose so operators can seed
+// a commercial user with a comp'd subscription if the contract requires it.
+func rejectSubscriptionForCommercialUser(c *gin.Context, userId int) bool {
+	group, err := model.GetUserGroup(userId, true)
+	if err != nil {
+		common.ApiError(c, err)
+		return true
+	}
+	if tokensheep_setting.IsCommercialGroup(group) {
+		common.ApiErrorMsg(c,
+			"商业用户请通过合同调整档位，不参与订阅套餐")
+		return true
+	}
+	return false
+}
 
 // ---- Shared types ----
 
@@ -33,6 +60,17 @@ func GetSubscriptionPlans(c *gin.Context) {
 	if !operation_setting.IsPaymentComplianceConfirmed() {
 		common.ApiSuccess(c, []SubscriptionPlanDTO{})
 		return
+	}
+
+	// v4 B3: commercial users are outside the subscription ecosystem entirely.
+	// Return an empty plan list so the wallet UI naturally renders the
+	// "already on commercial tier" banner instead of tempting them with plans
+	// they cannot buy. Non-fatal errors here fall through to the normal list.
+	if userId := c.GetInt("id"); userId > 0 {
+		if group, err := model.GetUserGroup(userId, true); err == nil && tokensheep_setting.IsCommercialGroup(group) {
+			common.ApiSuccess(c, []SubscriptionPlanDTO{})
+			return
+		}
 	}
 
 	var plans []model.SubscriptionPlan
@@ -103,6 +141,9 @@ func SubscriptionRequestBalancePay(c *gin.Context) {
 	}
 
 	userId := c.GetInt("id")
+	if rejectSubscriptionForCommercialUser(c, userId) {
+		return
+	}
 	var req SubscriptionBalancePayRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.PlanId <= 0 {
 		common.ApiErrorMsg(c, "参数错误")

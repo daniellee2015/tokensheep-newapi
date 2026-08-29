@@ -60,6 +60,9 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 	}
 
 	userId := c.GetInt("id")
+	if rejectSubscriptionForCommercialUser(c, userId) {
+		return
+	}
 	user, err := model.GetUserById(userId, false)
 	if err != nil {
 		common.ApiError(c, err)
