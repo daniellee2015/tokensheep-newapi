@@ -243,7 +243,16 @@ func UpdateOption(key string, value string) error {
 	// otherwise it will execute Update (with all fields).
 	DB.Save(&option)
 	// Update OptionMap
-	return updateOptionMap(key, value)
+	if err := updateOptionMap(key, value); err != nil {
+		return err
+	}
+	// Broadcast to sibling processes so their in-memory OptionMap (and any
+	// registered config structs, e.g. EconomySetting) reflect the write
+	// within milliseconds instead of surviving the previous value until
+	// restart. See common/option_broadcast.go for the loop-breaker design
+	// and the blue-green drift incident that motivated this hook.
+	common.PublishOptionUpdate(key, value)
+	return nil
 }
 
 // UpdateOptionsBulk persists multiple key/value pairs in a single database
@@ -280,8 +289,29 @@ func UpdateOptionsBulk(values map[string]string) error {
 		if err := updateOptionMap(k, v); err != nil {
 			return err
 		}
+		// Broadcast per key rather than as a batch: siblings apply each
+		// value through updateOptionMap independently anyway, and per-key
+		// messages keep the payload small and the subscriber trivial.
+		common.PublishOptionUpdate(k, v)
 	}
 	return nil
+}
+
+// ApplyRemoteOptionUpdate applies a (key, value) that was broadcast by a
+// sibling process. It's the read side of common.StartOptionUpdateSubscriber
+// — the subscriber calls this after filtering out self-echoes.
+//
+// The key distinction from UpdateOption is that this path skips the DB
+// write (the origin process already wrote it and everyone else will
+// read the same row on restart) and skips the broadcast (which would
+// loop). Everything else — validation, OptionMap set, handleConfigUpdate
+// reflection into registered structs — runs the same way so the two
+// nodes converge on identical in-memory state.
+func ApplyRemoteOptionUpdate(key, value string) error {
+	if err := validateOptionValue(key, value); err != nil {
+		return err
+	}
+	return updateOptionMap(key, value)
 }
 
 func updateOptionMap(key string, value string) (err error) {

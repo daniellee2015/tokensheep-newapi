@@ -343,6 +343,13 @@ func InitResources() error {
 		return err
 	}
 
+	// Start cross-node option broadcast subscriber. When any sibling
+	// process writes an option via UpdateOption / UpdateOptionsBulk, its
+	// publish lands here and applies to this process's OptionMap +
+	// registered config structs so blue/green stay consistent without a
+	// restart. No-op when Redis isn't configured (single-node dev).
+	common.StartOptionUpdateSubscriber(model.ApplyRemoteOptionUpdate)
+
 	perfmetrics.Init()
 
 	// 启动系统监控
