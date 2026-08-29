@@ -23,9 +23,11 @@ import { toast } from 'sonner'
 
 import { SectionPageLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
+import { getMyTier } from '@/features/tier/api'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { getSelf } from '@/lib/api'
+import { useQuery } from '@tanstack/react-query'
 
 import { AffiliateRewardsCard } from './components/affiliate-rewards-card'
 import { BillingHistoryDialog } from './components/dialogs/billing-history-dialog'
@@ -91,6 +93,18 @@ export function Wallet(props: WalletProps) {
   const { status } = useStatus()
   const { currency } = useSystemConfig()
   const { topupInfo, presetAmounts, loading: topupLoading } = useTopupInfo()
+
+  // v4 R3-2b: share the same query key as tier-card.tsx so both consumers
+  // read from a single cache entry. Only used to pass isCommercial down
+  // to SubscriptionPlansCard so it can swap its empty state for a
+  // "commercial tier — contract negotiated" banner instead of vanishing.
+  const { data: myTier } = useQuery({
+    queryKey: ['my-tier'],
+    queryFn: getMyTier,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  })
+  const isCommercial = myTier?.commercial === true
 
   // Calculate effective exchange rate - when display type is USD, use rate of 1
   const effectiveUsdExchangeRate = useMemo(() => {
@@ -413,6 +427,7 @@ export function Wallet(props: WalletProps) {
                 onAvailabilityChange={handleSubscriptionAvailabilityChange}
                 userQuota={user?.quota}
                 onPurchaseSuccess={fetchUser}
+                isCommercial={isCommercial}
               />
             </div>
 

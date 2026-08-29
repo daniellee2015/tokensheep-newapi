@@ -77,11 +77,21 @@ var (
 		DowngradeInactiveDays: 30,
 		SessionLimits: map[string]int{
 			// §2.2 — simultaneous in-flight request ceilings per tier.
+			// v4 §八 B15: `default` is the pre-append_free landing spot for
+			// brand-new signups and must have its own ceiling, otherwise a
+			// signup burst before the append_free hook fires can slip
+			// through the system-wide 5000/min fallback. Mirror `free`.
+			// v4 R2.1: `promo` needs a low limit so leaked promo codes
+			// can't be weaponized into a concurrency abuse channel.
+			// Seed only applies on fresh installs (options table empty);
+			// production values are the ones already in the DB.
+			"default":   1,
 			"free":      1,
 			"supporter": 3,
 			"fan":       5,
 			"bestie":    8,
 			"vip":       15,
+			"promo":     2,
 		},
 		// v4: reseller / bulk-contract groups. Members buy quota outright and
 		// are admin-assigned only, so they are excluded from every contribution-
