@@ -373,6 +373,7 @@ if tokensheep_setting.CommercialGroups[user.Group] {
 |---|---|---|---|
 | **B6** | Redemption Code 卡 + wallet stats | "gift balance" 未解释 | 加文案 + 视觉分区，说明是独立池 |
 | **B16** | Add Funds 卡片 | 单卡不区分 tier / standard 充值 | 拆双卡: "贡献充值 (进 total_donated + 触发 tier)" vs "标准充值 (只进钱包)" |
+| **B17** | `PUT /api/option/` 只更新命中容器, blue/green in-memory drift | 加 Redis pub/sub 广播 (`common/option_broadcast.go`), 写者 publish 到 `newapi:v1:option-update`, 兄弟节点 subscribe 后本地 apply. NodeID 过滤 self-echo. Redis 关掉时天然降级为单节点行为. 发现于 Round 5 生产实测 v4 `disabled_tiers` 开关 |
 
 ### 验证清单
 
@@ -485,6 +486,7 @@ Redemption Code 卡文案:
 | 2026-08-29 | 订阅池不受 30d 无请求清零约束（有自己的 expiry） |
 | 2026-08-29 | `CommercialGroups` 从硬编码迁到 option `commercial_groups` |
 | 2026-08-29 | RPM 调整: wholesale 300→800, wholesale-plus 2000→1000, bestie 50→40, vip 120→60 (关闭) |
+| 2026-08-30 | 加 Redis pub/sub 跨容器 option 广播 (B17): 修 blue/green in-memory drift, 无需重启即可让 v4 治理开关在整个集群一致生效. Redis 断开天然降级 |
 
 ---
 
