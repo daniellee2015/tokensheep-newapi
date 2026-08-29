@@ -375,6 +375,18 @@ if tokensheep_setting.CommercialGroups[user.Group] {
 | **B16** | Add Funds 卡片 | 单卡不区分 tier / standard 充值 | 拆双卡: "贡献充值 (进 total_donated + 触发 tier)" vs "标准充值 (只进钱包)" |
 | **B17** | `PUT /api/option/` 只更新命中容器, blue/green in-memory drift | 加 Redis pub/sub 广播 (`common/option_broadcast.go`), 写者 publish 到 `newapi:v1:option-update`, 兄弟节点 subscribe 后本地 apply. NodeID 过滤 self-echo. Redis 关掉时天然降级为单节点行为. 发现于 Round 5 生产实测 v4 `disabled_tiers` 开关 |
 
+### 🎯 R3 收尾 (Round 7, 2026-08-30)
+
+| # | 议题 | 结果 |
+|---|---|---|
+| **R3-2** | GGR / AutoGroups 里的死码渠道 | ✅ 生产已清: `wholesale` / `wholesale-plus` 里删除 `GPT-Plus / gpt-lowprice / claude-supporter` 三个 0-enabled-channel entry (原来商业档 GGR 挂着但对应渠道全部 disabled). `AutoGroups` 里下线 `claude-sale / gemini-official` (0-channel, 命中就 500). 商业档 GGR 其他值原样, super-grok 保留(单独测). 备份 `bak-20260830-005351-r3-2-deadcode`. 通过 B17 pub/sub 两容器一次同步 |
+| **R3-2b** | 商业用户看订阅页塌陷成单栏 | ✅ 前端 `SubscriptionPlansCard` 加 `isCommercial` prop, 商业用户看到带 Crown 图标的 banner "Commercial tier — contract negotiated" 替代 `return null`, wallet grid 保持两栏. `wallet/index.tsx` 复用 tier-card `useQuery(['my-tier'])` cache, 零额外请求 |
+| **R3-3** | default 组无 RPM/session_limit 兜底 | ✅ 生产已配 (`session_limits.default=1`, `RPM.default=[10,10]`, 备份 `bak-20260830-005351-round3-default-backfill`). Seed 也补 `default:1` + `promo:2` 保护冷启动 (values 与线上一致, 无 restart 影响) |
+| **R3-4** | flat vs dotted GSU 语义反向 | ⚠️ 已文档化, 未完整对齐. 扁平 key `GroupSpecialUsableGroup` 199 条 value 全空串, 点分 key `group_ratio_setting.group_special_usable_group` 同 199 条全是 `remove`. 骨架一致, 语义看似反向. 完整对齐需要 grep in-memory var 双写路径 + 敲定权威源, 单独立项. 当前:代码路径以 dotted (in-memory reflect) 为权威, 扁平留作 UI 兼容 |
+| **R3-5** | ledger 无 governance drift 报警 | ✅ operator-ledger 新加 `internal/pricing/governance_diff.go` (DiffGovernance + LogGovernanceDrift), scheduler.captureOne 和 syncPricingStation 都挂钩. `grep 'governance drift'` 抓漂移. 首次快照不报警(避免假警报), key 顺序不同不报警(admin panel 重序列化). 生产已验证 |
+| **R3-6** | RPM 单表混装用户组 + 渠道组 | 🟡 dropped 本轮. 拆表影响 setting/middleware/controller/前端 6 处 ~250-300 行, 带来"限流分了 usable_groups 权限没分"的错位. 现网混装能跑, 只是 admin 面板视觉乱. 单独立项到 tokensheep-newapi 处理 (只做前端分区展示更简单) |
+| **Add Funds 双卡** | UI 现状已满足 B16 | ✅ 前端已双卡分离 (`TokensheepTierCards` 与 `RechargeFormCard` 独立渲染, tier 卡走 `WAFFO_PANCAKE_TIER-` prefix, 标准卡走 `WAFFO_PANCAKE-`). 4 条 UI 微调 (grid-cols-2 / chip 化 / hint 加 total_donated / 中间确认) 边际收益低, 不进本轮 |
+
 ### 验证清单
 
 - [ ] B9: 查 daily cron 是否跳过商业档
@@ -487,6 +499,7 @@ Redemption Code 卡文案:
 | 2026-08-29 | `CommercialGroups` 从硬编码迁到 option `commercial_groups` |
 | 2026-08-29 | RPM 调整: wholesale 300→800, wholesale-plus 2000→1000, bestie 50→40, vip 120→60 (关闭) |
 | 2026-08-30 | 加 Redis pub/sub 跨容器 option 广播 (B17): 修 blue/green in-memory drift, 无需重启即可让 v4 治理开关在整个集群一致生效. Redis 断开天然降级 |
+| 2026-08-30 | R3 收尾: (R3-2) 清 GGR 里 3 个 0-channel 死码 + AutoGroups 里 2 个 0-channel; (R3-2b) 商业用户订阅页银行卡替代 return null; (R3-3) default+promo 补 SessionLimits seed; (R3-5) ledger governance_diff.go 落地, `grep 'governance drift'` 抓漂移; (R3-4) flat/dotted GSU 已文档化未完整对齐; (R3-6) RPM 拆表 dropped 本轮 |
 
 ---
 
