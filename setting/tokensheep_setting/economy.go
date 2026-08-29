@@ -32,12 +32,22 @@ import (
 //     by tier. Enforced by the session-concurrency
 //     middleware (see middleware/session_concurrency.go).
 type EconomySetting struct {
-	CheckinAwardByGroup   map[string]int `json:"checkin_award_by_group"`
-	GiftPoolCap           int            `json:"gift_pool_cap"`
-	TierThresholds        map[string]int `json:"tier_thresholds"`
-	GiftPoolInactiveDays  int            `json:"gift_pool_inactive_days"`
-	DowngradeInactiveDays int            `json:"downgrade_inactive_days"`
-	SessionLimits         map[string]int `json:"session_limits"`
+	CheckinAwardByGroup   map[string]int  `json:"checkin_award_by_group"`
+	GiftPoolCap           int             `json:"gift_pool_cap"`
+	TierThresholds        map[string]int  `json:"tier_thresholds"`
+	GiftPoolInactiveDays  int             `json:"gift_pool_inactive_days"`
+	DowngradeInactiveDays int             `json:"downgrade_inactive_days"`
+	SessionLimits         map[string]int  `json:"session_limits"`
+	// CommercialGroups: reseller / bulk-contract groups that live outside the
+	// contribution-tier ladder. Members do NOT accumulate total_donated on
+	// top-up, do NOT get auto-promoted by TierForDonation, and CANNOT purchase
+	// subscription plans. Admin-assigned only. See docs/spec/economy-model-v4.md.
+	CommercialGroups map[string]bool `json:"commercial_groups"`
+	// DisabledTiers: tier names hidden from the contribution ladder UI and
+	// skipped by TierForDonation. Existing users already in a disabled tier
+	// keep that group until the next daily maintenance run reassigns them.
+	// Used to temporarily close vip without deleting its configuration.
+	DisabledTiers map[string]bool `json:"disabled_tiers"`
 }
 
 var (
@@ -73,6 +83,20 @@ var (
 			"bestie":    8,
 			"vip":       15,
 		},
+		// v4: reseller / bulk-contract groups. Members buy quota outright and
+		// are admin-assigned only, so they are excluded from every contribution-
+		// tier code path (donation accounting, ladder UI, downgrade cron,
+		// subscription purchase).
+		CommercialGroups: map[string]bool{
+			"retail":         true,
+			"wholesale":      true,
+			"wholesale-plus": true,
+		},
+		// v4: DisabledTiers is empty by default. Add "vip": true here (or via
+		// admin panel) to hide vip from the ladder and stop TierForDonation
+		// from returning it. Existing vip users survive until daily cron picks
+		// them up and reassigns to bestie.
+		DisabledTiers: map[string]bool{},
 	}
 )
 
@@ -101,15 +125,51 @@ type TierCard struct {
 	Amount int    `json:"amount"`
 }
 
-// CommercialGroups are the manually-assigned reseller groups. They buy quota
-// outright rather than earning a tier through contribution, so they carry
-// sentinel TierThresholds (deliberately unreachable) purely to keep them
-// selectable in the admin user-group dropdown. Anything that presents the
-// contribution ladder to users must skip them, or the sentinel surfaces as a
-// nonsense purchase option (e.g. a "$1999999" unlock card).
-var CommercialGroups = map[string]bool{
-	"wholesale": true,
-	"retail":    true,
+// IsCommercialGroup reports whether `group` is a reseller / bulk-contract
+// group. Members are excluded from the contribution-tier ladder (donation
+// accounting skips them, TierForDonation never returns them, the ladder UI
+// hides them, the downgrade cron doesn't touch them, and they cannot buy
+// subscription plans). Admin-assigned only.
+//
+// v4: seeded from EconomySetting.CommercialGroups (option
+// tokensheep_economy.commercial_groups) so operators can edit the set from
+// the admin panel without a code change.
+func IsCommercialGroup(group string) bool {
+	economyMu.RLock()
+	defer economyMu.RUnlock()
+	if economySetting.CommercialGroups == nil {
+		return false
+	}
+	return economySetting.CommercialGroups[group]
+}
+
+// IsTierDisabled reports whether `tier` should be hidden from the contribution
+// ladder and skipped by TierForDonation. Used to temporarily close a tier
+// (e.g. vip) without deleting its configuration.
+func IsTierDisabled(tier string) bool {
+	economyMu.RLock()
+	defer economyMu.RUnlock()
+	if economySetting.DisabledTiers == nil {
+		return false
+	}
+	return economySetting.DisabledTiers[tier]
+}
+
+// CommercialGroups is retained as a compatibility export for callers that
+// iterate the set (rather than checking a single group). It reflects the
+// current EconomySetting.CommercialGroups snapshot at call time.
+//
+// Deprecated: prefer IsCommercialGroup. Retained until callers migrate.
+func CommercialGroups() map[string]bool {
+	economyMu.RLock()
+	defer economyMu.RUnlock()
+	out := make(map[string]bool, len(economySetting.CommercialGroups))
+	for k, v := range economySetting.CommercialGroups {
+		if v {
+			out[k] = true
+		}
+	}
+	return out
 }
 
 // IsTierContribution reports whether (tier, amountDollars) is a legitimate
@@ -120,12 +180,21 @@ var CommercialGroups = map[string]bool{
 // amount must match the server-side config, so a client can't bypass MinTopUp
 // by sending an arbitrary tier name.
 func IsTierContribution(tier string, amountDollars int64) bool {
-	if tier == "" || CommercialGroups[tier] {
+	if tier == "" {
+		return false
+	}
+	economyMu.RLock()
+	defer economyMu.RUnlock()
+	// Commercial groups carry a sentinel threshold to keep them selectable in
+	// the admin dropdown, but their $-amount must never match a contribution
+	// card. Disabled tiers similarly can't be purchased through the ladder UI.
+	if economySetting.CommercialGroups != nil && economySetting.CommercialGroups[tier] {
+		return false
+	}
+	if economySetting.DisabledTiers != nil && economySetting.DisabledTiers[tier] {
 		return false
 	}
 	const quotaPerDollar = 500_000
-	economyMu.RLock()
-	defer economyMu.RUnlock()
 	quota, ok := economySetting.TierThresholds[tier]
 	if !ok || quota <= 0 {
 		return false
@@ -153,7 +222,8 @@ func GetTierThresholdsCopy() map[string]int {
 //
 // Thresholds <= 0 are excluded (they signify "free tier" or admin-cleared
 // rows), as are CommercialGroups (their thresholds are unreachable sentinels,
-// not purchasable tiers). This keeps the wallet Tier row responsive to admin
+// not purchasable tiers) and DisabledTiers (temporarily hidden without
+// deleting configuration). This keeps the wallet Tier row responsive to admin
 // panel edits with no code change.
 func TierCardsSorted() []TierCard {
 	economyMu.RLock()
@@ -161,6 +231,8 @@ func TierCardsSorted() []TierCard {
 	for k, v := range economySetting.TierThresholds {
 		rawThresholds[k] = v
 	}
+	commercial := economySetting.CommercialGroups
+	disabled := economySetting.DisabledTiers
 	economyMu.RUnlock()
 
 	// Kept as a local constant to avoid importing common from setting/.
@@ -169,7 +241,13 @@ func TierCardsSorted() []TierCard {
 
 	cards := make([]TierCard, 0, len(rawThresholds))
 	for tier, quota := range rawThresholds {
-		if quota <= 0 || CommercialGroups[tier] {
+		if quota <= 0 {
+			continue
+		}
+		if commercial != nil && commercial[tier] {
+			continue
+		}
+		if disabled != nil && disabled[tier] {
 			continue
 		}
 		cards = append(cards, TierCard{
@@ -272,6 +350,15 @@ func TierForDonation(totalDonatedCents int) string {
 	bestThreshold := -1
 	for name, threshold := range economySetting.TierThresholds {
 		if threshold <= 0 || totalDonatedCents < threshold {
+			continue
+		}
+		// Skip commercial groups (their thresholds are unreachable sentinels
+		// used only to keep the admin dropdown populated) and any tier the
+		// operator has explicitly disabled (v4 "disabled_tiers" switch).
+		if economySetting.CommercialGroups != nil && economySetting.CommercialGroups[name] {
+			continue
+		}
+		if economySetting.DisabledTiers != nil && economySetting.DisabledTiers[name] {
 			continue
 		}
 		if threshold > bestThreshold ||
