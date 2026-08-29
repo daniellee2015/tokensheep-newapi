@@ -86,31 +86,57 @@ v3 是"注册 → 领欢迎码 → 贡献升 tier"单链路。v4 增加两条平
 
 ### 3.1 扣费顺序 (关键)
 
-由用户 `UserSetting.BillingPreference` 决定，四种模式：
+由用户 `UserSetting.BillingPreference` 决定，四种模式，两级路由：
 
-| 模式 | 顺序 | 何时用 |
+**第一级：资金来源选择** (`service/billing_session.go` 里的 4 个 switch case)
+
+| 模式 | 尝试顺序 | 何时用 |
 |---|---|---|
-| `subscription_first` **(默认)** | `subscription → wallet → (429 if all empty)` | 有订阅的用户默认 |
-| `wallet_first` | `wallet → subscription → 429` | 想优先烧钱包保留订阅额度 |
-| `subscription_only` | `subscription → 429` | 卡死订阅池，钱包不参与 |
-| `wallet_only` | `wallet → 429` | 卡死钱包，订阅不参与 |
+| `subscription_first` **(默认)** | 有 sub → sub → wallet (当 `allow_wallet_overflow=true`) | 有订阅的用户默认 |
+| `wallet_first` | wallet → sub | 想优先烧钱包保留订阅额度 |
+| `subscription_only` | sub → 429 | 卡死订阅池，不动 wallet |
+| `wallet_only` | wallet → 429 | 卡死 wallet，不动 sub |
 
-**但 `quota_gift` 池永远在最前面**（v3 遗留、v4 保留），除非用户显式 `wallet_only`（v4 待决：`wallet_only` 是否包含 `gift`？—— **v4 决议**：`wallet_only` 意为"仅钱包 = 只花 quota_paid，跳过 gift 和 subscription"）。
+**第二级：wallet 内部 gift-paid 组合** (`model/user.go decreaseUserQuota`)
 
-**完整决策树**：
+`wallet` 这条路径 **天然是 gift-first-then-paid**，无关 `BillingPreference`：
+1. 先看 `quota_gift`（今日剩余额度 = `min(quota_gift, GiftDailyLimit[user.group] - gift_quota_used_today)`）
+2. 不够再扣 `quota_paid`
+3. 都空 → 返回 `ErrInsufficientUserQuota`
+
+**结论**：`wallet_only` **仍然吃 gift 池**（这是 v3 遗留设计的合理延续，因为 gift 属于 wallet 的一个子池）。用户想彻底跳过 gift 池，唯一方式是等 gift 日限用完/池子清空。这个语义 v4 保留。
+
+**完整决策树** (修正版)：
 
 ```
-请求进来
+请求进入
   ↓
-BillingPreference 检查
-  ├─ wallet_only        → quota_paid → 429
-  ├─ subscription_only  → sub pool → 429
-  ├─ subscription_first → (default) → 有 sub? → sub pool → sub 用完 → allow_overflow? → quota_paid → quota_gift → 429
-  │                                    → 无 sub → quota_gift → quota_paid → 429
-  └─ wallet_first       → quota_paid → quota_gift → sub pool → 429
+[BillingPreference 检查]
+  ├─ wallet_only        → tryWallet (=gift优先+paid回落) → 429
+  │                        任何时候都不查 subscription
+  │
+  ├─ subscription_only  → trySubscription → 429
+  │                        任何时候都不查 wallet (包括 gift)
+  │
+  ├─ subscription_first → 有 sub ? → trySubscription
+  │  (默认)              │           ├─ 成功 → 完成
+  │                     │           └─ 不够 + allow_wallet_overflow → tryWallet → 429
+  │                     │
+  │                     └─ 无 sub → tryWallet → 429
+  │
+  └─ wallet_first       → tryWallet
+                          ├─ 成功 → 完成
+                          └─ 不够 → trySubscription → 429
 
-注: quota_gift 有"日限"约束 (§4.3)，触顶会自动往下一层走
+其中 tryWallet 内部:
+  gift 池今日剩余额度 → 扣 gift → 不够 → 扣 paid → 都空 → 429
+  gift 日限 = CheckinAwardByGroup[user.group] (free/supporter/... 各不同, v4 §4.2)
 ```
+
+**为什么不给 `wallet_only` 添加"跳过 gift"选项**：
+- Gift 池是**免费额度**，用户没花钱买，视觉上等于"wallet 里的一部分"
+- 添加"skip gift"会让运营侧多一个语义要维护（"用户是否想跳过 gift"），没实际价值
+- 用户如果想强制走 paid，可以先把 gift 用完 (等日限或让池子清零)，或者临时切成 `subscription_only`
 
 ### 3.2 赠送池日限 (v3 保留)
 
@@ -334,7 +360,7 @@ if tokensheep_setting.CommercialGroups[user.Group] {
 |---|---|---|---|
 | **B3** | `controller/subscription*.go` | 商业用户可购订阅 | 拒绝 |
 | **B4** | tier_cards | vip 硬活着 | `disabled_tiers.vip = true` 开关 |
-| **B5** | `service/billing_session.go:369` | 4 种 pref 只讲 sub vs wallet，未涵盖 gift | v4 §3.1 已明确决策树，代码需要补 gift 层 |
+| **B5** | `service/billing_session.go:369` | 4 种 pref 只讲 sub vs wallet，未涵盖 gift | ✅ 代码本来正确 (gift 嵌在 wallet path 里)，spec §3.1 已修正为"两级路由" |
 | **B9** | `model/tokensheep_maintenance.go` | 降组 cron 是否跳过商业档待验证 | 必须跳过 |
 | **B12** | `model/topup.go:722` + subscription 到期 | 订阅期间贡献充值会覆盖 `sub` group | 订阅期间贡献只累加 total_donated，不改 group |
 | **B13** | `service/billing_session.go:426` | `wallet_only` 是否吃 gift? spec 未定 | v4 决议: `wallet_only` = 只 quota_paid，跳过 gift/sub |
@@ -455,7 +481,7 @@ Redemption Code 卡文案:
 | 2026-08-29 | 兑换券**明确**进 `quota_gift`（不进钱包），UI 强化说明 |
 | 2026-08-29 | 商业用户 top-up **不** 累加 `total_donated`、不触发升组 |
 | 2026-08-29 | 订阅期间贡献充值只累加 `total_donated`、不改 group |
-| 2026-08-29 | `wallet_only` = 只 quota_paid，跳过 gift 和 subscription |
+| 2026-08-29 | `wallet_only` 语义 (修正): 只跳过 subscription; gift 池是 wallet 的子池, 仍然优先扣。想强制走 paid 需切 subscription_only 或等 gift 用完 |
 | 2026-08-29 | 订阅池不受 30d 无请求清零约束（有自己的 expiry） |
 | 2026-08-29 | `CommercialGroups` 从硬编码迁到 option `commercial_groups` |
 | 2026-08-29 | RPM 调整: wholesale 300→800, wholesale-plus 2000→1000, bestie 50→40, vip 120→60 (关闭) |
