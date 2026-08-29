@@ -66,6 +66,16 @@ interface SubscriptionPlansCardProps {
   onAvailabilityChange?: (available: boolean) => void
   userQuota?: number
   onPurchaseSuccess?: () => void | Promise<void>
+  // v4 R3-2b: whether the current user sits in a reseller / bulk-contract
+  // group (retail / wholesale / wholesale-plus). Sourced from
+  // MyTierView.commercial by the parent so this component doesn't have
+  // to re-fetch /api/user/self/tier just to render its own empty state.
+  // When true, the card renders a fixed "commercial tier" banner instead
+  // of the normal plan list — the backend GetSubscriptionPlans already
+  // returns an empty array for commercial users, but returning null
+  // there collapses the wallet grid to a single column and leaves the
+  // user with no explanation of why the subscription panel vanished.
+  isCommercial?: boolean
 }
 
 function getEpayMethods(payMethods: PaymentMethod[] = []): PaymentMethod[] {
@@ -97,6 +107,7 @@ export function SubscriptionPlansCard({
   onAvailabilityChange,
   userQuota,
   onPurchaseSuccess,
+  isCommercial = false,
 }: SubscriptionPlansCardProps) {
   const { t } = useTranslation()
 
@@ -189,7 +200,10 @@ export function SubscriptionPlansCard({
 
   const hasActive = activeSubscriptions.length > 0
   const hasAny = allSubscriptions.length > 0
-  const isAvailable = loading || plans.length > 0 || hasAny
+  // Commercial users always render the banner card, so from the parent
+  // grid's perspective this column is "available" — keep the two-column
+  // wallet layout instead of collapsing to a single Add-Funds column.
+  const isAvailable = loading || plans.length > 0 || hasAny || isCommercial
   const disablePref = !hasActive
   const isSubPref =
     billingPreference === 'subscription_first' ||
@@ -250,6 +264,30 @@ export function SubscriptionPlansCard({
           </div>
         </CardContent>
       </Card>
+    )
+  }
+
+  // v4 R3-2b: commercial users can't buy subscriptions. The backend already
+  // returns [] from GetSubscriptionPlans in that case, and returning null
+  // here would silently collapse the two-column wallet layout with zero
+  // explanation for the user. Render a fixed banner instead so they know
+  // *why* the plan list is empty — same visual weight as the normal card
+  // so the wallet grid stays balanced.
+  if (isCommercial) {
+    return (
+      <TitledCard
+        title={t('Subscription Plans')}
+        description={t('Commercial tier — contract negotiated')}
+        icon={<Crown className='h-4 w-4' />}
+        iconTone='warning'
+        disableHoverEffect
+      >
+        <p className='text-muted-foreground text-sm leading-relaxed'>
+          {t(
+            'You are on a commercial tier (retail / wholesale / wholesale-plus). Subscription plans are for individual accounts on the contribution ladder; quota for commercial tiers is negotiated by contract. Contact the operator to adjust your tier.'
+          )}
+        </p>
+      </TitledCard>
     )
   }
 
