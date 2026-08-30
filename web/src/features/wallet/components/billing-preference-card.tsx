@@ -163,24 +163,29 @@ export function BillingPreferenceCard({
     }
   }
 
-  // R14: filter subscription_* options out for commercial users. Their
-  // account never has an active subscription, so those options would
-  // always be labelled '(无生效)' — see image #29. Keep the wallet
-  // options so they can still pick between wallet_first (default) and
-  // wallet_only if they ever want to hard-lock wallet-only behaviour.
-  const options = isCommercial
-    ? PREFERENCES.filter((p) => p === 'wallet_first' || p === 'wallet_only')
-    : PREFERENCES
+  // R16-1 (correcting R14): commercial users see all four options in the
+  // dropdown, but subscription_* are rendered *disabled* with an inline
+  // "(订阅池不可用)" tag instead of filtered out. Reason: user wanted
+  // disable, not filter (image #29 follow-up). Filtering hides that the
+  // options exist and reads as broken UI; disabling shows why they
+  // aren't selectable.
+  //
+  // v4 §3.1 semantics for a commercial account:
+  //   subscription_first → tryWallet fallback (equivalent to wallet_first
+  //                       because commercial users never have an active
+  //                       subscription)
+  //   subscription_only  → hard 429 every request — actively broken
+  //   wallet_first / wallet_only → normal wallet debit
+  //
+  // Trigger label coerces subscription_* → wallet_first so the collapsed
+  // pill doesn't lie about what will happen when the user actually calls
+  // an endpoint; the persisted preference value stays as-is until they
+  // explicitly change it.
+  const isSubscriptionOption = (p: Preference) =>
+    p === 'subscription_first' || p === 'subscription_only'
 
-  // The card's own state might have been hydrated from a persisted
-  // subscription_* value (that's the default for every account). For a
-  // commercial user the trigger would then read 'Subscription first'
-  // which is a lie. Coerce to wallet_first for display, and let the
-  // first change save the coerced value back.
   const displayValue: Preference =
-    isCommercial &&
-    (preference === 'subscription_first' ||
-      preference === 'subscription_only')
+    isCommercial && isSubscriptionOption(preference)
       ? 'wallet_first'
       : preference
 
@@ -207,11 +212,19 @@ export function BillingPreferenceCard({
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
-              {options.map((p) => (
-                <SelectItem key={p} value={p}>
-                  {labelFor(p, t)}
-                </SelectItem>
-              ))}
+              {PREFERENCES.map((p) => {
+                const disabled = isCommercial && isSubscriptionOption(p)
+                return (
+                  <SelectItem key={p} value={p} disabled={disabled}>
+                    <span>{labelFor(p, t)}</span>
+                    {disabled && (
+                      <span className='text-muted-foreground ml-2 text-xs'>
+                        {t('wallet.billingPreference.notAvailable')}
+                      </span>
+                    )}
+                  </SelectItem>
+                )
+              })}
             </SelectGroup>
           </SelectContent>
         </Select>

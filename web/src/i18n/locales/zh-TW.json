@@ -5344,6 +5344,7 @@
     "Discount channel": "打折通道",
     "Production tasks only": "生产任务专用",
     "Members only": "会员专属",
-    "Cheapest mixed models": "混合模型最低价"
+    "Cheapest mixed models": "混合模型最低价",
+    "wallet.billingPreference.notAvailable": "(訂閱池不可用)"
   }
 }

@@ -5581,6 +5581,7 @@
     "Discount channel": "Discount channel",
     "Production tasks only": "Production tasks only",
     "Members only": "Members only",
-    "Cheapest mixed models": "Cheapest mixed models"
+    "Cheapest mixed models": "Cheapest mixed models",
+    "wallet.billingPreference.notAvailable": "(no subscription pool)"
   }
 }
