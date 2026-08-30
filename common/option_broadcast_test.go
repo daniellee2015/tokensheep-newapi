@@ -104,6 +104,21 @@ func TestPublishOptionUpdate_ForeignMessageApplied(t *testing.T) {
 		applyCount int
 	)
 	sub := RDB.Subscribe(context.Background(), optionUpdateChannel)
+	// Redis pub/sub subscribe is asynchronous — Subscribe() returns the
+	// handle immediately, but the server-side "you're now on this channel"
+	// confirmation lands later. Publishing before that confirmation loses
+	// the message. On a laptop the round-trip finishes in a few hundred
+	// microseconds so it never mattered; on GitHub Actions the delay drifts
+	// past the previous 500ms deadline and even past a 5-second retry
+	// (see CI runs 33288799986 + 33289016383). Waiting for one message
+	// off the underlying channel via ReceiveTimeout guarantees the
+	// *Subscription confirmation is delivered before we publish, making
+	// the delivery deterministic.
+	subReadyCtx, cancelReady := context.WithTimeout(context.Background(), 5*time.Second)
+	_, err := sub.ReceiveTimeout(subReadyCtx, 5*time.Second)
+	cancelReady()
+	require.NoError(t, err, "wait for redis pub/sub subscribe confirmation")
+
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
