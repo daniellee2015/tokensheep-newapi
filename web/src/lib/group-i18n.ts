@@ -2,8 +2,11 @@
  * 分组 i18n helper
  *
  * 分组 key 形如 `<family>-<suffix>` (例: GPT-Pro-Stable / claude-max-sale)。
- * 前端展示时：家族名保留原样 (`GPT-Pro` / `claude-max`)，只翻译最末的语义后缀
- * (`stable → 稳定`, `sale → 特惠` 等)。无后缀的分组名 (如 `aws-q`) 原样返回。
+ * 前端展示时优先按顺序:
+ *   (1) 空串直接返回
+ *   (2) tier.name.<groupKey> 整体名兜底 (claude-max / aws-q / bestie / wholesale-plus)
+ *   (3) family-suffix 拆分，末段落在白名单里则翻译后缀
+ *   (4) 都不命中返回原 key
  *
  * 分组描述 (UserUsableGroups value) 走 t() 直接翻译；缺 key 时 i18next 会 fallback
  * 到英文或原字符串。
@@ -11,6 +14,10 @@
 
 // 已知后缀白名单：只有末段命中这里才翻译，否则整个 key 保持原样。
 // 大小写敏感 —— 因为业务里同时有 `-sale`（新分组）和 `-Sale` 混用。
+//
+// `max` / `api` 是 family+suffix 逻辑的补充 (例: some-max / kirobus-api)。
+// `q` / `b` 是 upstream 通道单字母代号，不适合当 suffix 语义翻译，
+// 因此不进这里 —— 走 tier.name.aws-q / tier.name.aws-b 整体名兜底更合适。
 const SUFFIX_I18N_KEYS: Record<string, string> = {
   sale: 'group.suffix.sale',
   Sale: 'group.suffix.sale',
@@ -28,10 +35,14 @@ const SUFFIX_I18N_KEYS: Record<string, string> = {
   pro: 'group.suffix.pro',
   distill: 'group.suffix.distill',
   Distill: 'group.suffix.distill',
+  max: 'group.suffix.max',
+  Max: 'group.suffix.max',
+  api: 'group.suffix.api',
+  API: 'group.suffix.api',
 }
 
 export interface FormattedGroup {
-  /** 家族名 + 已翻译后缀，或原 key（当 key 无匹配后缀时） */
+  /** 家族名 + 已翻译后缀，或整体名翻译，或原 key */
   displayName: string
   /** 已翻译分组描述，如果 desc 为空则返回空串 */
   displayDesc: string
@@ -41,11 +52,23 @@ type TFunction = (key: string, opts?: Record<string, unknown>) => string
 
 /**
  * 把 group key 拆成 family + suffix 并本地化。
- * - 单段 (`free`, `default`, `aws-q`) → 原样返回
- * - 多段 (`GPT-Pro-Stable`) → `GPT-Pro <t('group.suffix.stable')>`
+ * - 整体名 (`claude-max`, `aws-q`, `bestie`, `wholesale-plus`) → tier.name.* 兜底
+ * - 家族+后缀 (`GPT-Pro-Stable`) → `GPT-Pro <t('group.suffix.stable')>`
+ * - 单段无匹配 (`random`) → 原样
  */
 export function formatGroupName(groupKey: string, t: TFunction): string {
   if (!groupKey) return ''
+
+  // (b) 整体名兜底：优先于 family+suffix 拆分。
+  // 用 defaultValue: '' 检测 miss —— i18next 拿不到 key 时会返回 defaultValue，
+  // 命中时返回真实翻译；顺便隔离掉命中空串这种边界情况。
+  const tierKey = `tier.name.${groupKey}`
+  const tierTranslated = t(tierKey, { defaultValue: '' })
+  if (tierTranslated && tierTranslated !== tierKey) {
+    return tierTranslated
+  }
+
+  // (c) family-suffix 拆分
   const idx = groupKey.lastIndexOf('-')
   if (idx <= 0) return groupKey
 
