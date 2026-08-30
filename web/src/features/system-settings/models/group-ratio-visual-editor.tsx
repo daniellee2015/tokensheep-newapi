@@ -75,6 +75,8 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 
+import { formatGroupName } from '@/lib/group-i18n'
+
 import { safeJsonParse } from '../utils/json-parser'
 
 type GroupRatioVisualEditorProps = {
@@ -375,7 +377,9 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
                     className='flex items-center gap-2 rounded-md border p-3'
                   >
                     <GripVertical className='text-muted-foreground h-4 w-4' />
-                    <span className='font-medium'>{group}</span>
+                    <span className='font-medium'>
+                      {formatGroupName(group, t)}
+                    </span>
                     {!registryNames.includes(group) && <UnknownGroupBadge />}
                     <div className='ml-auto flex gap-1'>
                       <Button
