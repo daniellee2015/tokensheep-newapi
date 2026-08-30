@@ -64,7 +64,9 @@ export type ApiKeyGroupOption = {
 // it's a disambiguation aid, not a call to action. `auto` and unknown
 // kinds render nothing: auto already has its own animated framing, and an
 // older backend that omits `kind` should look exactly as it did before.
-function GroupKindBadge({ kind }: { kind?: ApiKeyGroupKind }) {
+// Exported for R17-A component tests that pin the tier/commercial/channel
+// output shape without pulling in the full combobox harness.
+export function GroupKindBadge({ kind }: { kind?: ApiKeyGroupKind }) {
   const { t } = useTranslation()
   if (!kind || kind === 'auto') return null
 
