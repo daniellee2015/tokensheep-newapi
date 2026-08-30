@@ -55,6 +55,7 @@ import {
   getDefaultPaymentType,
   getMinTopupAmount,
   dispatchSelectedPayment,
+  shouldShowTierCards,
 } from './lib'
 import type {
   UserWalletData,
@@ -104,6 +105,13 @@ export function Wallet(props: WalletProps) {
   // the subscription pool, so the preference toggle is dead options
   // for them (image #29). Hiding the whole card is cleaner than
   // showing four options with two labelled '(无生效)'.
+  // R17 hole #1/#3: destructure both data + isLoading. The
+  // shouldShowTierCards helper already treats undefined/null myTier
+  // as "hide", but keeping isCommercial derived from the same source
+  // preserves BillingPreferenceCard's original behaviour (a
+  // conservative default of false during loading matches
+  // pre-R17 code paths for that specific card — its own R13 test
+  // pins the semantics).
   const { data: myTier } = useQuery({
     queryKey: ['my-tier'],
     queryFn: getMyTier,
@@ -111,6 +119,16 @@ export function Wallet(props: WalletProps) {
     refetchOnWindowFocus: true,
   })
   const isCommercial = myTier?.commercial === true
+  // R17 fix for R16-3 verification: gate is now loading- and
+  // rollback-safe. See lib/tier-cards-visibility.ts for the full
+  // reasoning; tests in tier-cards-visibility.test.ts pin the four
+  // holes the verifier flagged (cold-cache flash, rollback footgun,
+  // null-return from getMyTier, and missing user context).
+  const tierCardsVisible = shouldShowTierCards({
+    myTier,
+    userGroup: user?.group,
+    topupInfo,
+  })
 
   // Calculate effective exchange rate - when display type is USD, use rate of 1
   const effectiveUsdExchangeRate = useMemo(() => {
@@ -366,17 +384,14 @@ export function Wallet(props: WalletProps) {
                 quota_paid, so nothing is lost, but the card advertises a
                 tier upgrade that cannot happen. Matches the gating the
                 profile TierCard already does via MyTierView.commercial. */}
-            {!isCommercial &&
-              topupInfo?.enable_tier_cards_in_recharge !== false &&
-              Array.isArray(topupInfo?.tier_cards) &&
-              topupInfo.tier_cards.length > 0 && (
-                <TokensheepTierCards
-                  tiers={topupInfo.tier_cards}
-                  currentTier={user?.group}
-                  onSelect={handleTierQuickPick}
-                  loadingTier={tierPickLoading}
-                />
-              )}
+            {tierCardsVisible && topupInfo?.tier_cards && (
+              <TokensheepTierCards
+                tiers={topupInfo.tier_cards}
+                currentTier={user?.group}
+                onSelect={handleTierQuickPick}
+                loadingTier={tierPickLoading}
+              />
+            )}
 
             <div
               className={
