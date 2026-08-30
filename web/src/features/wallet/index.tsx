@@ -21,8 +21,11 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { useQuery } from '@tanstack/react-query'
+
 import { SectionPageLayout } from '@/components/layout'
 import { Button } from '@/components/ui/button'
+import { getMyTier } from '@/features/tier/api'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { getSelf } from '@/lib/api'
@@ -92,6 +95,22 @@ export function Wallet(props: WalletProps) {
   const { status } = useStatus()
   const { currency } = useSystemConfig()
   const { topupInfo, presetAmounts, loading: topupLoading } = useTopupInfo()
+
+  // R13: gate BillingPreferenceCard on commercial state. Share the
+  // ['my-tier'] query key with features/tier/tier-card.tsx so we don't
+  // fire a duplicate request — @tanstack/react-query dedupes across
+  // consumers of the same key inside the same client. Commercial
+  // (retail / wholesale / wholesale-plus) users don't participate in
+  // the subscription pool, so the preference toggle is dead options
+  // for them (image #29). Hiding the whole card is cleaner than
+  // showing four options with two labelled '(无生效)'.
+  const { data: myTier } = useQuery({
+    queryKey: ['my-tier'],
+    queryFn: getMyTier,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  })
+  const isCommercial = myTier?.commercial === true
 
   // Calculate effective exchange rate - when display type is USD, use rate of 1
   const effectiveUsdExchangeRate = useMemo(() => {
@@ -333,7 +352,7 @@ export function Wallet(props: WalletProps) {
                 (R10 placement) looked like a stray insertion; keeping it
                 paired with the balance display makes the relationship
                 explicit. */}
-            <BillingPreferenceCard />
+            <BillingPreferenceCard isCommercial={isCommercial} />
 
             {/* Tier contribution cards — extracted above the Add Funds card.
                 Driven by tokensheep_setting.EnableTierCardsInRecharge + the
