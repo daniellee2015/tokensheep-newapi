@@ -503,6 +503,7 @@ Redemption Code 卡文案:
 | 2026-08-30 | R3 收尾: (R3-2) 清 GGR 里 3 个 0-channel 死码 + AutoGroups 里 2 个 0-channel; (R3-2b) 商业用户订阅页银行卡替代 return null; (R3-3) default+promo 补 SessionLimits seed; (R3-5) ledger governance_diff.go 落地, `grep 'governance drift'` 抓漂移; (R3-4) flat/dotted GSU 已文档化未完整对齐; (R3-6) RPM 拆表 dropped 本轮 |
 | 2026-08-30 | R3-2b **reverted**: 澄清 tier 卡就是订阅套餐, 独立的 SubscriptionPlansCard 是 upstream 剩下的 30-day 订阅池概念, TokenSheep 场景下应保持 `return null` 不显示 (`subscription_plans` 表本来就空). 撤 `isCommercial` prop + wallet/index.tsx 的 useQuery. 用户在 image #23 明确标示 |
 | 2026-08-30 | R10: tier-card perks 从 i18n 硬编码转 live server payload (RPM/concurrency/dailyGiftUSD), 标题改 "订阅套餐", 新增 BillingPreferenceCard 独立卡曝光 4-way 扣费优先级. 用户 image #24 标出 v3 时代 i18n 值 (RPM 50/vip \$10) 跟生产 (40/\$1.6) 不一致 + 找不到扣费优先级选项 |
+| 2026-08-30 | R11: 修 R10 的 3 处 shipping bug: (a) i18n key 写到 JSON 顶层而不是 `translation` namespace, 前端渲染 raw key (image #25 中 wallet.billingPreference.title/subtitle 直接显示 key 名); (b) 旧 wallet.tierCards.title/perks 保留在 translation.* 里遮住新值; (c) BillingPreferenceCard 放在 tier ladder 和 Add Funds 之间视觉不连贯 — 移到 wallet balance card 正下方, 跟它控制的池并列. python 迁 18 个 key 到 translation namespace + dedupe |
 
 ---
 
