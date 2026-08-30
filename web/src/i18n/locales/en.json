@@ -5582,6 +5582,9 @@
     "Production tasks only": "Production tasks only",
     "Members only": "Members only",
     "Cheapest mixed models": "Cheapest mixed models",
-    "wallet.billingPreference.notAvailable": "(no subscription pool)"
+    "wallet.billingPreference.notAvailable": "(no subscription pool)",
+    "Commercial": "Commercial",
+    "hides the tier from the contribution ladder and stops auto-promotion into it. Config is kept, so unticking restores it. Existing members stay put until the daily maintenance cron reassigns them.": "hides the tier from the contribution ladder and stops auto-promotion into it. Config is kept, so unticking restores it. Existing members stay put until the daily maintenance cron reassigns them.",
+    "reseller / bulk-contract tier. Members do not accumulate contribution totals, cannot buy subscription plans, and are hidden from the ladder. Assign by hand from the user editor.": "reseller / bulk-contract tier. Members do not accumulate contribution totals, cannot buy subscription plans, and are hidden from the ladder. Assign by hand from the user editor."
   }
 }

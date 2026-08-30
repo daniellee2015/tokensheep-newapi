@@ -50,6 +50,15 @@ interface TierRow {
   threshold: string // dollars, string so the input can hold intermediate values like "10."
   award: string
   concurrency: string
+  // R16-2: v4 governance toggles surfaced per-row.
+  // disabled → tokensheep_economy.disabled_tiers[tier] = true (hides the
+  //   tier from the contribution ladder + TierForDonation skips it; the
+  //   vip on/off switch used since Round 5).
+  // commercial → tokensheep_economy.commercial_groups[tier] = true (marks
+  //   the group as a reseller/bulk-contract tier: no total_donated
+  //   accumulation, no subscription purchase, hidden from the ladder).
+  disabled: boolean
+  commercial: boolean
 }
 
 export interface TokensheepEconomySettingsValues {
@@ -59,6 +68,11 @@ export interface TokensheepEconomySettingsValues {
   GiftPoolCap: number
   GiftPoolInactiveDays: number
   DowngradeInactiveDays: number
+  // R16-2: previously only editable via raw PUT /api/option/. Now surfaced
+  // in this editor so operators can toggle the vip switch / manage the
+  // reseller set without curl.
+  CommercialGroups: Record<string, boolean>
+  DisabledTiers: Record<string, boolean>
 }
 
 interface Props {
@@ -81,10 +95,17 @@ function dollarStringToQuota(input: string): number {
 function buildInitialRows(
   defaults: TokensheepEconomySettingsValues
 ): TierRow[] {
+  // R16-2: union commercial_groups + disabled_tiers into the row set too,
+  // so a commercial group (retail / wholesale / wholesale-plus) that has a
+  // sentinel threshold shows up as an editable row where the operator can
+  // untick "commercial" or adjust its concurrency, and a disabled tier
+  // (vip) is visible with its checkbox ticked instead of vanishing.
   const tierNames = new Set<string>([
     ...Object.keys(defaults.TierThresholds || {}),
     ...Object.keys(defaults.CheckinAwardByGroup || {}),
     ...Object.keys(defaults.SessionLimits || {}),
+    ...Object.keys(defaults.CommercialGroups || {}),
+    ...Object.keys(defaults.DisabledTiers || {}),
   ])
   const rows: TierRow[] = []
   tierNames.forEach((tier) => {
@@ -94,6 +115,8 @@ function buildInitialRows(
       threshold: quotaToDollarString(defaults.TierThresholds?.[tier]),
       award: quotaToDollarString(defaults.CheckinAwardByGroup?.[tier]),
       concurrency: String(defaults.SessionLimits?.[tier] ?? ''),
+      disabled: defaults.DisabledTiers?.[tier] === true,
+      commercial: defaults.CommercialGroups?.[tier] === true,
     })
   })
   // Stable-sort by threshold ascending so the UI has a predictable order.
@@ -166,7 +189,14 @@ export function TokensheepEconomySection({ defaultValues }: Props) {
   const addRow = () => {
     setRows((prev) => [
       ...prev,
-      { tier: '', threshold: '', award: '', concurrency: '' },
+      {
+        tier: '',
+        threshold: '',
+        award: '',
+        concurrency: '',
+        disabled: false,
+        commercial: false,
+      },
     ])
     bumpDirty()
   }
@@ -186,12 +216,18 @@ export function TokensheepEconomySection({ defaultValues }: Props) {
       const sessions: Record<string, number> = {
         free: Number(freeSessionLimit) || 1,
       }
+      // R16-2: only include ticked entries so the maps stay sparse (backend
+      // treats absent == false). Rebuilt from scratch each save.
+      const commercialGroups: Record<string, boolean> = {}
+      const disabledTiers: Record<string, boolean> = {}
       for (const row of rows) {
         const tier = row.tier.trim()
         if (!tier) continue
         thresholds[tier] = dollarStringToQuota(row.threshold)
         awards[tier] = dollarStringToQuota(row.award)
         sessions[tier] = Math.max(0, Math.floor(Number(row.concurrency) || 0))
+        if (row.commercial) commercialGroups[tier] = true
+        if (row.disabled) disabledTiers[tier] = true
       }
 
       const updates: Array<{ key: string; value: string }> = [
@@ -206,6 +242,14 @@ export function TokensheepEconomySection({ defaultValues }: Props) {
         {
           key: 'tokensheep_economy.session_limits',
           value: JSON.stringify(sessions),
+        },
+        {
+          key: 'tokensheep_economy.commercial_groups',
+          value: JSON.stringify(commercialGroups),
+        },
+        {
+          key: 'tokensheep_economy.disabled_tiers',
+          value: JSON.stringify(disabledTiers),
         },
         {
           key: 'tokensheep_economy.gift_pool_cap',
@@ -292,6 +336,12 @@ export function TokensheepEconomySection({ defaultValues }: Props) {
                 <th className='px-3 py-2 text-left font-medium'>
                   {t('Concurrency')}
                 </th>
+                <th className='px-3 py-2 text-center font-medium'>
+                  {t('Disabled')}
+                </th>
+                <th className='px-3 py-2 text-center font-medium'>
+                  {t('Commercial')}
+                </th>
                 <th className='w-10 px-2 py-2' />
               </tr>
             </thead>
@@ -299,7 +349,7 @@ export function TokensheepEconomySection({ defaultValues }: Props) {
               {rows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={7}
                     className='text-muted-foreground px-3 py-6 text-center text-xs'
                   >
                     {t('No tiers configured. Click "Add tier" to start.')}
@@ -351,6 +401,33 @@ export function TokensheepEconomySection({ defaultValues }: Props) {
                       className='h-8'
                     />
                   </td>
+                  <td className='px-3 py-2 text-center'>
+                    {/* disabled_tiers[tier]: hide from ladder + skip in
+                        TierForDonation. This is the vip on/off switch. */}
+                    <input
+                      type='checkbox'
+                      checked={row.disabled}
+                      onChange={(e) =>
+                        updateRow(index, { disabled: e.target.checked })
+                      }
+                      className='size-4 cursor-pointer align-middle'
+                      aria-label={t('Disabled')}
+                    />
+                  </td>
+                  <td className='px-3 py-2 text-center'>
+                    {/* commercial_groups[tier]: reseller/bulk-contract tier —
+                        no total_donated accumulation, no subscription
+                        purchase, hidden from the contribution ladder. */}
+                    <input
+                      type='checkbox'
+                      checked={row.commercial}
+                      onChange={(e) =>
+                        updateRow(index, { commercial: e.target.checked })
+                      }
+                      className='size-4 cursor-pointer align-middle'
+                      aria-label={t('Commercial')}
+                    />
+                  </td>
                   <td className='px-2 py-2'>
                     <Button
                       type='button'
@@ -367,6 +444,23 @@ export function TokensheepEconomySection({ defaultValues }: Props) {
             </tbody>
           </table>
         </div>
+      </div>
+
+      <div className='text-muted-foreground space-y-1 text-xs'>
+        <p>
+          <strong>{t('Disabled')}</strong>
+          {': '}
+          {t(
+            'hides the tier from the contribution ladder and stops auto-promotion into it. Config is kept, so unticking restores it. Existing members stay put until the daily maintenance cron reassigns them.'
+          )}
+        </p>
+        <p>
+          <strong>{t('Commercial')}</strong>
+          {': '}
+          {t(
+            'reseller / bulk-contract tier. Members do not accumulate contribution totals, cannot buy subscription plans, and are hidden from the ladder. Assign by hand from the user editor.'
+          )}
+        </p>
       </div>
 
       <div className='space-y-3'>

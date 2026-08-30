@@ -1417,7 +1417,7 @@
     "Disable threshold (seconds)": "停用閾值（秒）",
     "Disable Two-Factor Authentication": "停用雙重身份驗證",
     "disabled": "已停用",
-    "Disabled": "已停用",
+    "Disabled": "已關閉",
     "Disabled all channels with tag: {{tag}}": "已停用標籤「{{tag}}」下的所有渠道",
     "Disabled channels with tag {{tag}}": "停用標籤為 {{tag}} 的渠道",
     "Disabled lanes are omitted on save.": "關閉的價格通道儲存時會被省略。",
@@ -5345,6 +5345,9 @@
     "Production tasks only": "生产任务专用",
     "Members only": "会员专属",
     "Cheapest mixed models": "混合模型最低价",
-    "wallet.billingPreference.notAvailable": "(訂閱池不可用)"
+    "wallet.billingPreference.notAvailable": "(訂閱池不可用)",
+    "Commercial": "商業檔",
+    "hides the tier from the contribution ladder and stops auto-promotion into it. Config is kept, so unticking restores it. Existing members stay put until the daily maintenance cron reassigns them.": "從貢獻階梯裡隱藏該檔，並停止自動升入。設定保留，取消勾選即恢復。已在該檔的使用者維持不變，直到每日維護任務重算。",
+    "reseller / bulk-contract tier. Members do not accumulate contribution totals, cannot buy subscription plans, and are hidden from the ladder. Assign by hand from the user editor.": "轉售 / 合約批發檔。成員不累計貢獻額、不能購買訂閱套餐、不出現在貢獻階梯裡。只能在使用者編輯頁手工分配。"
   }
 }
