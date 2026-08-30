@@ -34,6 +34,7 @@ import { PaymentConfirmDialog } from './components/dialogs/payment-confirm-dialo
 import { TransferDialog } from './components/dialogs/transfer-dialog'
 import { RechargeFormCard } from './components/recharge-form-card'
 import { RedemptionCard } from './components/redemption-card'
+import { BillingPreferenceCard } from './components/billing-preference-card'
 import { TokensheepTierCards } from './components/tokensheep-tier-cards'
 import { SubscriptionPlansCard } from './components/subscription-plans-card'
 import { WalletStatsCard } from './components/wallet-stats-card'
@@ -338,6 +339,12 @@ export function Wallet(props: WalletProps) {
                   loadingTier={tierPickLoading}
                 />
               )}
+
+            {/* v4 R10: deduction-priority selector. R9 hid SubscriptionPlansCard
+                (tier cards are the subscription in this fork) which stranded
+                the wallet_first / subscription_first / *_only toggle. This
+                dedicated card gives it a home right below the tier ladder. */}
+            <BillingPreferenceCard />
 
             <div
               className={

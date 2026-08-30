@@ -172,6 +172,11 @@ export interface TopupInfo {
   tier_cards?: Array<{
     tier: string
     amount: number
+    // v4 R10: live perks from controller/topup.go enrichedTierCards. Optional
+    // so older backend builds (or non-newapi kinds) don't fail typecheck.
+    rpm?: number
+    concurrency?: number
+    daily_gift_usd?: number
   }>
 
   /** Whether redemption code usage is enabled */
