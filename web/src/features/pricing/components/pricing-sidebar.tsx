@@ -27,6 +27,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import { formatGroupName } from '@/lib/group-i18n'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
 
@@ -187,7 +188,7 @@ export function PricingSidebar(props: PricingSidebarProps) {
     },
     ...props.groups.map((group) => ({
       value: group,
-      label: group,
+      label: formatGroupName(group, t),
       suffix: formatGroupRatio(props.groupRatios?.[group]),
     })),
   ]

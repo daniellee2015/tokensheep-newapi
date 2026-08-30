@@ -38,6 +38,7 @@ import { StaticDataTable } from '@/components/data-table'
 import { sideDrawerContentClassName } from '@/components/drawer-layout'
 import { GroupBadge } from '@/components/group-badge'
 import { PublicLayout } from '@/components/layout'
+import { formatGroupName } from '@/lib/group-i18n'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -443,7 +444,11 @@ function ModelBackendSignalsSection(props: { model: PricingModel }) {
   )
 }
 
-function ModelBackendProviderSection(props: { model: PricingModel }) {
+/**
+ * 展示模型后端 Provider 相关信息（vendor / type / groups / endpoints / tags / parameters）。
+ * 导出仅用于组件测试，业务代码继续通过 ModelBackendDetailsSection 触达。
+ */
+export function ModelBackendProviderSection(props: { model: PricingModel }) {
   const { t } = useTranslation()
   const model = props.model
   const groups = normalizeCatalogItems(model.enable_groups)
@@ -468,7 +473,7 @@ function ModelBackendProviderSection(props: { model: PricingModel }) {
   if (groups.length > 0) {
     cells.push(
       <CatalogInfoCell key='groups' label={t('Groups')}>
-        <CatalogPillList items={groups} />
+        <CatalogPillList items={groups.map((g) => formatGroupName(g, t))} />
       </CatalogInfoCell>
     )
   }
