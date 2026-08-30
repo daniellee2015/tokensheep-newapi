@@ -65,6 +65,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { useStatus } from '@/hooks/use-status'
 import { getUserModels, getUserGroups } from '@/lib/api'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
+import { formatGroupDesc, formatGroupName } from '@/lib/group-i18n'
 import { cn } from '@/lib/utils'
 
 import {
@@ -157,17 +158,23 @@ export function ApiKeysMutateDrawer({
   const models = modelsData?.data || []
   const groups = useMemo<ApiKeyGroupOption[]>(
     () =>
-      Object.entries(groupsData?.data || {}).map(([key, info]) => ({
-        value: key,
-        label: key,
-        desc: info.desc || key,
-        ratio: info.ratio,
-        // R16-5: namespace hint (tier / commercial / channel) so the picker
-        // can badge each option. Older backends omit it and the badge is
-        // simply skipped.
-        kind: info.kind,
-      })),
-    [groupsData]
+      Object.entries(groupsData?.data || {}).map(([key, info]) => {
+        // R19-A: label / desc 走 formatGroupName / formatGroupDesc, 而不是
+        // 直传后端 raw key / raw desc. 否则 combobox 里会看到 `claude-max`
+        // 而不是 `Claude-Max 旗舰`. 依赖 `t` 保证语言切换后 rerun.
+        const displayName = formatGroupName(key, t)
+        return {
+          value: key,
+          label: displayName,
+          desc: info.desc ? formatGroupDesc(info.desc, t) : displayName,
+          ratio: info.ratio,
+          // R16-5: namespace hint (tier / commercial / channel) so the picker
+          // can badge each option. Older backends omit it and the badge is
+          // simply skipped.
+          kind: info.kind,
+        }
+      }),
+    [groupsData, t]
   )
   const backendHasAuto = groups.some((g) => g.value === 'auto')
   const availableAutoGroupNames = useMemo(
