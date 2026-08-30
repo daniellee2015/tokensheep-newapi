@@ -44,6 +44,8 @@ import { cn } from '@/lib/utils'
 
 import {
   ApiKeyGroupCombobox,
+  GroupKindBadge,
+  type ApiKeyGroupKind,
   type ApiKeyGroupOption,
 } from './api-key-group-combobox'
 import { GroupRatioBadge } from './auto-group-visuals'
@@ -61,6 +63,13 @@ type AutoGroupOrderEditorProps = Omit<ComponentProps<'div'>, 'onChange'> & {
 
 type AutoGroupOrderItemProps = {
   group: string
+  // R18 (R16-5 follow-up): the auto-order editor mixes tier / commercial /
+  // channel groups in one list, so identity vs routing has to stay visually
+  // obvious even after selection. `kind` is resolved from the parent's
+  // option map and passed in explicitly — an undefined value (older backend,
+  // or a group name that no longer appears in `/api/user/self/groups`)
+  // renders no badge, preserving the pre-R16-5 look.
+  kind?: ApiKeyGroupKind
   index: number
   count: number
   onMove: (index: number, direction: 'up' | 'down') => void
@@ -104,8 +113,11 @@ function AutoGroupOrderItem(props: AutoGroupOrderItemProps) {
       >
         <HugeiconsIcon icon={Drag01Icon} strokeWidth={2} aria-hidden='true' />
       </Button>
-      <span className='min-w-0 flex-1 truncate text-sm font-medium'>
-        {props.group}
+      <span className='flex min-w-0 flex-1 items-center gap-1.5'>
+        <span className='min-w-0 truncate text-sm font-medium'>
+          {props.group}
+        </span>
+        <GroupKindBadge kind={props.kind} />
       </span>
       <div className='flex shrink-0 gap-1'>
         <Button
@@ -286,6 +298,16 @@ export function AutoGroupOrderEditor(props: AutoGroupOrderEditorProps) {
                 >
                   {option.label}
                 </span>
+                {/*
+                  R18 (R16-5 follow-up): the inherited chip row is where
+                  admin-configured global Auto order is displayed read-only.
+                  Without the kind badge here, an admin promoting a
+                  commercial group into the global default is
+                  indistinguishable from a normal tier promotion — and the
+                  chip layout is where that gets reviewed. Renders nothing
+                  for `auto` / undefined `kind`.
+                */}
+                <GroupKindBadge kind={option.kind} />
                 {option.desc && (
                   <span
                     data-slot='global-auto-order-description'
@@ -321,16 +343,28 @@ export function AutoGroupOrderEditor(props: AutoGroupOrderEditorProps) {
           onReorder={(groups) => props.onChange({ groups, mode: 'custom' })}
           className='flex flex-col gap-2'
         >
-          {props.value.map((group, index) => (
-            <AutoGroupOrderItem
-              key={group}
-              group={group}
-              index={index}
-              count={props.value.length}
-              onMove={handleMove}
-              onRemove={handleRemove}
-            />
-          ))}
+          {props.value.map((group, index) => {
+            // R18 (R16-5 follow-up): resolve the namespace from the parent
+            // option map. `options` is the effective set for this key (may
+            // exclude retired identities), `globalOptions` is the full
+            // catalogue — fall through both so a group in the custom order
+            // that got filtered out of the picker still shows the right
+            // badge instead of silently dropping to muted.
+            const source =
+              props.options.find((option) => option.value === group) ??
+              props.globalOptions.find((option) => option.value === group)
+            return (
+              <AutoGroupOrderItem
+                key={group}
+                group={group}
+                kind={source?.kind}
+                index={index}
+                count={props.value.length}
+                onMove={handleMove}
+                onRemove={handleRemove}
+              />
+            )
+          })}
         </Reorder.Group>
       )}
     </div>
