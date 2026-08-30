@@ -38,6 +38,7 @@ For commercial licensing, please contact support@quantumnous.com
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { formatGroupName, formatGroupDesc } from '@/lib/group-i18n'
 import { Button } from '@/components/ui/button'
 import {
   Command,
@@ -402,7 +403,9 @@ export const GroupSelector: React.FC<GroupSelectorProps> = React.memo(
 
           const searchTerm = search.toLowerCase()
           const searchableFields = [
+            formatGroupName(group.label, t),
             group.label,
+            formatGroupDesc(group.description, t),
             group.description || '',
             group.value,
           ]
@@ -436,11 +439,11 @@ export const GroupSelector: React.FC<GroupSelectorProps> = React.memo(
                 <div className='flex min-w-0 flex-1 items-center gap-2 pr-4'>
                   <div className='flex min-w-0 flex-1 flex-col'>
                     <span className='text-foreground truncate text-[11px] font-medium'>
-                      {group.label}
+                      {formatGroupName(group.label, t)}
                     </span>
                     {(group.desc || group.description) && (
                       <div className='text-muted-foreground truncate text-[9px] leading-tight'>
-                        {group.desc || group.description}
+                        {formatGroupDesc(group.desc || group.description, t)}
                         {group.ratio && (
                           <>
                             {' · '}
@@ -468,7 +471,9 @@ export const GroupSelector: React.FC<GroupSelectorProps> = React.memo(
       <Drawer open={open} onOpenChange={setOpen}>
         <DrawerTrigger asChild>
           <GroupTriggerButton
-            currentLabel={currentGroup?.label || t('Group')}
+            currentLabel={
+              currentGroup ? formatGroupName(currentGroup.label, t) : t('Group')
+            }
             triggerClassName={className}
             isDisabled={disabled}
             aria-expanded={open}
@@ -496,11 +501,11 @@ export const GroupSelector: React.FC<GroupSelectorProps> = React.memo(
                   <div className='flex min-w-0 flex-1 items-center gap-3'>
                     <div className='flex min-w-0 flex-1 flex-col'>
                       <span className='text-foreground text-sm font-medium'>
-                        {group.label}
+                        {formatGroupName(group.label, t)}
                       </span>
                       {(group.desc || group.description) && (
                         <div className='text-muted-foreground mt-0.5 text-xs'>
-                          {group.desc || group.description}
+                          {formatGroupDesc(group.desc || group.description, t)}
                           {group.ratio && (
                             <>
                               {' · '}
@@ -532,7 +537,9 @@ export const GroupSelector: React.FC<GroupSelectorProps> = React.memo(
         <PopoverTrigger
           render={
             <GroupTriggerButton
-              currentLabel={currentGroup?.label || t('Group')}
+              currentLabel={
+                currentGroup ? formatGroupName(currentGroup.label, t) : t('Group')
+              }
               triggerClassName={className}
               isDisabled={disabled}
               aria-expanded={open}
@@ -677,7 +684,7 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
         {currentModel?.label || t('Model')}
       </span>
       <span className='bg-muted text-muted-foreground hidden max-w-20 shrink-0 rounded px-1.5 py-0.5 text-[10px] sm:inline-flex'>
-        {currentGroup?.label || t('Group')}
+        {currentGroup ? formatGroupName(currentGroup.label, t) : t('Group')}
       </span>
       <ChevronsUpDown className='text-muted-foreground ml-auto size-3.5 shrink-0 opacity-60' />
     </Button>
@@ -718,7 +725,7 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
               type='button'
             >
               <span className='min-w-0 truncate font-medium'>
-                {group.label}
+                {formatGroupName(group.label, t)}
               </span>
               <Check
                 className={cn(
