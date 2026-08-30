@@ -5553,6 +5553,7 @@
     "wallet.billingPreference.subscriptionOnly": "仅用订阅",
     "wallet.billingPreference.subscriptionOnly.desc": "只走订阅池, 不动钱包。订阅用完直接 429。",
     "wallet.billingPreference.walletOnly": "仅用钱包",
-    "wallet.billingPreference.walletOnly.desc": "只走钱包 (含 gift 池)，完全不参与订阅。适合暂停订阅但保留钱包扣费的用户。"
+    "wallet.billingPreference.walletOnly.desc": "只走钱包 (含 gift 池)，完全不参与订阅。适合暂停订阅但保留钱包扣费的用户。",
+    "Separate from paid wallet · fills from check-in + redemption codes · $50 cap · spent first, up to a per-tier daily limit · zeroed after 30 days idle": "独立于付费钱包 · 由签到与兑换码充值 · 上限 $50 · 优先扣, 每档有日限 · 30 天无请求清零"
   }
 }

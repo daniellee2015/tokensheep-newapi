@@ -161,7 +161,12 @@ export function BillingPreferenceCard() {
           disabled={loading || saving}
         >
           <SelectTrigger className='w-full sm:w-72'>
-            <SelectValue />
+            {/* Explicit label rather than the default <SelectValue />
+                fallback. Without this Base UI Select renders the raw
+                enum value ("subscription_first") in the trigger — the
+                SelectItem labels only apply inside the dropdown, not to
+                the trigger's collapsed state. See image #27 bug. */}
+            <SelectValue>{labelFor(preference, t)}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
