@@ -66,16 +66,6 @@ interface SubscriptionPlansCardProps {
   onAvailabilityChange?: (available: boolean) => void
   userQuota?: number
   onPurchaseSuccess?: () => void | Promise<void>
-  // v4 R3-2b: whether the current user sits in a reseller / bulk-contract
-  // group (retail / wholesale / wholesale-plus). Sourced from
-  // MyTierView.commercial by the parent so this component doesn't have
-  // to re-fetch /api/user/self/tier just to render its own empty state.
-  // When true, the card renders a fixed "commercial tier" banner instead
-  // of the normal plan list — the backend GetSubscriptionPlans already
-  // returns an empty array for commercial users, but returning null
-  // there collapses the wallet grid to a single column and leaves the
-  // user with no explanation of why the subscription panel vanished.
-  isCommercial?: boolean
 }
 
 function getEpayMethods(payMethods: PaymentMethod[] = []): PaymentMethod[] {
@@ -107,7 +97,6 @@ export function SubscriptionPlansCard({
   onAvailabilityChange,
   userQuota,
   onPurchaseSuccess,
-  isCommercial = false,
 }: SubscriptionPlansCardProps) {
   const { t } = useTranslation()
 
@@ -200,10 +189,7 @@ export function SubscriptionPlansCard({
 
   const hasActive = activeSubscriptions.length > 0
   const hasAny = allSubscriptions.length > 0
-  // Commercial users always render the banner card, so from the parent
-  // grid's perspective this column is "available" — keep the two-column
-  // wallet layout instead of collapsing to a single Add-Funds column.
-  const isAvailable = loading || plans.length > 0 || hasAny || isCommercial
+  const isAvailable = loading || plans.length > 0 || hasAny
   const disablePref = !hasActive
   const isSubPref =
     billingPreference === 'subscription_first' ||
@@ -267,31 +253,20 @@ export function SubscriptionPlansCard({
     )
   }
 
-  // v4 R3-2b: commercial users can't buy subscriptions. The backend already
-  // returns [] from GetSubscriptionPlans in that case, and returning null
-  // here would silently collapse the two-column wallet layout with zero
-  // explanation for the user. Render a fixed banner instead so they know
-  // *why* the plan list is empty — same visual weight as the normal card
-  // so the wallet grid stays balanced.
-  if (isCommercial) {
-    return (
-      <TitledCard
-        title={t('Subscription Plans')}
-        description={t('Commercial tier — contract negotiated')}
-        icon={<Crown className='h-4 w-4' />}
-        iconTone='warning'
-        disableHoverEffect
-      >
-        <p className='text-muted-foreground text-sm leading-relaxed'>
-          {t(
-            'You are on a commercial tier (retail / wholesale / wholesale-plus). Subscription plans are for individual accounts on the contribution ladder; quota for commercial tiers is negotiated by contract. Contact the operator to adjust your tier.'
-          )}
-        </p>
-      </TitledCard>
-    )
-  }
-
   if (plans.length === 0 && !hasAny) {
+    // v4: the TokenSheep contribution-ladder tier cards
+    // (features/wallet/components/tokensheep-tier-cards.tsx) are the
+    // subscription mechanism for this fork — buying a tier IS buying a
+    // subscription. This upstream SubscriptionPlansCard is left in the
+    // tree for parity with new-api and future non-tier plans (if the
+    // operator ever seeds subscription_plans rows), but stays hidden
+    // when the plan table is empty AND the user has no active
+    // subscription of their own. That covers every TokenSheep user
+    // including commercial (retail / wholesale / wholesale-plus).
+    // R3-2b earlier revision tried to surface a "commercial tier"
+    // banner here and turned out to be misleading — the tier ladder
+    // above already explains the user's status, this card being
+    // present was the noise, not its absence.
     return null
   }
 

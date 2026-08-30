@@ -104,6 +104,21 @@ func TestPublishOptionUpdate_ForeignMessageApplied(t *testing.T) {
 		applyCount int
 	)
 	sub := RDB.Subscribe(context.Background(), optionUpdateChannel)
+	// Redis pub/sub subscribe is asynchronous — Subscribe() returns the
+	// handle immediately, but the server-side "you're now on this channel"
+	// confirmation lands later. Publishing before that confirmation loses
+	// the message. On a laptop the round-trip finishes in a few hundred
+	// microseconds so it never mattered; on GitHub Actions the delay drifts
+	// past the previous 500ms deadline and even past a 5-second retry
+	// (see CI runs 33288799986 + 33289016383). Waiting for one message
+	// off the underlying channel via ReceiveTimeout guarantees the
+	// *Subscription confirmation is delivered before we publish, making
+	// the delivery deterministic.
+	subReadyCtx, cancelReady := context.WithTimeout(context.Background(), 5*time.Second)
+	_, err := sub.ReceiveTimeout(subReadyCtx, 5*time.Second)
+	cancelReady()
+	require.NoError(t, err, "wait for redis pub/sub subscribe confirmation")
+
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -125,7 +140,13 @@ func TestPublishOptionUpdate_ForeignMessageApplied(t *testing.T) {
 		`{"node_id":"OTHER_NODE","key":"GroupRatio","value":"{\"default\":1}"}`,
 	).Err())
 
-	ok := waitFor(t, 500*time.Millisecond, func() bool {
+	// CI runners are slower than a laptop; the 500ms deadline flaked once
+	// on GitHub Actions where miniredis + Subscribe delivery drifted past
+	// it (v4 R3-2b revert PR CI run 33288799986). Give the wait a
+	// generous ceiling — waitFor short-circuits as soon as the condition
+	// holds, so the higher bound only matters when a real regression
+	// breaks delivery.
+	ok := waitFor(t, 5*time.Second, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return applyCount == 1
