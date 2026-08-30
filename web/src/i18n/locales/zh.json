@@ -5562,6 +5562,25 @@
     "wallet.billingPreference.subscriptionOnly.desc": "只走订阅池, 不动钱包。订阅用完直接 429。",
     "wallet.billingPreference.walletOnly": "仅用钱包",
     "wallet.billingPreference.walletOnly.desc": "只走钱包 (含 gift 池)，完全不参与订阅。适合暂停订阅但保留钱包扣费的用户。",
-    "Separate from paid wallet · fills from check-in + redemption codes · $50 cap · spent first, up to a per-tier daily limit · zeroed after 30 days idle": "独立于付费钱包 · 由签到与兑换码充值 · 上限 $50 · 优先扣, 每档有日限 · 30 天无请求清零"
+    "Separate from paid wallet · fills from check-in + redemption codes · $50 cap · spent first, up to a per-tier daily limit · zeroed after 30 days idle": "独立于付费钱包 · 由签到与兑换码充值 · 上限 $50 · 优先扣, 每档有日限 · 30 天无请求清零",
+    "High-concurrency enterprise line": "企业专线，高并发不掉链子",
+    "Daily workhorse, cost-effective": "日常主力，够用性价高",
+    "Standard channel, balanced": "标准通道，均衡表现",
+    "Mission critical, long-term stable": "关键任务专用，长期稳定",
+    "Value first, occasional dips": "性价比首选，偶有波动",
+    "Direct AWS Bedrock": "AWS Bedrock 官方直连",
+    "High-volume bulk workload": "大批量场景，量大管饱",
+    "Production only, zero fluctuation": "生产环境专用，零波动",
+    "Distill dedicated channel": "蒸馏专用通道",
+    "Non-critical workload": "非核心场景够用",
+    "Top performance, quality first": "顶配性能，追求质量选这里",
+    "Top tier on sale": "顶配打折，性价比推荐",
+    "Top tier stable, no drops": "顶配稳定线，长任务不掉线",
+    "Trial for new users": "新用户体验",
+    "Economy for bulk tasks": "大批量任务经济款",
+    "Discount channel": "打折通道",
+    "Production tasks only": "生产任务专用",
+    "Members only": "会员专属",
+    "Cheapest mixed models": "混合模型最低价"
   }
 }

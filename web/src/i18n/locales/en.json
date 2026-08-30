@@ -5562,6 +5562,25 @@
     "wallet.billingPreference.subscriptionOnly.desc": "Route strictly to the subscription pool; return 429 when the pool is exhausted, wallet is untouched.",
     "wallet.billingPreference.walletOnly": "Wallet only",
     "wallet.billingPreference.walletOnly.desc": "Route strictly to wallet (gift then paid); subscription pool is ignored.",
-    "Separate from paid wallet · fills from check-in + redemption codes · $50 cap · spent first, up to a per-tier daily limit · zeroed after 30 days idle": "Separate from paid wallet · fills from check-in + redemption codes · $50 cap · spent first, up to a per-tier daily limit · zeroed after 30 days idle"
+    "Separate from paid wallet · fills from check-in + redemption codes · $50 cap · spent first, up to a per-tier daily limit · zeroed after 30 days idle": "Separate from paid wallet · fills from check-in + redemption codes · $50 cap · spent first, up to a per-tier daily limit · zeroed after 30 days idle",
+    "High-concurrency enterprise line": "High-concurrency enterprise line",
+    "Daily workhorse, cost-effective": "Daily workhorse, cost-effective",
+    "Standard channel, balanced": "Standard channel, balanced",
+    "Mission critical, long-term stable": "Mission critical, long-term stable",
+    "Value first, occasional dips": "Value first, occasional dips",
+    "Direct AWS Bedrock": "Direct AWS Bedrock",
+    "High-volume bulk workload": "High-volume bulk workload",
+    "Production only, zero fluctuation": "Production only, zero fluctuation",
+    "Distill dedicated channel": "Distill dedicated channel",
+    "Non-critical workload": "Non-critical workload",
+    "Top performance, quality first": "Top performance, quality first",
+    "Top tier on sale": "Top tier on sale",
+    "Top tier stable, no drops": "Top tier stable, no drops",
+    "Trial for new users": "Trial for new users",
+    "Economy for bulk tasks": "Economy for bulk tasks",
+    "Discount channel": "Discount channel",
+    "Production tasks only": "Production tasks only",
+    "Members only": "Members only",
+    "Cheapest mixed models": "Cheapest mixed models"
   }
 }
