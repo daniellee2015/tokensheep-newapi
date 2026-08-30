@@ -43,6 +43,15 @@ interface TierCardEntry {
   tier: string
   /** Station-side dollar amount that lands the user in this tier. */
   amount: number
+  // v4 R10: perks fields sourced from live server config (not i18n) so a
+  // change in admin panel (SessionLimits / ModelRequestRateLimitGroup /
+  // CheckinAwardByGroup) is reflected on next page load without a code
+  // release. Backend contract: controller/topup.go enrichedTierCards.
+  // Older backends omit these; frontend falls back to the i18n perks
+  // string in that case so a rolling deploy stays consistent.
+  rpm?: number
+  concurrency?: number
+  daily_gift_usd?: number
 }
 
 interface TokensheepTierCardsProps {
@@ -163,7 +172,42 @@ function TierCard({
       tier: entry.tier,
     }),
   })
-  const perks = t(perksKey, { defaultValue: '' })
+
+  // v4 R10: derive the perks string from live server data when the backend
+  // provides it. Fall back to the (now soft-deprecated) i18n perks string
+  // for backwards compatibility during a rolling deploy where the frontend
+  // is ahead of the backend. Format matches the original i18n stanza so
+  // no layout regression.
+  //
+  // Format: "RPM ${rpm} · 并发 ${concurrency} · 每日赠送 $${gift}"
+  const hasLiveData =
+    typeof entry.rpm === 'number' ||
+    typeof entry.concurrency === 'number' ||
+    typeof entry.daily_gift_usd === 'number'
+  let perks: string
+  if (hasLiveData) {
+    const parts: string[] = []
+    if (typeof entry.rpm === 'number' && entry.rpm > 0) {
+      parts.push(`RPM ${entry.rpm}`)
+    }
+    if (typeof entry.concurrency === 'number' && entry.concurrency > 0) {
+      parts.push(`${t('wallet.tierCards.concurrency', { defaultValue: '并发' })} ${entry.concurrency}`)
+    }
+    if (
+      typeof entry.daily_gift_usd === 'number' &&
+      entry.daily_gift_usd > 0
+    ) {
+      // 2-decimal for small amounts (\$0.5), integer for whole dollars.
+      const g = entry.daily_gift_usd
+      const gift = g >= 1 && Number.isInteger(g) ? `$${g}` : `$${g.toFixed(2).replace(/\.?0+$/, '')}`
+      parts.push(
+        `${t('wallet.tierCards.dailyGift', { defaultValue: '每日赠送' })} ${gift}`
+      )
+    }
+    perks = parts.join(' · ')
+  } else {
+    perks = t(perksKey, { defaultValue: '' })
+  }
 
   let actionLabel = t('wallet.tierCards.contribute')
   if (loading) {

@@ -381,6 +381,7 @@ if tokensheep_setting.CommercialGroups[user.Group] {
 |---|---|---|
 | **R3-2** | GGR / AutoGroups 里的死码渠道 | ✅ 生产已清: `wholesale` / `wholesale-plus` 里删除 `GPT-Plus / gpt-lowprice / claude-supporter` 三个 0-enabled-channel entry (原来商业档 GGR 挂着但对应渠道全部 disabled). `AutoGroups` 里下线 `claude-sale / gemini-official` (0-channel, 命中就 500). 商业档 GGR 其他值原样, super-grok 保留(单独测). 备份 `bak-20260830-005351-r3-2-deadcode`. 通过 B17 pub/sub 两容器一次同步 |
 | **R3-2b** | 商业用户看订阅页塌陷成单栏 | ↩️ **reverted (2026-08-30)**. 起初改成 banner "Commercial tier — contract negotiated" 显示, 用户反馈: **贡献解锁 Tier 卡本身就是订阅套餐**（tier 是订阅, 一次贡献解锁 tier + RPM/并发/日赠, 归 tokensheep 的经济模型 §四）; 单独的 SubscriptionPlansCard 只是 upstream new-api 保留的 30-day 订阅池, 在 TokenSheep 场景下 `subscription_plans` 表本来就空. 让它 `return null` 保持不显示才对. `wallet/index.tsx` 里 `useQuery(['my-tier'])` 也一并撤 (tier-card.tsx 仍消费同一 cache, 无孤儿) |
+| **R10** (tier UI 完整对齐) | 3 处漂移 | ✅ (a) tier-card i18n `perks` 硬编码 v3 时代的 RPM 50/vip RPM 120/vip \$10, 跟生产 (40/60/\$1.6) 脱节 → 后端 `controller/topup.go enrichedTierCards()` 把 live RPM+并发+dailyGiftUSD 塞进 `tier_cards` payload, 前端从 API 拿实值渲染 (i18n perks 只做 backfill). (b) tier-card 标题从 "贡献解锁 Tier" 改为 "订阅套餐"/"Subscription Plans", 副标题解释一次贡献解锁 tier 永久生效. (c) BillingPreference 4-way 选择器过去只在 SubscriptionPlansCard 里, R9 让它 return null 之后用户看不到, R10 新增 `BillingPreferenceCard` 单独一张卡渲染在 tier ladder 下方, 4 个选项每个有描述文案说明订阅池/wallet/gift 的扣费顺序 |
 | **R3-3** | default 组无 RPM/session_limit 兜底 | ✅ 生产已配 (`session_limits.default=1`, `RPM.default=[10,10]`, 备份 `bak-20260830-005351-round3-default-backfill`). Seed 也补 `default:1` + `promo:2` 保护冷启动 (values 与线上一致, 无 restart 影响) |
 | **R3-4** | flat vs dotted GSU 语义反向 | ⚠️ 已文档化, 未完整对齐. 扁平 key `GroupSpecialUsableGroup` 199 条 value 全空串, 点分 key `group_ratio_setting.group_special_usable_group` 同 199 条全是 `remove`. 骨架一致, 语义看似反向. 完整对齐需要 grep in-memory var 双写路径 + 敲定权威源, 单独立项. 当前:代码路径以 dotted (in-memory reflect) 为权威, 扁平留作 UI 兼容 |
 | **R3-5** | ledger 无 governance drift 报警 | ✅ operator-ledger 新加 `internal/pricing/governance_diff.go` (DiffGovernance + LogGovernanceDrift), scheduler.captureOne 和 syncPricingStation 都挂钩. `grep 'governance drift'` 抓漂移. 首次快照不报警(避免假警报), key 顺序不同不报警(admin panel 重序列化). 生产已验证 |
@@ -501,6 +502,7 @@ Redemption Code 卡文案:
 | 2026-08-30 | 加 Redis pub/sub 跨容器 option 广播 (B17): 修 blue/green in-memory drift, 无需重启即可让 v4 治理开关在整个集群一致生效. Redis 断开天然降级 |
 | 2026-08-30 | R3 收尾: (R3-2) 清 GGR 里 3 个 0-channel 死码 + AutoGroups 里 2 个 0-channel; (R3-2b) 商业用户订阅页银行卡替代 return null; (R3-3) default+promo 补 SessionLimits seed; (R3-5) ledger governance_diff.go 落地, `grep 'governance drift'` 抓漂移; (R3-4) flat/dotted GSU 已文档化未完整对齐; (R3-6) RPM 拆表 dropped 本轮 |
 | 2026-08-30 | R3-2b **reverted**: 澄清 tier 卡就是订阅套餐, 独立的 SubscriptionPlansCard 是 upstream 剩下的 30-day 订阅池概念, TokenSheep 场景下应保持 `return null` 不显示 (`subscription_plans` 表本来就空). 撤 `isCommercial` prop + wallet/index.tsx 的 useQuery. 用户在 image #23 明确标示 |
+| 2026-08-30 | R10: tier-card perks 从 i18n 硬编码转 live server payload (RPM/concurrency/dailyGiftUSD), 标题改 "订阅套餐", 新增 BillingPreferenceCard 独立卡曝光 4-way 扣费优先级. 用户 image #24 标出 v3 时代 i18n 值 (RPM 50/vip \$10) 跟生产 (40/\$1.6) 不一致 + 找不到扣费优先级选项 |
 
 ---
 

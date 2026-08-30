@@ -122,7 +122,13 @@ func GetTopUpInfo(c *gin.Context) {
 		"enable_tier_cards_in_recharge":   tokensheep_setting.EnableTierCardsInRecharge,
 		"enable_custom_topup":             tokensheep_setting.EnableCustomTopup,
 		"enable_custom_amount_input":      tokensheep_setting.EnableCustomAmountInput,
-		"tier_cards":                      tokensheep_setting.TierCardsSorted(),
+		// v4 R10 (economy-model-v4 §四): enrich each tier card with the live
+		// RPM / concurrency / daily-gift-cents so the frontend renders the
+		// current truth. Before this the wallet UI hard-coded a v3-era
+		// stanza in the i18n locale files that drifted from the seed
+		// (e.g. bestie RPM=50 in i18n vs 40 on prod). Frontend now reads
+		// perks straight off this payload.
+		"tier_cards":                      enrichedTierCards(),
 		"amount_options":          operation_setting.GetPaymentSetting().AmountOptions,
 		"discount":                operation_setting.GetPaymentSetting().AmountDiscount,
 		"topup_link":              common.TopUpLink,
@@ -585,4 +591,45 @@ func AdminCompleteTopUp(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, nil)
+}
+
+// tierCardEnriched is the wire shape returned to /api/user/topup/info#tier_cards.
+// It stays a superset of tokensheep_setting.TierCard so old frontend builds that
+// only read {tier, amount} keep working; new fields are added rather than mutated.
+//
+// The frontend renders these numbers directly instead of consulting an i18n
+// perks string, so admin-panel edits to SessionLimits / ModelRequestRateLimitGroup /
+// CheckinAwardByGroup take effect on the next page load without a code change.
+type tierCardEnriched struct {
+	Tier          string  `json:"tier"`
+	Amount        int     `json:"amount"`             // 门槛美元
+	RPM           int     `json:"rpm"`                // /min success cap
+	Concurrency   int     `json:"concurrency"`        // 在飞请求数
+	DailyGiftUSD  float64 `json:"daily_gift_usd"`     // 每日签到 in $ (0 = 不可签到)
+}
+
+// enrichedTierCards augments TierCardsSorted with live limits so the wallet
+// tier cards render authoritative numbers. RPM comes from the native
+// ModelRequestRateLimitGroup rate-limit map; concurrency and daily gift come
+// from EconomySetting. All three are hot-reloadable, so this reads them on
+// every request.
+func enrichedTierCards() []tierCardEnriched {
+	base := tokensheep_setting.TierCardsSorted()
+	out := make([]tierCardEnriched, 0, len(base))
+	for _, c := range base {
+		_, successCap, _ := setting.GetGroupRateLimit(c.Tier)
+		giftCents := tokensheep_setting.GiftDailyLimit(c.Tier)
+		var giftUSD float64
+		if common.QuotaPerUnit > 0 {
+			giftUSD = float64(giftCents) / common.QuotaPerUnit
+		}
+		out = append(out, tierCardEnriched{
+			Tier:         c.Tier,
+			Amount:       c.Amount,
+			RPM:          successCap,
+			Concurrency:  tokensheep_setting.SessionLimit(c.Tier),
+			DailyGiftUSD: giftUSD,
+		})
+	}
+	return out
 }
