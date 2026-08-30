@@ -27,6 +27,23 @@ var groupGroupRatioMap = types.NewRWMap[string, map[string]float64]()
 
 var defaultGroupSpecialUsableGroup = map[string]map[string]string{}
 
+// GroupRatioSetting 是 group_ratio_setting 这一组配置的权威 in-memory 结构.
+// 通过 config.GlobalConfig.Register 注册后, 由 model/option.go handleConfigUpdate
+// 反射写入 DB 里点分 key (`group_ratio_setting.*`).
+//
+// GroupSpecialUsableGroup 权威源澄清 (R17-B, 2026-08-31):
+//   - 权威源: 点分 key `group_ratio_setting.group_special_usable_group`,
+//     通过下面这个 struct 的 GroupSpecialUsableGroup 字段反射进 RWMap.
+//     service/group.go:GetUserUsableGroups 只读这个 RWMap.
+//   - 扁平 legacy key `GroupSpecialUsableGroup` (DB 里可能有历史数据行):
+//     model/option.go:updateOptionMap 里没有 case, 只落进 common.OptionMap
+//     供 /api/option/ 回显和前端 UI 兼容, **不影响任何运行时逻辑**.
+//     生产上曾并存 (扁平 199 条空串 + 点分 199 条 `remove`), 骨架一致但语义
+//     不同; 由于扁平从未被消费, 视为死代码保留兼容, 不做数据清理.
+//
+// 前端行为参考 web/src/features/system-settings/models/ratio-settings-card.tsx:
+// 表单字段名叫 GroupSpecialUsableGroup, 但 saveGroupRatios 的 apiKeyMap
+// 把它映射到点分 key 才 PUT, 所以运营 UI 修改会正确生效.
 type GroupRatioSetting struct {
 	GroupRatio              *types.RWMap[string, float64]            `json:"group_ratio"`
 	GroupGroupRatio         *types.RWMap[string, map[string]float64] `json:"group_group_ratio"`

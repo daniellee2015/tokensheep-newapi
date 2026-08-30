@@ -335,8 +335,8 @@ if tokensheep_setting.CommercialGroups[user.Group] {
 | `ModelRequestRateLimitGroup` | `map[string][2]int` | 每组 RPM | 全 group |
 | `GroupRatio` | `map[string]float64` | 组名注册表 (fallback 倍率) | 全部 = 1 |
 | `GroupGroupRatio` | `map[string]map[string]float64` | 用户组 × 渠道组单价 | 核心定价 |
-| `GroupSpecialUsableGroup` (flat) | `map[string]map[string]string` | 屏蔽表 (UI 兼容) | 值不影响逻辑 |
-| `group_ratio_setting.group_special_usable_group` (dotted) | 同上 | 代码读的权威源 | in-memory |
+| `GroupSpecialUsableGroup` (flat) | `map[string]map[string]string` | legacy 死代码 (仅 API 回显 / UI 兼容) | 值不影响逻辑 — R17-B 已澄清 |
+| `group_ratio_setting.group_special_usable_group` (dotted) | 同上 | **代码读的权威源** | in-memory RWMap, service/group.go:17 |
 | `UserUsableGroups` | `map[string]string` | 顶层可见渠道全集 | 15 项 |
 | `AutoGroups` | `[]string` | 自动路由候选 | 10 项 |
 | `subscription_plans` | 表 `subscription_plans` | 套餐配置 | admin CRUD |
@@ -383,7 +383,7 @@ if tokensheep_setting.CommercialGroups[user.Group] {
 | **R3-2b** | 商业用户看订阅页塌陷成单栏 | ↩️ **reverted (2026-08-30)**. 起初改成 banner "Commercial tier — contract negotiated" 显示, 用户反馈: **贡献解锁 Tier 卡本身就是订阅套餐**（tier 是订阅, 一次贡献解锁 tier + RPM/并发/日赠, 归 tokensheep 的经济模型 §四）; 单独的 SubscriptionPlansCard 只是 upstream new-api 保留的 30-day 订阅池, 在 TokenSheep 场景下 `subscription_plans` 表本来就空. 让它 `return null` 保持不显示才对. `wallet/index.tsx` 里 `useQuery(['my-tier'])` 也一并撤 (tier-card.tsx 仍消费同一 cache, 无孤儿) |
 | **R10** (tier UI 完整对齐) | 3 处漂移 | ✅ (a) tier-card i18n `perks` 硬编码 v3 时代的 RPM 50/vip RPM 120/vip \$10, 跟生产 (40/60/\$1.6) 脱节 → 后端 `controller/topup.go enrichedTierCards()` 把 live RPM+并发+dailyGiftUSD 塞进 `tier_cards` payload, 前端从 API 拿实值渲染 (i18n perks 只做 backfill). (b) tier-card 标题从 "贡献解锁 Tier" 改为 "订阅套餐"/"Subscription Plans", 副标题解释一次贡献解锁 tier 永久生效. (c) BillingPreference 4-way 选择器过去只在 SubscriptionPlansCard 里, R9 让它 return null 之后用户看不到, R10 新增 `BillingPreferenceCard` 单独一张卡渲染在 tier ladder 下方, 4 个选项每个有描述文案说明订阅池/wallet/gift 的扣费顺序 |
 | **R3-3** | default 组无 RPM/session_limit 兜底 | ✅ 生产已配 (`session_limits.default=1`, `RPM.default=[10,10]`, 备份 `bak-20260830-005351-round3-default-backfill`). Seed 也补 `default:1` + `promo:2` 保护冷启动 (values 与线上一致, 无 restart 影响) |
-| **R3-4** | flat vs dotted GSU 语义反向 | ⚠️ 已文档化, 未完整对齐. 扁平 key `GroupSpecialUsableGroup` 199 条 value 全空串, 点分 key `group_ratio_setting.group_special_usable_group` 同 199 条全是 `remove`. 骨架一致, 语义看似反向. 完整对齐需要 grep in-memory var 双写路径 + 敲定权威源, 单独立项. 当前:代码路径以 dotted (in-memory reflect) 为权威, 扁平留作 UI 兼容 |
+| **R3-4** | flat vs dotted GSU 语义反向 | ✅ **R17-B 收尾 (2026-08-31)**: 全库 grep 确认扁平 `GroupSpecialUsableGroup` 是死代码 — `model/option.go:updateOptionMap` 里没有 case handler, DB 里的扁平行只落进 `common.OptionMap` 供 API 回显, 从未反射进 `ratio_setting` 的 RWMap. 唯一消费者 `service/group.go:17` 读的就是点分 key 反射进来的 RWMap. 前端 `ratio-settings-card.tsx` 表单字段虽命名 `GroupSpecialUsableGroup`, 但 `saveGroupRatios` 的 `apiKeyMap` 把它 PUT 到点分 key, 运营 UI 修改正确生效. **结论: 无权限漏洞, 扁平 legacy key 保留仅为向后兼容, DB 数据不清理**. 已在 `setting/ratio_setting/group_ratio.go` `GroupRatioSetting` struct 和 `model/option.go InitOptionMap` 加澄清注释. 回归 test: `model/option_group_special_usable_test.go` (`TestUpdateOptionMap_FlatGroupSpecialUsableGroupKeyIsInert` + `TestUpdateOptionMap_DottedGroupSpecialUsableGroupIsAuthoritative`) 固化不变量, 谁把 flat wire 进去或者反射链坏了都会立刻 fail |
 | **R3-5** | ledger 无 governance drift 报警 | ✅ operator-ledger 新加 `internal/pricing/governance_diff.go` (DiffGovernance + LogGovernanceDrift), scheduler.captureOne 和 syncPricingStation 都挂钩. `grep 'governance drift'` 抓漂移. 首次快照不报警(避免假警报), key 顺序不同不报警(admin panel 重序列化). 生产已验证 |
 | **R3-6** | RPM 单表混装用户组 + 渠道组 | 🟡 dropped 本轮. 拆表影响 setting/middleware/controller/前端 6 处 ~250-300 行, 带来"限流分了 usable_groups 权限没分"的错位. 现网混装能跑, 只是 admin 面板视觉乱. 单独立项到 tokensheep-newapi 处理 (只做前端分区展示更简单) |
 | **Add Funds 双卡** | UI 现状已满足 B16 | ✅ 前端已双卡分离 (`TokensheepTierCards` 与 `RechargeFormCard` 独立渲染, tier 卡走 `WAFFO_PANCAKE_TIER-` prefix, 标准卡走 `WAFFO_PANCAKE-`). 4 条 UI 微调 (grid-cols-2 / chip 化 / hint 加 total_donated / 中间确认) 边际收益低, 不进本轮 |
