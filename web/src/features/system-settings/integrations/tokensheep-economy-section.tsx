@@ -73,6 +73,9 @@ export interface TokensheepEconomySettingsValues {
   // reseller set without curl.
   CommercialGroups: Record<string, boolean>
   DisabledTiers: Record<string, boolean>
+  // R16-4: station-wide in-flight ceiling (concurrency layer 3, checked
+  // before the per-group caps in SessionLimits). 0 disables the gate.
+  SystemConcurrency: number
 }
 
 interface Props {
@@ -142,6 +145,9 @@ export function TokensheepEconomySection({ defaultValues }: Props) {
   const [freeSessionLimit, setFreeSessionLimit] = useState(
     String(defaultValues.SessionLimits?.free ?? 1)
   )
+  const [systemConcurrency, setSystemConcurrency] = useState(
+    String(defaultValues.SystemConcurrency ?? 0)
+  )
   const [saving, setSaving] = useState(false)
   const [dirtyStamp, setDirtyStamp] = useState(0)
 
@@ -154,6 +160,7 @@ export function TokensheepEconomySection({ defaultValues }: Props) {
       String(defaultValues.DowngradeInactiveDays ?? 30)
     )
     setFreeSessionLimit(String(defaultValues.SessionLimits?.free ?? 1))
+    setSystemConcurrency(String(defaultValues.SystemConcurrency ?? 0))
     setDirtyStamp(0)
   }, [defaultValues])
 
@@ -250,6 +257,10 @@ export function TokensheepEconomySection({ defaultValues }: Props) {
         {
           key: 'tokensheep_economy.disabled_tiers',
           value: JSON.stringify(disabledTiers),
+        },
+        {
+          key: 'tokensheep_economy.system_concurrency',
+          value: String(Math.max(0, Math.floor(Number(systemConcurrency) || 0))),
         },
         {
           key: 'tokensheep_economy.gift_pool_cap',
@@ -463,25 +474,50 @@ export function TokensheepEconomySection({ defaultValues }: Props) {
         </p>
       </div>
 
-      <div className='space-y-3'>
-        <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
-          {t('Free tier concurrency')}
-        </Label>
-        <Input
-          value={freeSessionLimit}
-          onChange={(e) => {
-            setFreeSessionLimit(e.target.value)
-            bumpDirty()
-          }}
-          inputMode='numeric'
-          placeholder='1'
-          className='h-9 max-w-40'
-        />
-        <p className='text-muted-foreground text-xs'>
-          {t(
-            'Concurrency cap for the "free" default group. Free tier has no threshold, no daily gift.'
-          )}
-        </p>
+      <div className='grid gap-4 md:grid-cols-2'>
+        <div className='space-y-3'>
+          <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
+            {t('Free tier concurrency')}
+          </Label>
+          <Input
+            value={freeSessionLimit}
+            onChange={(e) => {
+              setFreeSessionLimit(e.target.value)
+              bumpDirty()
+            }}
+            inputMode='numeric'
+            placeholder='1'
+            className='h-9 max-w-40'
+          />
+          <p className='text-muted-foreground text-xs'>
+            {t(
+              'Concurrency cap for the "free" default group. Free tier has no threshold, no daily gift.'
+            )}
+          </p>
+        </div>
+
+        {/* R16-4: concurrency layer 3. Checked before any per-group cap, so
+            it bounds the damage from a mistyped group limit. */}
+        <div className='space-y-3'>
+          <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
+            {t('Station-wide concurrency')}
+          </Label>
+          <Input
+            value={systemConcurrency}
+            onChange={(e) => {
+              setSystemConcurrency(e.target.value)
+              bumpDirty()
+            }}
+            inputMode='numeric'
+            placeholder='260'
+            className='h-9 max-w-40'
+          />
+          <p className='text-muted-foreground text-xs'>
+            {t(
+              'Total in-flight requests allowed across the whole station, checked before the per-tier caps. Excess requests get 503 rather than 429. Set to 0 to disable. Recommended: sum of all tier caps plus ~20% headroom.'
+            )}
+          </p>
+        </div>
       </div>
 
       <div className='grid gap-4 md:grid-cols-3'>

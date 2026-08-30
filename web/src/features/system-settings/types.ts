@@ -355,6 +355,10 @@ export type BillingSettings = {
   //     (this is the vip on/off switch used since Round 5)
   'tokensheep_economy.commercial_groups': string
   'tokensheep_economy.disabled_tiers': string
+  // R16-4: station-wide in-flight ceiling (concurrency layer 3, checked
+  // ahead of the per-tier session_limits). Numeric string; "0" or absent
+  // disables the gate so an upgrade never starts refusing traffic.
+  'tokensheep_economy.system_concurrency': string
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number

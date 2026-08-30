@@ -37,6 +37,10 @@ import (
 
 const (
 	sessionCounterPrefix = "ts:session:active:" // ts:session:active:<user_id>
+	// systemCounterKey is the single station-wide in-flight counter
+	// (concurrency layer 3). No user suffix — every authenticated request
+	// increments the same key.
+	systemCounterKey = "ts:system:active"
 	// TTL protects against orphaned counters if a Go panic slips past the
 	// deferred decrement (shouldn't happen, but Redis-side belt-and-braces).
 	sessionCounterTTL = 15 * time.Minute
@@ -52,7 +56,8 @@ const (
 //   - or the configured limit is zero (== no ceiling).
 func SessionConcurrencyLimiter() gin.HandlerFunc {
 	// In-memory fallback for deployments without Redis. Keys are user_id
-	// strings; values are the current live count.
+	// strings (plus the systemCounterKey sentinel); values are the current
+	// live count.
 	var (
 		fallbackMu sync.Mutex
 		fallback   = make(map[string]int)
@@ -65,6 +70,50 @@ func SessionConcurrencyLimiter() gin.HandlerFunc {
 			return
 		}
 
+		ctx := c.Request.Context()
+
+		// ── Layer 3: station-wide ceiling ───────────────────────────────
+		// Checked first and independently of the user's group so it still
+		// applies to accounts whose tier has no SessionLimits entry (which
+		// short-circuits the per-user gate below). This is the backstop for
+		// a misconfigured group cap: if SessionLimits["wholesale-plus"] is
+		// fat-fingered from 100 to 100000, this is what stops one account
+		// from saturating the upstream pool.
+		//
+		// A zero setting disables the gate, so deployments that never set
+		// the option are unaffected.
+		if systemLimit := tokensheep_setting.GetSystemConcurrency(); systemLimit > 0 {
+			var (
+				releaseSystem func()
+				systemOK      bool
+			)
+			if common.RedisEnabled && common.RDB != nil {
+				releaseSystem, systemOK = acquireRedis(ctx, systemCounterKey, systemLimit)
+			} else {
+				releaseSystem, systemOK = acquireMemory(&fallbackMu, fallback, systemCounterKey, systemLimit)
+			}
+			if !systemOK {
+				// 503 rather than 429: this is station saturation, not a
+				// per-account quota problem, and the distinction matters to
+				// clients deciding whether an immediate retry is sensible.
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"error": gin.H{
+						"message": fmt.Sprintf(
+							"station is at capacity (%d concurrent requests in flight). "+
+								"Retry shortly.",
+							systemLimit,
+						),
+						"type": "system_busy",
+						"code": "system_concurrency_limit_exceeded",
+					},
+				})
+				c.Abort()
+				return
+			}
+			defer releaseSystem()
+		}
+
+		// ── Layer 2: per-user-group ceiling ─────────────────────────────
 		group, _ := c.Get("group")
 		groupStr, _ := group.(string)
 		if groupStr == "" {
@@ -79,7 +128,6 @@ func SessionConcurrencyLimiter() gin.HandlerFunc {
 		}
 
 		key := sessionCounterPrefix + strconv.Itoa(userId)
-		ctx := c.Request.Context()
 
 		var release func()
 		var ok bool

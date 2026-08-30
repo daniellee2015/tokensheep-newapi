@@ -284,6 +284,9 @@ const BILLING_SECTIONS = [
           DisabledTiers: parseJsonBoolMap(
             settings['tokensheep_economy.disabled_tiers']
           ),
+          // R16-4: concurrency layer 3 (station-wide). 0 == disabled.
+          SystemConcurrency:
+            Number(settings['tokensheep_economy.system_concurrency']) || 0,
         }}
       />
     ),
