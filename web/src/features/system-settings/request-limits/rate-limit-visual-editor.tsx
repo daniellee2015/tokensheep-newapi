@@ -25,8 +25,14 @@ import { StaticRowActions } from '@/components/data-table/static/static-row-acti
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
+import { useSystemOptions } from '../hooks/use-system-options'
 import { safeJsonParseWithValidation } from '../utils/json-parser'
 import { isObjectRecord } from '../utils/json-validators'
+import {
+  classifyRateLimitGroup,
+  parseGroupNameSet,
+  type RateLimitGroupKind,
+} from './classify-rate-limit-group'
 import { RateLimitDialog, type RateLimitEntryData } from './rate-limit-dialog'
 
 type RateLimitVisualEditorProps = {
@@ -34,7 +40,16 @@ type RateLimitVisualEditorProps = {
   onChange: (value: string) => void
 }
 
-type RateLimitEntry = RateLimitEntryData
+type RateLimitEntry = RateLimitEntryData & {
+  kind: RateLimitGroupKind
+}
+
+// R17-C: the tokensheep_economy option keys we pull classification data
+// from. Both are also fetched by the billing tokensheep-economy-section,
+// and `useSystemOptions` is a shared 5-min-staleTime query, so mounting
+// this editor does not trigger an extra network round-trip.
+const TIER_THRESHOLDS_KEY = 'tokensheep_economy.tier_thresholds'
+const COMMERCIAL_GROUPS_KEY = 'tokensheep_economy.commercial_groups'
 
 export function RateLimitVisualEditor({
   value,
@@ -45,7 +60,20 @@ export function RateLimitVisualEditor({
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editData, setEditData] = useState<RateLimitEntry | null>(null)
 
-  const rateLimits = useMemo(() => {
+  // Read classification data from the shared /api/option/ query. The parent
+  // SettingsPage has already primed this cache, so this call is free.
+  const { data: optionsData } = useSystemOptions()
+
+  const { tierNames, commercialNames } = useMemo(() => {
+    const rows = optionsData?.data ?? []
+    const find = (key: string) => rows.find((r) => r.key === key)?.value
+    return {
+      tierNames: parseGroupNameSet(find(TIER_THRESHOLDS_KEY)),
+      commercialNames: parseGroupNameSet(find(COMMERCIAL_GROUPS_KEY)),
+    }
+  }, [optionsData])
+
+  const rateLimits = useMemo<RateLimitEntry[]>(() => {
     if (!value || value.trim() === '') return []
 
     const parsed = safeJsonParseWithValidation<Record<string, unknown>>(value, {
@@ -67,12 +95,13 @@ export function RateLimitVisualEditor({
             groupName,
             maxRequests: limits[0],
             maxSuccess: limits[1],
+            kind: classifyRateLimitGroup(groupName, tierNames, commercialNames),
           }
         }
         return null
       })
       .filter((item): item is RateLimitEntry => item !== null)
-  }, [value])
+  }, [value, tierNames, commercialNames])
 
   const filteredRateLimits = useMemo(() => {
     if (!searchText) return rateLimits
@@ -81,6 +110,30 @@ export function RateLimitVisualEditor({
       limit.groupName.toLowerCase().includes(lowerSearch)
     )
   }, [rateLimits, searchText])
+
+  // Split the filtered list into user-facing rows (tier + commercial) and
+  // upstream channel rows. Sort within each section: tier group is ordered
+  // by threshold-index-ish alphabetical (stable, no priority data on the
+  // client), commercial after tiers, channels alphabetical.
+  const { userSectionRows, channelSectionRows } = useMemo(() => {
+    const userRows: RateLimitEntry[] = []
+    const channelRows: RateLimitEntry[] = []
+    for (const row of filteredRateLimits) {
+      if (row.kind === 'channel') channelRows.push(row)
+      else userRows.push(row)
+    }
+    const byName = (a: RateLimitEntry, b: RateLimitEntry) =>
+      a.groupName.localeCompare(b.groupName)
+    // Keep commercial rows after tier rows within the user section — same
+    // reasoning as R16-5: the reseller identities aren't ladder rungs and
+    // shouldn't visually blur into them.
+    userRows.sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === 'tier' ? -1 : 1
+      return byName(a, b)
+    })
+    channelRows.sort(byName)
+    return { userSectionRows: userRows, channelSectionRows: channelRows }
+  }, [filteredRateLimits])
 
   const handleSave = (data: RateLimitEntryData) => {
     const parsed = safeJsonParseWithValidation<Record<string, unknown>>(value, {
@@ -120,6 +173,74 @@ export function RateLimitVisualEditor({
     setDialogOpen(true)
   }
 
+  const renderTable = (rows: RateLimitEntry[], emptyKey: string) => (
+    <StaticDataTable
+      data={rows}
+      getRowKey={(limit) => limit.groupName}
+      emptyContent={searchText ? t('No groups match your search') : t(emptyKey)}
+      columns={[
+        {
+          id: 'group',
+          header: t('Group Name'),
+          cellClassName: 'font-medium',
+          cell: (limit) => (
+            <div className='flex items-center gap-2'>
+              <span>{limit.groupName}</span>
+              {limit.kind === 'commercial' ? (
+                <span
+                  className='bg-amber-500/15 shrink-0 rounded px-1.5 py-0.5 text-[10px] leading-none font-medium text-amber-700 dark:text-amber-400'
+                  data-testid='rate-limit-kind-badge'
+                  data-kind={limit.kind}
+                >
+                  {t('keys.groupKind.commercial')}
+                </span>
+              ) : null}
+            </div>
+          ),
+        },
+        {
+          id: 'max-requests',
+          header: t('Max Requests (incl. failures)'),
+          className: 'text-right',
+          cellClassName: 'text-right',
+          cell: (limit) => (
+            <span className='font-mono'>
+              {limit.maxRequests === 0
+                ? t('Unlimited')
+                : limit.maxRequests.toLocaleString()}
+            </span>
+          ),
+        },
+        {
+          id: 'max-success',
+          header: t('Max Success'),
+          className: 'text-right',
+          cellClassName: 'text-right',
+          cell: (limit) => (
+            <span className='font-mono'>
+              {limit.maxSuccess.toLocaleString()}
+            </span>
+          ),
+        },
+        {
+          id: 'actions',
+          header: t('Actions'),
+          className: 'text-right',
+          cellClassName: 'text-right',
+          cell: (limit) => (
+            <StaticRowActions
+              editLabel={t('Edit')}
+              deleteLabel={t('Delete')}
+              menuLabel={t('Open menu')}
+              onEdit={() => handleEdit(limit)}
+              onDelete={() => handleDelete(limit.groupName)}
+            />
+          ),
+        },
+      ]}
+    />
+  )
+
   return (
     <div className='space-y-4'>
       <div className='flex items-center gap-4'>
@@ -138,64 +259,41 @@ export function RateLimitVisualEditor({
         </Button>
       </div>
 
-      <StaticDataTable
-        data={filteredRateLimits}
-        getRowKey={(limit) => limit.groupName}
-        emptyContent={
-          searchText
-            ? t('No groups match your search')
-            : t(
-                'No group-based rate limits configured. Click "Add group" to get started.'
-              )
-        }
-        columns={[
-          {
-            id: 'group',
-            header: t('Group Name'),
-            cellClassName: 'font-medium',
-            cell: (limit) => limit.groupName,
-          },
-          {
-            id: 'max-requests',
-            header: t('Max Requests (incl. failures)'),
-            className: 'text-right',
-            cellClassName: 'text-right',
-            cell: (limit) => (
-              <span className='font-mono'>
-                {limit.maxRequests === 0
-                  ? t('Unlimited')
-                  : limit.maxRequests.toLocaleString()}
-              </span>
-            ),
-          },
-          {
-            id: 'max-success',
-            header: t('Max Success'),
-            className: 'text-right',
-            cellClassName: 'text-right',
-            cell: (limit) => (
-              <span className='font-mono'>
-                {limit.maxSuccess.toLocaleString()}
-              </span>
-            ),
-          },
-          {
-            id: 'actions',
-            header: t('Actions'),
-            className: 'text-right',
-            cellClassName: 'text-right',
-            cell: (limit) => (
-              <StaticRowActions
-                editLabel={t('Edit')}
-                deleteLabel={t('Delete')}
-                menuLabel={t('Open menu')}
-                onEdit={() => handleEdit(limit)}
-                onDelete={() => handleDelete(limit.groupName)}
-              />
-            ),
-          },
-        ]}
-      />
+      <section
+        aria-label={t('rateLimit.section.userTier')}
+        className='space-y-2'
+      >
+        <header className='space-y-0.5'>
+          <h4 className='text-sm font-semibold'>
+            {t('rateLimit.section.userTier')}
+          </h4>
+          <p className='text-muted-foreground text-xs'>
+            {t('rateLimit.section.userTier.help')}
+          </p>
+        </header>
+        {renderTable(
+          userSectionRows,
+          'rateLimit.section.userTier.empty'
+        )}
+      </section>
+
+      <section
+        aria-label={t('rateLimit.section.channel')}
+        className='space-y-2'
+      >
+        <header className='space-y-0.5'>
+          <h4 className='text-sm font-semibold'>
+            {t('rateLimit.section.channel')}
+          </h4>
+          <p className='text-muted-foreground text-xs'>
+            {t('rateLimit.section.channel.help')}
+          </p>
+        </header>
+        {renderTable(
+          channelSectionRows,
+          'rateLimit.section.channel.empty'
+        )}
+      </section>
 
       <RateLimitDialog
         open={dialogOpen}

@@ -5590,6 +5590,12 @@
     "Total in-flight requests allowed across the whole station, checked before the per-tier caps. Excess requests get 503 rather than 429. Set to 0 to disable. Recommended: sum of all tier caps plus ~20% headroom.": "Total in-flight requests allowed across the whole station, checked before the per-tier caps. Excess requests get 503 rather than 429. Set to 0 to disable. Recommended: sum of all tier caps plus ~20% headroom.",
     "keys.groupKind.tier": "tier",
     "keys.groupKind.commercial": "commercial",
-    "keys.groupKind.channel": "channel"
+    "keys.groupKind.channel": "channel",
+    "rateLimit.section.userTier": "User tier RPM",
+    "rateLimit.section.userTier.help": "Rate limits keyed by user identity — contribution tiers plus commercial (reseller) groups.",
+    "rateLimit.section.userTier.empty": "No user-tier rate limits configured. Click \"Add group\" to get started.",
+    "rateLimit.section.channel": "Channel group RPM",
+    "rateLimit.section.channel.help": "Second-wall throttle on upstream channel capacity, applied after the per-user tier cap.",
+    "rateLimit.section.channel.empty": "No channel-group rate limits configured. Click \"Add group\" to get started."
   }
 }
