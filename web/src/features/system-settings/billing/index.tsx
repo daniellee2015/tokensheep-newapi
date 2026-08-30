@@ -115,6 +115,9 @@ const defaultBillingSettings: BillingSettings = {
   'tokensheep_economy.gift_pool_cap': '',
   'tokensheep_economy.gift_pool_inactive_days': '',
   'tokensheep_economy.downgrade_inactive_days': '',
+  // R16-2: v4 governance toggles. Empty string parses to {} client-side.
+  'tokensheep_economy.commercial_groups': '',
+  'tokensheep_economy.disabled_tiers': '',
   'checkin_setting.enabled': false,
   'checkin_setting.min_quota': 1000,
   'checkin_setting.max_quota': 10000,

@@ -347,6 +347,14 @@ export type BillingSettings = {
   'tokensheep_economy.gift_pool_cap': string
   'tokensheep_economy.gift_pool_inactive_days': string
   'tokensheep_economy.downgrade_inactive_days': string
+  // v4 governance toggles (R16-2). Both are map[string]bool JSON:
+  //   commercial_groups → reseller tiers excluded from the contribution
+  //     ladder (no total_donated accrual, no subscription purchase)
+  //   disabled_tiers    → tiers hidden from the ladder + skipped by
+  //     TierForDonation; config retained so re-enabling is a checkbox
+  //     (this is the vip on/off switch used since Round 5)
+  'tokensheep_economy.commercial_groups': string
+  'tokensheep_economy.disabled_tiers': string
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number

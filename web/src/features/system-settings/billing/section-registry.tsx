@@ -45,6 +45,24 @@ function parseJsonObjectMap(raw: string | undefined): Record<string, number> {
   return {}
 }
 
+// R16-2: boolean-map sibling for the v4 governance options
+// (tokensheep_economy.commercial_groups / .disabled_tiers), which are
+// `map[string]bool` on the backend rather than numeric maps.
+function parseJsonBoolMap(raw: string | undefined): Record<string, boolean> {
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const result: Record<string, boolean> = {}
+      for (const [k, v] of Object.entries(parsed)) {
+        result[k] = v === true
+      }
+      return result
+    }
+  } catch {}
+  return {}
+}
+
 const getModelDefaults = (settings: BillingSettings) => ({
   ModelPrice: settings.ModelPrice,
   ModelRatio: settings.ModelRatio,
@@ -258,6 +276,14 @@ const BILLING_SECTIONS = [
           DowngradeInactiveDays:
             Number(settings['tokensheep_economy.downgrade_inactive_days']) ||
             30,
+          // R16-2: v4 governance toggles. Previously only reachable via a
+          // raw PUT /api/option/ — now editable as per-tier checkboxes.
+          CommercialGroups: parseJsonBoolMap(
+            settings['tokensheep_economy.commercial_groups']
+          ),
+          DisabledTiers: parseJsonBoolMap(
+            settings['tokensheep_economy.disabled_tiers']
+          ),
         }}
       />
     ),
