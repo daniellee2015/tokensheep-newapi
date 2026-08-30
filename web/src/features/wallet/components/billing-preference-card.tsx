@@ -97,14 +97,16 @@ function descriptionFor(pref: Preference, t: (k: string) => string): string {
 }
 
 interface BillingPreferenceCardProps {
-  // R13: commercial users (retail / wholesale / wholesale-plus) don't
-  // participate in the subscription pool at all — their tier is
-  // contract-negotiated and their quota is a flat wallet debit. Showing
-  // them a subscription-vs-wallet selector produces the grayed-out
-  // '(无生效)' labels seen in image #29, which reads as broken UI. The
-  // parent (wallet/index.tsx) fetches MyTierView.commercial and hides
-  // the whole card via this flag rather than routing dead options
-  // through this component.
+  // R13→R14: commercial users (retail / wholesale / wholesale-plus)
+  // don't participate in the subscription pool — their tier is contract
+  // negotiated and there is no subscription-vs-wallet axis to choose on.
+  // But they still have a paid wallet plus (in principle) a gift pool,
+  // so wallet_first vs wallet_only stays meaningful (wallet_only would
+  // let them opt out of any future gift/subscription plumbing without
+  // having to touch settings again). The card therefore stays visible
+  // for commercial users but the subscription_* options get filtered
+  // out of the dropdown, and any subscription_* value the backend
+  // reports back gets coerced up to wallet_first at load time.
   isCommercial?: boolean
 }
 
@@ -161,10 +163,26 @@ export function BillingPreferenceCard({
     }
   }
 
-  // R13: hide the entire card for commercial users — see prop docstring.
-  if (isCommercial) {
-    return null
-  }
+  // R14: filter subscription_* options out for commercial users. Their
+  // account never has an active subscription, so those options would
+  // always be labelled '(无生效)' — see image #29. Keep the wallet
+  // options so they can still pick between wallet_first (default) and
+  // wallet_only if they ever want to hard-lock wallet-only behaviour.
+  const options = isCommercial
+    ? PREFERENCES.filter((p) => p === 'wallet_first' || p === 'wallet_only')
+    : PREFERENCES
+
+  // The card's own state might have been hydrated from a persisted
+  // subscription_* value (that's the default for every account). For a
+  // commercial user the trigger would then read 'Subscription first'
+  // which is a lie. Coerce to wallet_first for display, and let the
+  // first change save the coerced value back.
+  const displayValue: Preference =
+    isCommercial &&
+    (preference === 'subscription_first' ||
+      preference === 'subscription_only')
+      ? 'wallet_first'
+      : preference
 
   return (
     <TitledCard
@@ -175,7 +193,7 @@ export function BillingPreferenceCard({
     >
       <div className='space-y-3'>
         <Select
-          value={preference}
+          value={displayValue}
           onValueChange={handleChange}
           disabled={loading || saving}
         >
@@ -185,11 +203,11 @@ export function BillingPreferenceCard({
                 enum value ("subscription_first") in the trigger — the
                 SelectItem labels only apply inside the dropdown, not to
                 the trigger's collapsed state. See image #27 bug. */}
-            <SelectValue>{labelFor(preference, t)}</SelectValue>
+            <SelectValue>{labelFor(displayValue, t)}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
-              {PREFERENCES.map((p) => (
+              {options.map((p) => (
                 <SelectItem key={p} value={p}>
                   {labelFor(p, t)}
                 </SelectItem>
@@ -198,7 +216,7 @@ export function BillingPreferenceCard({
           </SelectContent>
         </Select>
         <p className='text-muted-foreground text-xs leading-relaxed'>
-          {descriptionFor(preference, t)}
+          {descriptionFor(displayValue, t)}
         </p>
       </div>
     </TitledCard>

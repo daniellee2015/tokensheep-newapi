@@ -506,6 +506,7 @@ Redemption Code 卡文案:
 | 2026-08-30 | R11: 修 R10 的 3 处 shipping bug: (a) i18n key 写到 JSON 顶层而不是 `translation` namespace, 前端渲染 raw key (image #25 中 wallet.billingPreference.title/subtitle 直接显示 key 名); (b) 旧 wallet.tierCards.title/perks 保留在 translation.* 里遮住新值; (c) BillingPreferenceCard 放在 tier ladder 和 Add Funds 之间视觉不连贯 — 移到 wallet balance card 正下方, 跟它控制的池并列. python 迁 18 个 key 到 translation namespace + dedupe |
 | 2026-08-30 | R12: 再补 2 处漏掉的 i18n: (a) BillingPreferenceCard 下拉 trigger 用默认 `<SelectValue />`, 显示 raw enum 值 `subscription_first` 而不是 label (image #27) — 改成显式 `<SelectValue>{labelFor(...)}</SelectValue>`; (b) WalletStatsCard 的 gift pool description 硬编码英文 "Separate from paid wallet..." (image #28) — 补 zh / zh-TW 翻译, 中英同时 self-map 以对齐 source-string-as-key i18n pattern |
 | 2026-08-30 | R13: BillingPreferenceCard 对商业用户 (retail / wholesale / wholesale-plus) 完全隐藏. 商业档不参与订阅池, 显示带"无生效"标签的选项 (image #29) 读起来像 UI 坏了. 组件加 isCommercial prop 直接 `return null`, wallet/index.tsx 复用 tier-card 的 `useQuery(['my-tier'])` cache 拿 `MyTierView.commercial` 传下去 |
+| 2026-08-30 | R14: R13 手滑, 用户实际诉求是"下拉过滤掉 subscription_*, 保留 wallet_first / wallet_only". 撤 `return null`, 改为 `options` 数组按 isCommercial 过滤. 存在 DB 的 subscription_* 值 (默认) 对商业用户在 UI 层 coerce 显示成 wallet_first (backend 行为等价, `subscription_first` 无活跃订阅时 fall through 到 tryWallet). 用户主动选 wallet_first 会存回 DB 覆盖. |
 
 ---
 
