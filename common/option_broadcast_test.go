@@ -125,7 +125,13 @@ func TestPublishOptionUpdate_ForeignMessageApplied(t *testing.T) {
 		`{"node_id":"OTHER_NODE","key":"GroupRatio","value":"{\"default\":1}"}`,
 	).Err())
 
-	ok := waitFor(t, 500*time.Millisecond, func() bool {
+	// CI runners are slower than a laptop; the 500ms deadline flaked once
+	// on GitHub Actions where miniredis + Subscribe delivery drifted past
+	// it (v4 R3-2b revert PR CI run 33288799986). Give the wait a
+	// generous ceiling — waitFor short-circuits as soon as the condition
+	// holds, so the higher bound only matters when a real regression
+	// breaks delivery.
+	ok := waitFor(t, 5*time.Second, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return applyCount == 1
