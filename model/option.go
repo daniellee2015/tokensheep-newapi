@@ -155,6 +155,12 @@ func InitOptionMap() {
 	common.OptionMap["CreateCacheRatio"] = ratio_setting.CreateCacheRatio2JSONString()
 	common.OptionMap["GroupRatio"] = ratio_setting.GroupRatio2JSONString()
 	common.OptionMap["GroupGroupRatio"] = ratio_setting.GroupGroupRatio2JSONString()
+	// 注意: 没有 common.OptionMap["GroupSpecialUsableGroup"] = ...
+	// 权威源是点分 key `group_ratio_setting.group_special_usable_group`,
+	// 由下面 ExportAllConfigs 循环通过 config.GlobalConfig 自动导出.
+	// 扁平 legacy key 如果 DB 里存在, 只会在 loadOptionsFromDatabase 时被
+	// updateOptionMap 塞进 OptionMap 用于 API 回显, 不影响任何逻辑.
+	// 详见 setting/ratio_setting/group_ratio.go 上 GroupRatioSetting 的注释.
 	common.OptionMap["UserUsableGroups"] = setting.UserUsableGroups2JSONString()
 	common.OptionMap["CompletionRatio"] = ratio_setting.CompletionRatio2JSONString()
 	common.OptionMap["ImageRatio"] = ratio_setting.ImageRatio2JSONString()
