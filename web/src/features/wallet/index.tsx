@@ -356,8 +356,18 @@ export function Wallet(props: WalletProps) {
 
             {/* Tier contribution cards — extracted above the Add Funds card.
                 Driven by tokensheep_setting.EnableTierCardsInRecharge + the
-                /topup/info tier_cards list. */}
-            {topupInfo?.enable_tier_cards_in_recharge !== false &&
+                /topup/info tier_cards list.
+
+                R16-3: hidden for commercial users. A wholesale account that
+                clicks one of these lands on Pancake, pays, and the webhook
+                then *silently refuses* to move their tier — model/topup.go
+                short-circuits total_donated accrual and TierForDonation for
+                anything in commercial_groups. The money still credits
+                quota_paid, so nothing is lost, but the card advertises a
+                tier upgrade that cannot happen. Matches the gating the
+                profile TierCard already does via MyTierView.commercial. */}
+            {!isCommercial &&
+              topupInfo?.enable_tier_cards_in_recharge !== false &&
               Array.isArray(topupInfo?.tier_cards) &&
               topupInfo.tier_cards.length > 0 && (
                 <TokensheepTierCards
