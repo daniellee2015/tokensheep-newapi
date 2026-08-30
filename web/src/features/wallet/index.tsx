@@ -326,6 +326,15 @@ export function Wallet(props: WalletProps) {
           <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
             <WalletStatsCard user={user} loading={userLoading} />
 
+            {/* v4 R11: deduction-priority selector sits right below the
+                wallet-balance row because that's what it controls (order in
+                which the four pools — subscription / paid wallet / gift —
+                are debited). Placing it between tier ladder and Add Funds
+                (R10 placement) looked like a stray insertion; keeping it
+                paired with the balance display makes the relationship
+                explicit. */}
+            <BillingPreferenceCard />
+
             {/* Tier contribution cards — extracted above the Add Funds card.
                 Driven by tokensheep_setting.EnableTierCardsInRecharge + the
                 /topup/info tier_cards list. */}
@@ -339,12 +348,6 @@ export function Wallet(props: WalletProps) {
                   loadingTier={tierPickLoading}
                 />
               )}
-
-            {/* v4 R10: deduction-priority selector. R9 hid SubscriptionPlansCard
-                (tier cards are the subscription in this fork) which stranded
-                the wallet_first / subscription_first / *_only toggle. This
-                dedicated card gives it a home right below the tier ladder. */}
-            <BillingPreferenceCard />
 
             <div
               className={
