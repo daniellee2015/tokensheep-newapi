@@ -161,8 +161,20 @@ export function ApiKeyGroupCombobox({
         )}
         <span className='flex min-w-0 flex-1 items-center justify-between gap-2 sm:gap-3'>
           <span className='min-w-0'>
-            <span className='block truncate font-medium'>
-              {selectedOption?.label || placeholder || t('Select a group')}
+            {/*
+              R18 (R16-5 follow-up): the badge sits inline with the label so
+              the collapsed trigger surfaces the same identity/routing signal
+              as the expanded CommandItem. `flex + min-w-0` on the row keeps
+              the label truncatable while the pill stays fully visible
+              (shrink-0 on the badge itself). `auto` / undefined `kind` still
+              render nothing, so the layout is unchanged for anonymous or
+              older-backend selections.
+            */}
+            <span className='flex items-center gap-1.5'>
+              <span className='min-w-0 truncate font-medium'>
+                {selectedOption?.label || placeholder || t('Select a group')}
+              </span>
+              <GroupKindBadge kind={selectedOption?.kind} />
             </span>
             {selectedOption?.desc && (
               <span className='text-muted-foreground block truncate text-[11px] sm:text-xs'>
