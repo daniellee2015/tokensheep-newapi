@@ -118,6 +118,8 @@ const defaultBillingSettings: BillingSettings = {
   // R16-2: v4 governance toggles. Empty string parses to {} client-side.
   'tokensheep_economy.commercial_groups': '',
   'tokensheep_economy.disabled_tiers': '',
+  // R16-4: station-wide concurrency ceiling; empty parses to 0 == disabled.
+  'tokensheep_economy.system_concurrency': '',
   'checkin_setting.enabled': false,
   'checkin_setting.min_quota': 1000,
   'checkin_setting.max_quota': 10000,

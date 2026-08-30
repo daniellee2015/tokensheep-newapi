@@ -48,6 +48,19 @@ type EconomySetting struct {
 	// keep that group until the next daily maintenance run reassigns them.
 	// Used to temporarily close vip without deleting its configuration.
 	DisabledTiers map[string]bool `json:"disabled_tiers"`
+	// SystemConcurrency: station-wide ceiling on simultaneous in-flight
+	// relay requests, checked before the per-user SessionLimits cap. This is
+	// the third concurrency layer (user -> user_group -> system) and exists
+	// to bound the blast radius of a misconfigured group limit: without it,
+	// bumping SessionLimits["wholesale-plus"] from 100 to 100000 lets a
+	// single account saturate the upstream pool, the DB connection pool and
+	// the gin worker pool with no backstop.
+	//
+	// 0 disables the check entirely (upgrade-safe default for existing
+	// deployments — the option row is absent until an operator sets it, and
+	// absent must not mean "block everything"). Recommended value is the sum
+	// of the per-group caps plus ~20% headroom.
+	SystemConcurrency int `json:"system_concurrency"`
 }
 
 var (
@@ -79,8 +92,12 @@ var (
 			// §2.2 — simultaneous in-flight request ceilings per tier.
 			// v4 §八 B15: `default` is the pre-append_free landing spot for
 			// brand-new signups and must have its own ceiling, otherwise a
-			// signup burst before the append_free hook fires can slip
-			// through the system-wide 5000/min fallback. Mirror `free`.
+			// signup burst before the append_free hook fires has no
+			// concurrency gate at all. Mirror `free`.
+			// (An earlier revision of this comment claimed a "system-wide
+			// 5000/min fallback" caught that case. It did not exist — the
+			// station-wide gate only arrived in R16-4 as SystemConcurrency,
+			// and it counts in-flight requests, not requests per minute.)
 			// v4 R2.1: `promo` needs a low limit so leaked promo codes
 			// can't be weaponized into a concurrency abuse channel.
 			// Seed only applies on fresh installs (options table empty);
@@ -107,6 +124,13 @@ var (
 		// from returning it. Existing vip users survive until daily cron picks
 		// them up and reassigns to bestie.
 		DisabledTiers: map[string]bool{},
+		// R16-4: station-wide in-flight ceiling. Seeded at roughly the sum of
+		// the per-group caps above (1+1+3+5+8+15+2 tiers + 30/50/100 commercial
+		// = ~215) plus headroom. Only applies on a fresh install; existing
+		// deployments have no option row, and GetSystemConcurrency treats a
+		// zero/absent value as "no station-wide cap" so an upgrade can't
+		// suddenly start 503-ing traffic.
+		SystemConcurrency: 260,
 	}
 )
 
@@ -121,6 +145,22 @@ func SessionLimit(group string) int {
 		return 0
 	}
 	return economySetting.SessionLimits[group]
+}
+
+// GetSystemConcurrency returns the station-wide in-flight request ceiling
+// (concurrency layer 3). Zero or negative means the check is disabled.
+//
+// Deliberately fails open: an operator who has never touched this option
+// has no row in the DB, the field decodes to 0, and the middleware skips
+// the station-wide gate rather than blocking every request. Turning the
+// cap on is an explicit action.
+func GetSystemConcurrency() int {
+	economyMu.RLock()
+	defer economyMu.RUnlock()
+	if economySetting.SystemConcurrency <= 0 {
+		return 0
+	}
+	return economySetting.SystemConcurrency
 }
 
 func init() {

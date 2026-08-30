@@ -5348,6 +5348,8 @@
     "wallet.billingPreference.notAvailable": "(訂閱池不可用)",
     "Commercial": "商業檔",
     "hides the tier from the contribution ladder and stops auto-promotion into it. Config is kept, so unticking restores it. Existing members stay put until the daily maintenance cron reassigns them.": "從貢獻階梯裡隱藏該檔，並停止自動升入。設定保留，取消勾選即恢復。已在該檔的使用者維持不變，直到每日維護任務重算。",
-    "reseller / bulk-contract tier. Members do not accumulate contribution totals, cannot buy subscription plans, and are hidden from the ladder. Assign by hand from the user editor.": "轉售 / 合約批發檔。成員不累計貢獻額、不能購買訂閱套餐、不出現在貢獻階梯裡。只能在使用者編輯頁手工分配。"
+    "reseller / bulk-contract tier. Members do not accumulate contribution totals, cannot buy subscription plans, and are hidden from the ladder. Assign by hand from the user editor.": "轉售 / 合約批發檔。成員不累計貢獻額、不能購買訂閱套餐、不出現在貢獻階梯裡。只能在使用者編輯頁手工分配。",
+    "Station-wide concurrency": "全站並發上限",
+    "Total in-flight requests allowed across the whole station, checked before the per-tier caps. Excess requests get 503 rather than 429. Set to 0 to disable. Recommended: sum of all tier caps plus ~20% headroom.": "整站允許的同時在飛請求總數，在各檔位上限之前檢查。超出的請求返回 503 而非 429。設為 0 關閉。建議值：各檔上限之和再加約 20% 餘量。"
   }
 }

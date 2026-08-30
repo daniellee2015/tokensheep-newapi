@@ -5585,6 +5585,8 @@
     "wallet.billingPreference.notAvailable": "(no subscription pool)",
     "Commercial": "Commercial",
     "hides the tier from the contribution ladder and stops auto-promotion into it. Config is kept, so unticking restores it. Existing members stay put until the daily maintenance cron reassigns them.": "hides the tier from the contribution ladder and stops auto-promotion into it. Config is kept, so unticking restores it. Existing members stay put until the daily maintenance cron reassigns them.",
-    "reseller / bulk-contract tier. Members do not accumulate contribution totals, cannot buy subscription plans, and are hidden from the ladder. Assign by hand from the user editor.": "reseller / bulk-contract tier. Members do not accumulate contribution totals, cannot buy subscription plans, and are hidden from the ladder. Assign by hand from the user editor."
+    "reseller / bulk-contract tier. Members do not accumulate contribution totals, cannot buy subscription plans, and are hidden from the ladder. Assign by hand from the user editor.": "reseller / bulk-contract tier. Members do not accumulate contribution totals, cannot buy subscription plans, and are hidden from the ladder. Assign by hand from the user editor.",
+    "Station-wide concurrency": "Station-wide concurrency",
+    "Total in-flight requests allowed across the whole station, checked before the per-tier caps. Excess requests get 503 rather than 429. Set to 0 to disable. Recommended: sum of all tier caps plus ~20% headroom.": "Total in-flight requests allowed across the whole station, checked before the per-tier caps. Excess requests get 503 rather than 429. Set to 0 to disable. Recommended: sum of all tier caps plus ~20% headroom."
   }
 }
