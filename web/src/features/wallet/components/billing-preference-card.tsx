@@ -96,7 +96,21 @@ function descriptionFor(pref: Preference, t: (k: string) => string): string {
   }
 }
 
-export function BillingPreferenceCard() {
+interface BillingPreferenceCardProps {
+  // R13: commercial users (retail / wholesale / wholesale-plus) don't
+  // participate in the subscription pool at all — their tier is
+  // contract-negotiated and their quota is a flat wallet debit. Showing
+  // them a subscription-vs-wallet selector produces the grayed-out
+  // '(无生效)' labels seen in image #29, which reads as broken UI. The
+  // parent (wallet/index.tsx) fetches MyTierView.commercial and hides
+  // the whole card via this flag rather than routing dead options
+  // through this component.
+  isCommercial?: boolean
+}
+
+export function BillingPreferenceCard({
+  isCommercial = false,
+}: BillingPreferenceCardProps = {}) {
   const { t } = useTranslation()
   const [preference, setPreference] = useState<Preference>('subscription_first')
   const [loading, setLoading] = useState(true)
@@ -145,6 +159,11 @@ export function BillingPreferenceCard() {
     } finally {
       setSaving(false)
     }
+  }
+
+  // R13: hide the entire card for commercial users — see prop docstring.
+  if (isCommercial) {
+    return null
   }
 
   return (

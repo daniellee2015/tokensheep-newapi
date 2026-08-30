@@ -505,6 +505,7 @@ Redemption Code 卡文案:
 | 2026-08-30 | R10: tier-card perks 从 i18n 硬编码转 live server payload (RPM/concurrency/dailyGiftUSD), 标题改 "订阅套餐", 新增 BillingPreferenceCard 独立卡曝光 4-way 扣费优先级. 用户 image #24 标出 v3 时代 i18n 值 (RPM 50/vip \$10) 跟生产 (40/\$1.6) 不一致 + 找不到扣费优先级选项 |
 | 2026-08-30 | R11: 修 R10 的 3 处 shipping bug: (a) i18n key 写到 JSON 顶层而不是 `translation` namespace, 前端渲染 raw key (image #25 中 wallet.billingPreference.title/subtitle 直接显示 key 名); (b) 旧 wallet.tierCards.title/perks 保留在 translation.* 里遮住新值; (c) BillingPreferenceCard 放在 tier ladder 和 Add Funds 之间视觉不连贯 — 移到 wallet balance card 正下方, 跟它控制的池并列. python 迁 18 个 key 到 translation namespace + dedupe |
 | 2026-08-30 | R12: 再补 2 处漏掉的 i18n: (a) BillingPreferenceCard 下拉 trigger 用默认 `<SelectValue />`, 显示 raw enum 值 `subscription_first` 而不是 label (image #27) — 改成显式 `<SelectValue>{labelFor(...)}</SelectValue>`; (b) WalletStatsCard 的 gift pool description 硬编码英文 "Separate from paid wallet..." (image #28) — 补 zh / zh-TW 翻译, 中英同时 self-map 以对齐 source-string-as-key i18n pattern |
+| 2026-08-30 | R13: BillingPreferenceCard 对商业用户 (retail / wholesale / wholesale-plus) 完全隐藏. 商业档不参与订阅池, 显示带"无生效"标签的选项 (image #29) 读起来像 UI 坏了. 组件加 isCommercial prop 直接 `return null`, wallet/index.tsx 复用 tier-card 的 `useQuery(['my-tier'])` cache 拿 `MyTierView.commercial` 传下去 |
 
 ---
 
