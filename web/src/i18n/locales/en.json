@@ -5553,6 +5553,7 @@
     "wallet.billingPreference.subscriptionOnly": "Subscription only",
     "wallet.billingPreference.subscriptionOnly.desc": "Route strictly to the subscription pool; return 429 when the pool is exhausted, wallet is untouched.",
     "wallet.billingPreference.walletOnly": "Wallet only",
-    "wallet.billingPreference.walletOnly.desc": "Route strictly to wallet (gift then paid); subscription pool is ignored."
+    "wallet.billingPreference.walletOnly.desc": "Route strictly to wallet (gift then paid); subscription pool is ignored.",
+    "Separate from paid wallet · fills from check-in + redemption codes · $50 cap · spent first, up to a per-tier daily limit · zeroed after 30 days idle": "Separate from paid wallet · fills from check-in + redemption codes · $50 cap · spent first, up to a per-tier daily limit · zeroed after 30 days idle"
   }
 }

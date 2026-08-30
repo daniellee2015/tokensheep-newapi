@@ -504,6 +504,7 @@ Redemption Code 卡文案:
 | 2026-08-30 | R3-2b **reverted**: 澄清 tier 卡就是订阅套餐, 独立的 SubscriptionPlansCard 是 upstream 剩下的 30-day 订阅池概念, TokenSheep 场景下应保持 `return null` 不显示 (`subscription_plans` 表本来就空). 撤 `isCommercial` prop + wallet/index.tsx 的 useQuery. 用户在 image #23 明确标示 |
 | 2026-08-30 | R10: tier-card perks 从 i18n 硬编码转 live server payload (RPM/concurrency/dailyGiftUSD), 标题改 "订阅套餐", 新增 BillingPreferenceCard 独立卡曝光 4-way 扣费优先级. 用户 image #24 标出 v3 时代 i18n 值 (RPM 50/vip \$10) 跟生产 (40/\$1.6) 不一致 + 找不到扣费优先级选项 |
 | 2026-08-30 | R11: 修 R10 的 3 处 shipping bug: (a) i18n key 写到 JSON 顶层而不是 `translation` namespace, 前端渲染 raw key (image #25 中 wallet.billingPreference.title/subtitle 直接显示 key 名); (b) 旧 wallet.tierCards.title/perks 保留在 translation.* 里遮住新值; (c) BillingPreferenceCard 放在 tier ladder 和 Add Funds 之间视觉不连贯 — 移到 wallet balance card 正下方, 跟它控制的池并列. python 迁 18 个 key 到 translation namespace + dedupe |
+| 2026-08-30 | R12: 再补 2 处漏掉的 i18n: (a) BillingPreferenceCard 下拉 trigger 用默认 `<SelectValue />`, 显示 raw enum 值 `subscription_first` 而不是 label (image #27) — 改成显式 `<SelectValue>{labelFor(...)}</SelectValue>`; (b) WalletStatsCard 的 gift pool description 硬编码英文 "Separate from paid wallet..." (image #28) — 补 zh / zh-TW 翻译, 中英同时 self-map 以对齐 source-string-as-key i18n pattern |
 
 ---
 
