@@ -49,6 +49,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { formatGroupName } from '@/lib/group-i18n'
 
 const sectionCardClassName =
   'relative shadow-sm ring-0 before:pointer-events-none before:absolute before:inset-0 before:rounded-xl before:border before:border-border/90'
@@ -205,7 +206,9 @@ function GroupSection(props: GroupSectionProps) {
                 <ChevronDown className='h-4 w-4' />
               )}
             </CollapsibleTrigger>
-            <span className='font-semibold'>{props.groupName}</span>
+            <span className='font-semibold'>
+              {formatGroupName(props.groupName, t)}
+            </span>
             {!isKnownGroup && (
               <StatusBadge variant='danger' copyable={false}>
                 <AlertTriangle className='mr-1 h-3 w-3' />
