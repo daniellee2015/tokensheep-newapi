@@ -51,6 +51,36 @@ func GetTierList(c *gin.Context) {
 	})
 }
 
+// groupKind classifies a selectable group for the API-key picker so the UI
+// can tell the operator *what kind of thing* they're binding a key to. The
+// three namespaces overlap in one flat list (see v4 spec §八 R3-1), which
+// is confusing without a label:
+//
+//	"tier"       — a contribution-ladder tier the user can be promoted into
+//	               (free / supporter / fan / bestie / ...). Listed in
+//	               TierThresholds and not marked commercial.
+//	"commercial" — a reseller / bulk-contract group (retail / wholesale /
+//	               wholesale-plus). Admin-assigned, outside the ladder.
+//	"channel"    — an upstream channel group (GPT-Pro, aws-q, claude-max,
+//	               ...). Not a user identity at all; routes traffic.
+//
+// Anything unrecognised falls through to "channel" because that's the
+// larger population by far and the safer default for a display hint.
+func groupKind(name string) string {
+	if tokensheep_setting.IsCommercialGroup(name) {
+		return "commercial"
+	}
+	if _, ok := tokensheep_setting.GetTierThresholdsCopy()[name]; ok {
+		return "tier"
+	}
+	// `free` carries no threshold row (it's the default group, not a
+	// purchasable tier) but is still a user identity rather than a channel.
+	if name == "free" {
+		return "tier"
+	}
+	return "channel"
+}
+
 func GetUserGroups(c *gin.Context) {
 	usableGroups := make(map[string]map[string]interface{})
 	userGroup := ""
@@ -63,6 +93,11 @@ func GetUserGroups(c *gin.Context) {
 			usableGroups[groupName] = map[string]interface{}{
 				"ratio": service.GetUserGroupRatio(userGroup, groupName),
 				"desc":  desc,
+				// R16-5: tier / commercial / channel hint so the API-key
+				// group picker can label each option instead of showing a
+				// flat list where a user tier and an upstream channel group
+				// look identical.
+				"kind": groupKind(groupName),
 			}
 		}
 	}
@@ -70,6 +105,7 @@ func GetUserGroups(c *gin.Context) {
 		usableGroups["auto"] = map[string]interface{}{
 			"ratio": "自动",
 			"desc":  setting.GetUsableGroupDescription("auto"),
+			"kind":  "auto",
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{

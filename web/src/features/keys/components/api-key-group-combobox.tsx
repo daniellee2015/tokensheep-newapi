@@ -43,11 +43,50 @@ import {
   GroupRatioBadge,
 } from './auto-group-visuals'
 
+// R16-5: `kind` comes from GET /api/user/self/groups and says which
+// namespace a group belongs to. That endpoint returns tiers, commercial
+// groups and upstream channel groups in one flat map, which makes a user
+// identity ("bestie") and a routing target ("claude-max") visually
+// indistinguishable in the picker. Optional, so an older backend simply
+// renders no badge.
+export type ApiKeyGroupKind = 'tier' | 'commercial' | 'channel' | 'auto'
+
 export type ApiKeyGroupOption = {
   value: string
   label: string
   desc?: string
   ratio?: number | string
+  kind?: ApiKeyGroupKind
+}
+
+// GroupKindBadge renders the namespace hint next to a group name. Kept
+// deliberately quiet (muted pill, no colour coding beyond commercial) —
+// it's a disambiguation aid, not a call to action. `auto` and unknown
+// kinds render nothing: auto already has its own animated framing, and an
+// older backend that omits `kind` should look exactly as it did before.
+function GroupKindBadge({ kind }: { kind?: ApiKeyGroupKind }) {
+  const { t } = useTranslation()
+  if (!kind || kind === 'auto') return null
+
+  const label =
+    kind === 'tier'
+      ? t('keys.groupKind.tier')
+      : kind === 'commercial'
+        ? t('keys.groupKind.commercial')
+        : t('keys.groupKind.channel')
+
+  return (
+    <span
+      className={cn(
+        'shrink-0 rounded px-1.5 py-0.5 text-[10px] leading-none font-medium',
+        kind === 'commercial'
+          ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
+          : 'bg-muted text-muted-foreground'
+      )}
+    >
+      {label}
+    </span>
+  )
 }
 
 type ApiKeyGroupComboboxProps = {
@@ -188,8 +227,11 @@ export function ApiKeyGroupCombobox({
                       )}
                     />
                     <span className='min-w-0 flex-1'>
-                      <span className='block truncate font-medium'>
-                        {option.label}
+                      <span className='flex items-center gap-1.5'>
+                        <span className='truncate font-medium'>
+                          {option.label}
+                        </span>
+                        <GroupKindBadge kind={option.kind} />
                       </span>
                       {option.desc && (
                         <span className='text-muted-foreground block truncate text-xs'>

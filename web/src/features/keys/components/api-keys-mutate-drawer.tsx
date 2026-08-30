@@ -162,6 +162,10 @@ export function ApiKeysMutateDrawer({
         label: key,
         desc: info.desc || key,
         ratio: info.ratio,
+        // R16-5: namespace hint (tier / commercial / channel) so the picker
+        // can badge each option. Older backends omit it and the badge is
+        // simply skipped.
+        kind: info.kind,
       })),
     [groupsData]
   )
