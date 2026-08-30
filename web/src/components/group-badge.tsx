@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
 
+import { formatGroupName } from '@/lib/group-i18n'
 import { cn } from '@/lib/utils'
 
 import { StatusBadge, type StatusBadgeProps } from './status-badge'
@@ -46,12 +47,12 @@ function getGroupLabel(params: {
   groupName?: string
   isAutoGroup: boolean
   isEmptyGroup: boolean
-  t: (key: string) => string
+  t: (key: string, opts?: Record<string, unknown>) => string
 }): string {
   if (params.labelOverride) return params.labelOverride
   if (params.isEmptyGroup) return params.t('User Group')
   if (params.isAutoGroup) return params.t('Auto')
-  return params.groupName ?? ''
+  return formatGroupName(params.groupName ?? '', params.t)
 }
 
 export function GroupBadge(props: GroupBadgeProps) {
