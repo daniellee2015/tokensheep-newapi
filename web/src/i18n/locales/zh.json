@@ -5587,6 +5587,9 @@
     "hides the tier from the contribution ladder and stops auto-promotion into it. Config is kept, so unticking restores it. Existing members stay put until the daily maintenance cron reassigns them.": "从贡献阶梯里隐藏该档，并停止自动升入。配置保留，取消勾选即恢复。已在该档的用户维持不变，直到每日维护任务重算。",
     "reseller / bulk-contract tier. Members do not accumulate contribution totals, cannot buy subscription plans, and are hidden from the ladder. Assign by hand from the user editor.": "转售 / 合约批发档。成员不累计贡献额、不能购买订阅套餐、不出现在贡献阶梯里。只能在用户编辑页手工分配。",
     "Station-wide concurrency": "全站并发上限",
-    "Total in-flight requests allowed across the whole station, checked before the per-tier caps. Excess requests get 503 rather than 429. Set to 0 to disable. Recommended: sum of all tier caps plus ~20% headroom.": "整站允许的同时在飞请求总数，在各档位上限之前检查。超出的请求返回 503 而非 429。设为 0 关闭。建议值：各档上限之和再加约 20% 余量。"
+    "Total in-flight requests allowed across the whole station, checked before the per-tier caps. Excess requests get 503 rather than 429. Set to 0 to disable. Recommended: sum of all tier caps plus ~20% headroom.": "整站允许的同时在飞请求总数，在各档位上限之前检查。超出的请求返回 503 而非 429。设为 0 关闭。建议值：各档上限之和再加约 20% 余量。",
+    "keys.groupKind.tier": "档位",
+    "keys.groupKind.commercial": "商业",
+    "keys.groupKind.channel": "渠道"
   }
 }

@@ -57,7 +57,18 @@ export async function getUserModels(): Promise<{
 export async function getUserGroups(): Promise<{
   success: boolean
   message?: string
-  data?: Record<string, { desc: string; ratio: number | string }>
+  data?: Record<
+    string,
+    {
+      desc: string
+      ratio: number | string
+      // R16-5: which namespace the group belongs to, so pickers can label
+      // it. This endpoint mixes contribution tiers, commercial (reseller)
+      // groups and upstream channel groups into a single flat map.
+      // Optional because older backends don't send it.
+      kind?: 'tier' | 'commercial' | 'channel' | 'auto'
+    }
+  >
 }> {
   const res = await api.get('/api/user/self/groups')
   return res.data
