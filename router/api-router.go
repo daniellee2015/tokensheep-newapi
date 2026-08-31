@@ -93,6 +93,10 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.POST("/sessions/revoke-others", middleware.DisableCache(), controller.RevokeOtherLoginSessions)
 				selfRoute.GET("/self/groups", controller.GetUserGroups)
 				selfRoute.GET("/self/tier", controller.GetMyTier)
+				// R21: live limit usage — pairs with /self/tier (static
+				// ceilings) so the profile Limit card can render actual
+				// numbers ("3 / 100 in-flight, 1000 rpm/min").
+				selfRoute.GET("/self/limits/usage", controller.GetMyLimitsUsage)
 				selfRoute.GET("/self", controller.GetSelf)
 				selfRoute.GET("/models", controller.GetUserModels)
 				selfRoute.PUT("/self", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.UpdateSelf)
