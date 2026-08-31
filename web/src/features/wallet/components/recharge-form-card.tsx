@@ -94,6 +94,15 @@ interface RechargeFormCardProps {
   // standalone block above the Add Funds card — see wallet/index.tsx.)
   enableCustomTopup?: boolean
   enableCustomAmountInput?: boolean
+  // R20-A: commercial users see contract-tier top-up wording instead of the
+  // default subtitle/hint. Kept optional so the non-commercial call site
+  // (and tests that don't care) can omit it — defaults to false.
+  //
+  // The upstream decision (myTier?.commercial === true) is derived once in
+  // features/wallet/index.tsx and threaded down here + into BillingPreference
+  // + into the tier-cards-visibility gate. Do NOT re-derive it in this
+  // component — one source of truth per render pass.
+  isCommercial?: boolean
 }
 
 export function RechargeFormCard({
@@ -120,6 +129,7 @@ export function RechargeFormCard({
   enableWaffoPancakeTopup,
   enableCustomTopup = true,
   enableCustomAmountInput = true,
+  isCommercial = false,
 }: RechargeFormCardProps) {
   const { t } = useTranslation()
   const [localAmount, setLocalAmount] = useState(topupAmount.toString())
@@ -234,20 +244,31 @@ export function RechargeFormCard({
         <div className='space-y-4 sm:space-y-6'>
           {/* Standard top-up header + payment-routing guidance (Alipay / bank
               card). Distinguishes the normal-rate channel from the
-              contribution tier cards above. */}
+              contribution tier cards above.
+
+              R20-A: for commercial users the subtitle changes to contract
+              wording ("按合约倍率计费") and the hint appends a note that
+              tier adjustments require the group owner — the wallet card
+              only credits balance, it can't switch a commercial account
+              to a different contract tier. */}
           <div className='space-y-3'>
             <div className='space-y-1'>
               <h3 className='text-foreground text-base font-semibold tracking-tight sm:text-lg'>
                 {t('wallet.normalTopup.title')}
               </h3>
               <p className='text-muted-foreground text-xs sm:text-sm'>
-                {t('wallet.normalTopup.subtitle')}
+                {t(
+                  isCommercial
+                    ? 'wallet.normalTopup.subtitleCommercial'
+                    : 'wallet.normalTopup.subtitle'
+                )}
               </p>
             </div>
             <Alert className='border-sky-500/40 bg-sky-500/10 [&>svg]:text-sky-500'>
               <Info className='size-4' />
               <AlertDescription className='text-sky-700 dark:text-sky-300'>
                 {t('wallet.normalTopup.hint')}
+                {isCommercial && t('wallet.normalTopup.hintCommercialSuffix')}
               </AlertDescription>
             </Alert>
           </div>

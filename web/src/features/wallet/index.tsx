@@ -431,6 +431,13 @@ export function Wallet(props: WalletProps) {
                   enableCustomAmountInput={
                     topupInfo?.enable_custom_amount_input
                   }
+                  // R20-A: same commercial flag that already gates
+                  // TokensheepTierCards + BillingPreferenceCard above. Reused
+                  // here so the Add Funds subtitle/hint reads contract-tier
+                  // wording instead of "does not count toward contribution
+                  // tiers" (which is misleading — commercial accounts never
+                  // participated in that ladder to begin with).
+                  isCommercial={isCommercial}
                 />
 
                 {/* Primary pay button below the Add Funds card (100b-style):
