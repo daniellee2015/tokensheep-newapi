@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/tokensheep_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
@@ -360,6 +361,40 @@ func (s *BillingSession) syncRelayInfo() {
 // NewBillingSession 工厂 — 根据计费偏好创建会话并处理回退
 // ---------------------------------------------------------------------------
 
+// resolveBillingPreferenceForCommercial 处理 R16-1 hazard: 商业分组用户
+// (retail/wholesale/wholesale-plus 等 EconomySetting.CommercialGroups 命中的 key)
+// 无法购买订阅，若 user_setting.billing_preference DB 值残留 subscription_only /
+// subscription_first (常见于晋升商业组前用户主动改过 preference)，dispatch 层就地
+// coerce 成 wallet_first。coerce 只影响当前请求路由，不写回 DB (user_setting
+// 层保持可逆，用户退出商业组后原 preference 立刻恢复语义)。
+//
+// fail-open: group 空字符串 (context 未设 / cache miss / caller 未填 relayInfo.UserGroup)
+// 时 IsCommercialGroup 返回 false，函数直接返回原 pref，等价于 v4 §3.1 的通用四选一
+// 语义，绝不因为 group lookup 缺失而抹掉用户显式选择的 subscription_only。这是
+// hazard 分析 §六 Q2 里选择的方向 — 宁可退回原 R16-1 行为 (可能 403)，也不能因为
+// 缓存挂了突然把所有普通用户的 subscription_only 都当作 wallet_first。
+//
+// 日志：info 级别，一次 coerce 一行，便于事后 audit 观察踩坑用户实际数量。
+// 不打 warning，避免 v4 §3.1 语义正常时的健康操作被误报。
+//
+// gin.Context 允许为 nil 以便 unit test 从纯函数层复用；生产路径始终有 ctx。
+func resolveBillingPreferenceForCommercial(c *gin.Context, userId int, group string, pref string) string {
+	if !tokensheep_setting.IsCommercialGroup(group) {
+		return pref
+	}
+	if pref != "subscription_only" && pref != "subscription_first" {
+		return pref
+	}
+	msg := fmt.Sprintf("commercial user %d (group=%s): coerced billing_preference %q -> \"wallet_first\" for dispatch (DB not modified)",
+		userId, group, pref)
+	if c != nil {
+		logger.LogInfo(c, msg)
+	} else {
+		common.SysLog(msg)
+	}
+	return "wallet_first"
+}
+
 // NewBillingSession 根据用户计费偏好创建 BillingSession，处理 subscription_first / wallet_first 的回退。
 func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preConsumedQuota int) (*BillingSession, *types.NewAPIError) {
 	if relayInfo == nil {
@@ -367,6 +402,15 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 	}
 
 	pref := common.NormalizeBillingPreference(relayInfo.UserSetting.BillingPreference)
+
+	// R16-1 修法 B: 商业分组 (retail/wholesale/wholesale-plus) 无法购买订阅，
+	// 若 DB 里残留 subscription_only / subscription_first (例如晋升商业组前
+	// 用户主动改过 preference)，dispatch 层就地 coerce 成 wallet_first，仅影响
+	// 本次请求路由，不写回 user_setting.billing_preference。
+	// UserGroup 空 (context 未设 / cache 缓失) 时 IsCommercialGroup 返回 false，
+	// 按 fail-open 走原 pref (等价于 v4 §3.1 通用语义)。详见
+	// docs/spec/r16-1-billing-preference-hazard.md §五。
+	pref = resolveBillingPreferenceForCommercial(c, relayInfo.UserId, relayInfo.UserGroup, pref)
 
 	// 钱包路径需要先检查用户额度
 	tryWallet := func() (*BillingSession, *types.NewAPIError) {
