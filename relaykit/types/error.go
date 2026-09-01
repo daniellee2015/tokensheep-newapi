@@ -173,8 +173,23 @@ func (e *NewAPIError) MaskSensitiveErrorWithStatusCode() string {
 	return fmt.Sprintf("status_code=%d, %s", e.StatusCode, msg)
 }
 
+// SetMessage replaces the human-readable message everywhere it is stored.
+// ToOpenAIError/ToClaudeError read from RelayError when the error carries a
+// provider-shaped payload and fall back to Err otherwise, so both have to be
+// updated or the new message is silently dropped on one of the render paths.
 func (e *NewAPIError) SetMessage(message string) {
+	if e == nil {
+		return
+	}
 	e.Err = errors.New(message)
+	switch relayError := e.RelayError.(type) {
+	case OpenAIError:
+		relayError.Message = message
+		e.RelayError = relayError
+	case ClaudeError:
+		relayError.Message = message
+		e.RelayError = relayError
+	}
 }
 
 func (e *NewAPIError) ToOpenAIError() OpenAIError {

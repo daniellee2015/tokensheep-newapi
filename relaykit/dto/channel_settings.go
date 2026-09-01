@@ -23,6 +23,19 @@ type ChannelSettings struct {
 	// HTTP2ConnectionShards spreads HTTP/2 traffic across N independent transports
 	// (1-8). Zero/unset means 1. Ignored when HTTPProtocol is "http1".
 	HTTP2ConnectionShards int `json:"http2_connection_shards,omitempty"`
+	// ErrorMaskRules are channel-specific error-message rewrite rules. They run
+	// before the global rule set, so a single upstream's wording can be handled
+	// without touching the shared standard.
+	ErrorMaskRules []ErrorMaskRule `json:"error_mask_rules,omitempty"`
+}
+
+// ErrorMaskRule rewrites upstream error prose before it reaches a downstream
+// caller. Pattern is a literal substring unless IsRegex is set.
+type ErrorMaskRule struct {
+	Pattern    string `json:"pattern"`
+	Replace    string `json:"replace"`
+	IsRegex    bool   `json:"is_regex,omitempty"`
+	IgnoreCase bool   `json:"ignore_case,omitempty"`
 }
 
 const (

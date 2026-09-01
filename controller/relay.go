@@ -249,6 +249,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 }
 
 func writeRelayError(c *gin.Context, ws *websocket.Conn, relayFormat types.RelayFormat, newAPIError *types.NewAPIError) {
+	// Channel-level rules also cover errors that never reached
+	// processChannelError (local/validation failures). Applying them here is
+	// idempotent: a rule that already ran no longer matches its own output.
+	service.ApplyChannelErrorMask(c, newAPIError)
 	switch relayFormat {
 	case types.RelayFormatOpenAIRealtime:
 		helper.WssError(c, ws, newAPIError.ToOpenAIError())
@@ -378,6 +382,10 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {
 	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
+	// Capture the upstream wording before any mask rewrites it, so the operator
+	// keeps a diagnosable copy under the admin-only log field.
+	rawUpstreamMessage := err.ErrorWithStatusCode()
+	service.ApplyChannelErrorMask(c, err)
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
 	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
 	if service.ShouldDisableChannel(err) && channelError.AutoBan {
@@ -412,6 +420,12 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 			adminInfo["multi_key_index"] = common.GetContextKeyInt(c, constant.ContextKeyChannelMultiKeyIndex)
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
+		// logs.content is masked for downstream users; keep the unmasked
+		// upstream text here because formatUserLogs strips admin_info entirely
+		// for non-admin views.
+		if masked := err.MaskSensitiveErrorWithStatusCode(); masked != rawUpstreamMessage {
+			adminInfo["raw_upstream_error"] = rawUpstreamMessage
+		}
 		other["admin_info"] = adminInfo
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
 		if startTime.IsZero() {

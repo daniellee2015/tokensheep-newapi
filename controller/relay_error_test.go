@@ -21,8 +21,11 @@ func TestWriteRelayErrorUsesClaudeSSEAfterStreamStarted(t *testing.T) {
 	c.Writer.WriteHeader(http.StatusOK)
 	_, _ = c.Writer.Write([]byte("event: message_start\ndata: {\"type\":\"message_start\"}\n\n"))
 
+	// The fixture message deliberately avoids vocabulary the error-mask rules
+	// rewrite, so this test stays focused on SSE framing rather than on mask
+	// behaviour (covered by service.TestApplyGlobalErrorMask_*).
 	relayErr := types.NewErrorWithStatusCode(
-		assertionError("upstream stream timeout before terminal event"),
+		assertionError("stream timeout before terminal event"),
 		types.ErrorCodeBadResponseBody,
 		http.StatusInternalServerError,
 	)
@@ -31,7 +34,7 @@ func TestWriteRelayErrorUsesClaudeSSEAfterStreamStarted(t *testing.T) {
 	body := recorder.Body.String()
 	require.Contains(t, body, "event: error")
 	require.Contains(t, body, `"type":"error"`)
-	require.Contains(t, body, "upstream stream timeout before terminal event")
+	require.Contains(t, body, "stream timeout before terminal event")
 	require.NotContains(t, body, `}{"type":"error"`)
 	require.True(t, strings.HasPrefix(recorder.Header().Get("Content-Type"), "text/event-stream"))
 }

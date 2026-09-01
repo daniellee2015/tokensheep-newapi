@@ -246,6 +246,9 @@ export type ModelSettings = {
   'channel_affinity_setting.max_entries': number
   'channel_affinity_setting.default_ttl_seconds': number
   'channel_affinity_setting.rules': string
+  'error_mask_setting.enabled': boolean
+  'error_mask_setting.fallback_message': string
+  'error_mask_setting.rules': string
   'model_deployment.ionet.api_key': string
   'model_deployment.ionet.enabled': boolean
 }

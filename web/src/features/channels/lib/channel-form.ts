@@ -122,6 +122,16 @@ function isOptionalJsonObject(value: string | undefined): boolean {
   }
 }
 
+/** Accepts an omitted value or a JSON array; used for rule lists. */
+function isOptionalJsonArray(value: string | undefined): boolean {
+  try {
+    const parsed = parseOptionalJson(value)
+    return parsed === undefined || Array.isArray(parsed)
+  } catch {
+    return false
+  }
+}
+
 function isOptionalModelMapping(value: string | undefined): boolean {
   try {
     const parsed = parseOptionalJson(value)
@@ -264,6 +274,11 @@ export const channelFormSchema = z
     pass_through_body_enabled: z.boolean().optional(),
     system_prompt: z.string().optional(),
     system_prompt_override: z.boolean().optional(),
+    // Channel-specific error masking rules (stored in setting JSON as an array)
+    error_mask_rules: z
+      .string()
+      .optional()
+      .refine(isOptionalJsonArray, ERROR_MESSAGES.INVALID_JSON),
     // Type-specific settings (stored in settings JSON)
     is_enterprise_account: z.boolean().optional(), // OpenRouter specific
     vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
@@ -430,6 +445,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   // Channel extra settings
   force_format: false,
   thinking_to_content: false,
+  error_mask_rules: '',
   proxy: '',
   http_protocol: HTTP_PROTOCOL_AUTO,
   http2_connection_shards: 1,
@@ -476,6 +492,7 @@ export function transformChannelToFormDefaults(
     pass_through_body_enabled: false,
     system_prompt: '',
     system_prompt_override: false,
+    error_mask_rules: '',
   }
 
   if (channel.setting) {
@@ -494,6 +511,9 @@ export function transformChannelToFormDefaults(
         pass_through_body_enabled: parsed.pass_through_body_enabled || false,
         system_prompt: parsed.system_prompt || '',
         system_prompt_override: parsed.system_prompt_override || false,
+        error_mask_rules: Array.isArray(parsed.error_mask_rules)
+          ? JSON.stringify(parsed.error_mask_rules, null, 2)
+          : '',
       }
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -624,6 +644,21 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
     settingObj.http_protocol = HTTP_PROTOCOL_HTTP1
   } else if (shards > 1) {
     settingObj.http2_connection_shards = shards
+  }
+
+  // Only persist the key when rules exist, so channels without overrides keep
+  // the global rule set as their only layer.
+  const maskRules = formData.error_mask_rules?.trim()
+  if (maskRules) {
+    try {
+      const parsed = JSON.parse(maskRules)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        settingObj.error_mask_rules = parsed
+      }
+    } catch {
+      // Schema validation already rejects malformed JSON; drop it here rather
+      // than writing a broken setting.
+    }
   }
 
   return JSON.stringify(settingObj)

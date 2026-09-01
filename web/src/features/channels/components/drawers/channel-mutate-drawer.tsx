@@ -334,6 +334,7 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     hasConfiguredOverrideValue(values.header_override) ||
     values.advanced_custom?.trim() ||
     hasConfiguredOverrideValue(values.status_code_mapping) ||
+    hasConfiguredOverrideValue(values.error_mask_rules) ||
     values.tag?.trim() ||
     values.remark?.trim() ||
     values.priority ||
@@ -3840,6 +3841,35 @@ export function ChannelMutateDrawer({
                                       )}
                                       template={{ '400': '500', '429': '503' }}
                                       valueType='string'
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+
+                            <FormField
+                              control={form.control}
+                              name='error_mask_rules'
+                              render={({ field }) => (
+                                <FormItem className='space-y-3 border-t pt-4'>
+                                  <div className='space-y-1'>
+                                    <FormLabel>
+                                      {t('Error Message Masking')}
+                                    </FormLabel>
+                                    <FormDescription>
+                                      {t(
+                                        'Extra rewrite rules for this channel only, applied before the global rules in Model Settings. Leave empty to use the global rules alone.'
+                                      )}
+                                    </FormDescription>
+                                  </div>
+                                  <FormControl>
+                                    <JsonCodeEditor
+                                      value={field.value || ''}
+                                      onChange={field.onChange}
+                                      disabled={isSubmitting}
+                                      placeholder='[{"pattern": "internal wording", "replace": "Service temporarily unavailable"}]'
+                                      heightClassName='h-32 min-h-32'
                                     />
                                   </FormControl>
                                   <FormMessage />

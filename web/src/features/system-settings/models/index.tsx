@@ -81,6 +81,9 @@ const defaultModelSettings: ModelSettings = {
   'channel_affinity_setting.max_entries': 100000,
   'channel_affinity_setting.default_ttl_seconds': 3600,
   'channel_affinity_setting.rules': '[]',
+  'error_mask_setting.enabled': true,
+  'error_mask_setting.fallback_message': 'Service temporarily unavailable',
+  'error_mask_setting.rules': '[]',
   'model_deployment.ionet.api_key': '',
   'model_deployment.ionet.enabled': false,
 }

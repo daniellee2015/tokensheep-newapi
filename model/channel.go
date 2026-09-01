@@ -522,6 +522,22 @@ func (channel *Channel) GetModelMapping() string {
 	return *channel.ModelMapping
 }
 
+// GetErrorMaskRulesJSON returns the channel's error mask rules as JSON, or an
+// empty string when none are configured, matching how status_code_mapping is
+// threaded through the gin context.
+func (channel *Channel) GetErrorMaskRulesJSON() string {
+	rules := channel.GetSetting().ErrorMaskRules
+	if len(rules) == 0 {
+		return ""
+	}
+	encoded, err := common.Marshal(rules)
+	if err != nil {
+		common.SysLog(fmt.Sprintf("failed to marshal error mask rules: channel_id=%d, error=%v", channel.Id, err))
+		return ""
+	}
+	return string(encoded)
+}
+
 func (channel *Channel) GetStatusCodeMapping() string {
 	if channel.StatusCodeMapping == nil {
 		return ""
