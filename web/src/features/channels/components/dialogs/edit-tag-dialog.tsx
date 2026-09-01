@@ -82,9 +82,9 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
     enabled: open,
   })
 
-  // Fetch groups
+  // Fetch channel groups (not user tiers)
   const { data: groupsData } = useQuery({
-    queryKey: ['groups'],
+    queryKey: channelsQueryKeys.groups(),
     queryFn: getGroups,
     enabled: open,
   })

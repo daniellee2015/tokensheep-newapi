@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { getGroups as getUserGroups } from '@/features/users/api'
 import { api, type ApiRequestConfig } from '@/lib/api'
 
 import type {
@@ -625,9 +624,23 @@ export async function getOllamaVersion(
 // ============================================================================
 
 /**
- * Get all available groups (re-exported from users API for convenience)
+ * Get the channel-side pricing groups (GPT-Pro, aws-q, claude-max-sale, ...).
+ *
+ * This must NOT be the user-tier list from /api/group/tiers: a channel's
+ * `group` field is matched against GroupRatio keys when routing a request, so
+ * offering user tiers (free / supporter / fan / ...) here produces channels no
+ * request can ever select. The backend deliberately serves the two namespaces
+ * from separate endpoints — see the comment above GetGroups in
+ * controller/group.go.
  */
-export const getGroups = getUserGroups
+export async function getGroups(): Promise<{
+  success: boolean
+  message?: string
+  data: string[]
+}> {
+  const res = await api.get('/api/group/')
+  return res.data
+}
 
 // ============================================================================
 // Prefill Groups (Model Groups)

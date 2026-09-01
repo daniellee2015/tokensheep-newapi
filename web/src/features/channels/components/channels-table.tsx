@@ -203,9 +203,9 @@ export function ChannelsTable() {
     })
   }
 
-  // Fetch groups for filter
+  // Fetch channel groups for filter (not user tiers)
   const { data: groupsData } = useQuery({
-    queryKey: ['groups'],
+    queryKey: channelsQueryKeys.groups(),
     queryFn: getGroups,
   })
 

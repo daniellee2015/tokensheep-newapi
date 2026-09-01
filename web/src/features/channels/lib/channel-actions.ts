@@ -51,6 +51,11 @@ export const channelsQueryKeys = {
     [...channelsQueryKeys.lists(), params] as const,
   details: () => [...channelsQueryKeys.all, 'detail'] as const,
   detail: (id: number) => [...channelsQueryKeys.details(), id] as const,
+  // Namespaced under 'channels' on purpose. A bare ['groups'] key is also used
+  // by the user editor, which lists user tiers from a different endpoint;
+  // sharing it let whichever drawer opened first decide what the other one
+  // showed.
+  groups: () => [...channelsQueryKeys.all, 'groups'] as const,
 }
 
 function getChannelTestResponseTime(

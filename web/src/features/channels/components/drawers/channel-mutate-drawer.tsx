@@ -668,9 +668,9 @@ export function ChannelMutateDrawer({
     enabled: isEditing && Boolean(channelId),
   })
 
-  // Fetch available groups
+  // Fetch available channel groups (not user tiers)
   const { data: groupsData, isLoading: isLoadingGroups } = useQuery({
-    queryKey: ['groups'],
+    queryKey: channelsQueryKeys.groups(),
     queryFn: getGroups,
   })
 
