@@ -17,7 +17,13 @@ func abortWithOpenAiMessage(c *gin.Context, statusCode int, message string, code
 		codeStr = string(code[0])
 	}
 	userId := c.GetInt("id")
-	withRequestId := common.MessageWithRequestId(message, c.GetString(common.RequestIdKey))
+	// Middleware rejections are written straight to the response and never
+	// become a NewAPIError, so they bypass the masking that ToOpenAIError /
+	// ToClaudeError apply. Mask here to keep internal wording (group names,
+	// the "distributor" middleware name, credential-pool detail) out of a
+	// downstream reply. The unmasked text still reaches the log below.
+	masked := common.MaskSensitiveInfo(message)
+	withRequestId := common.MessageWithRequestId(masked, c.GetString(common.RequestIdKey))
 
 	// Middleware runs before the route handler picks a relay format, so the
 	// envelope is chosen from the path. An Anthropic client parses the body
