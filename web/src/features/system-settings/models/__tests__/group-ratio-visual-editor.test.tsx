@@ -16,11 +16,52 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import i18next from 'i18next'
+import type { ReactNode } from 'react'
 import { beforeAll, describe, expect, test } from 'vitest'
 
 import { GroupRatioVisualEditor } from '../group-ratio-visual-editor'
+
+// The pricing table classifies each group name via the shared /api/option/
+// payload. Prime that cache so it can tell a user tier from a channel group
+// without a network call; keys match setting/tokensheep_setting/economy.go.
+function buildQueryClient() {
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  qc.setQueryData(['system-options'], {
+    success: true,
+    message: '',
+    data: [
+      {
+        key: 'tokensheep_economy.tier_thresholds',
+        value: JSON.stringify({
+          supporter: 1000,
+          fan: 2500,
+          bestie: 5000,
+          vip: 10_000,
+        }),
+      },
+      {
+        key: 'tokensheep_economy.commercial_groups',
+        value: JSON.stringify({
+          retail: true,
+          wholesale: true,
+          'wholesale-plus': true,
+        }),
+      },
+    ],
+  })
+  return qc
+}
+
+function renderEditor(ui: ReactNode) {
+  return render(
+    <QueryClientProvider client={buildQueryClient()}>{ui}</QueryClientProvider>
+  )
+}
 
 // R19-C: the auto-assignment order card renders each queued group name as a
 // chip. That chip is a user-visible label and must go through formatGroupName
@@ -68,7 +109,7 @@ describe('GroupRatioVisualEditor — Auto 分组 chip 走 formatGroupName', () =
     })
     const autoGroups = JSON.stringify(['bestie', 'aws-q', 'stray-random'])
 
-    render(
+    renderEditor(
       <GroupRatioVisualEditor
         groupRatio={groupRatio}
         topupGroupRatio='{}'

@@ -77,7 +77,17 @@ import {
 
 import { formatGroupName } from '@/lib/group-i18n'
 
+import { useSystemOptions } from '../hooks/use-system-options'
+import {
+  classifyRateLimitGroup,
+  parseGroupNameSet,
+} from '../request-limits/classify-rate-limit-group'
 import { safeJsonParse } from '../utils/json-parser'
+
+// Same option keys the RPM editor reads, so both editors classify a group
+// identically.
+const TIER_THRESHOLDS_OPTION_KEY = 'tokensheep_economy.tier_thresholds'
+const COMMERCIAL_GROUPS_OPTION_KEY = 'tokensheep_economy.commercial_groups'
 
 type GroupRatioVisualEditorProps = {
   groupRatio: string
@@ -142,11 +152,22 @@ function parseNestedRatioMap(
   })
 }
 
+/**
+ * Split the stored maps into the rows this table shows and the entries it must
+ * preserve silently.
+ *
+ * Group pricing is about what a *channel* group costs. User tiers and
+ * commercial identities live in the same flat maps but are priced per
+ * (tier x channel-group) pair in GroupGroupRatio, so their rows here are always
+ * 1 and only add noise. `isChannelGroup` decides membership from the live
+ * classification data rather than a hard-coded list.
+ */
 function buildGroupPricingRows(
   groupRatio: string,
   userUsableGroups: string,
-  topupGroupRatio: string
-): GroupPricingRow[] {
+  topupGroupRatio: string,
+  isChannelGroup: (name: string) => boolean
+): { rows: GroupPricingRow[]; hidden: HiddenGroupPricingEntries } {
   const ratioMap = parseRatioMap(groupRatio)
   const usableMap = parseUsableMap(userUsableGroups)
   const topupMap = parseRatioMap(topupGroupRatio)
@@ -156,20 +177,70 @@ function buildGroupPricingRows(
     ...Object.keys(topupMap),
   ])
 
-  return [...names].map((name) => ({
-    _id: createGroupPricingId(),
-    name,
-    ratio: String(normalizeRatio(ratioMap[name])),
-    topupRatio: Object.hasOwn(topupMap, name) ? String(topupMap[name]) : '',
-    selectable: Object.hasOwn(usableMap, name),
-    description: String(usableMap[name] ?? ''),
-  }))
+  const rows: GroupPricingRow[] = []
+  const hidden: HiddenGroupPricingEntries = {
+    groupRatio: {},
+    userUsableGroups: {},
+    topupGroupRatio: {},
+  }
+
+  for (const name of names) {
+    if (!isChannelGroup(name)) {
+      if (Object.hasOwn(ratioMap, name)) {
+        hidden.groupRatio[name] = ratioMap[name]
+      }
+      if (Object.hasOwn(usableMap, name)) {
+        hidden.userUsableGroups[name] = usableMap[name]
+      }
+      if (Object.hasOwn(topupMap, name)) {
+        hidden.topupGroupRatio[name] = topupMap[name]
+      }
+      continue
+    }
+    rows.push({
+      _id: createGroupPricingId(),
+      name,
+      ratio: String(normalizeRatio(ratioMap[name])),
+      topupRatio: Object.hasOwn(topupMap, name) ? String(topupMap[name]) : '',
+      selectable: Object.hasOwn(usableMap, name),
+      description: String(usableMap[name] ?? ''),
+    })
+  }
+
+  return { rows, hidden }
 }
 
-function serializeGroupPricingRows(rows: GroupPricingRow[]) {
-  const groupRatio: Record<string, number> = {}
-  const userUsableGroups: Record<string, string> = {}
-  const topupGroupRatio: Record<string, number> = {}
+/**
+ * Entries this table does not render but must still write back.
+ *
+ * Serialization rebuilds each map from scratch, so anything filtered out of the
+ * visible rows would be dropped on save. User tiers are hidden here yet must
+ * survive: a group absent from GroupRatio is rejected as deprecated in
+ * middleware/auth.go, which would 403 every token whose group is a tier name.
+ */
+type HiddenGroupPricingEntries = {
+  groupRatio: Record<string, number>
+  userUsableGroups: Record<string, string>
+  topupGroupRatio: Record<string, number>
+}
+
+const EMPTY_HIDDEN_ENTRIES: HiddenGroupPricingEntries = {
+  groupRatio: {},
+  userUsableGroups: {},
+  topupGroupRatio: {},
+}
+
+function serializeGroupPricingRows(
+  rows: GroupPricingRow[],
+  hidden: HiddenGroupPricingEntries = EMPTY_HIDDEN_ENTRIES
+) {
+  // Seed with the hidden entries so they round-trip; visible rows win on any
+  // name collision.
+  const groupRatio: Record<string, number> = { ...hidden.groupRatio }
+  const userUsableGroups: Record<string, string> = {
+    ...hidden.userUsableGroups,
+  }
+  const topupGroupRatio: Record<string, number> = { ...hidden.topupGroupRatio }
 
   for (const row of rows) {
     const name = row.name.trim()
@@ -177,10 +248,16 @@ function serializeGroupPricingRows(rows: GroupPricingRow[]) {
     groupRatio[name] = normalizeRatio(row.ratio)
     if (row.selectable) {
       userUsableGroups[name] = row.description
+    } else {
+      // A visible row that was unticked must lose its entry, even if the
+      // hidden seed carried one under the same name.
+      delete userUsableGroups[name]
     }
     const topup = row.topupRatio.trim()
     if (topup !== '' && Number.isFinite(Number(topup))) {
       topupGroupRatio[name] = Number(topup)
+    } else {
+      delete topupGroupRatio[name]
     }
   }
 
@@ -191,8 +268,11 @@ function serializeGroupPricingRows(rows: GroupPricingRow[]) {
   }
 }
 
-function groupPricingSignature(rows: GroupPricingRow[]): string {
-  const serialized = serializeGroupPricingRows(rows)
+function groupPricingSignature(
+  rows: GroupPricingRow[],
+  hidden: HiddenGroupPricingEntries = EMPTY_HIDDEN_ENTRIES
+): string {
+  const serialized = serializeGroupPricingRows(rows, hidden)
   return JSON.stringify({
     groupRatio: parseRatioMap(serialized.GroupRatio),
     userUsableGroups: parseUsableMap(serialized.UserUsableGroups),
@@ -446,8 +526,30 @@ function GroupPricingTable({
   onShowDetail,
 }: GroupPricingTableProps) {
   const { t } = useTranslation()
-  const [rows, setRows] = useState<GroupPricingRow[]>(() =>
-    buildGroupPricingRows(groupRatio, userUsableGroups, topupGroupRatio)
+
+  // Classification comes from the shared /api/option/ payload, the same source
+  // the RPM editor uses, so a newly added tier or commercial group is excluded
+  // automatically without touching a whitelist here.
+  const { data: optionsData } = useSystemOptions()
+  const isChannelGroup = useMemo(() => {
+    const optionRows = optionsData?.data ?? []
+    const findOption = (key: string) =>
+      optionRows.find((row) => row.key === key)?.value
+    const tierNames = parseGroupNameSet(findOption(TIER_THRESHOLDS_OPTION_KEY))
+    const commercialNames = parseGroupNameSet(
+      findOption(COMMERCIAL_GROUPS_OPTION_KEY)
+    )
+    return (name: string) =>
+      classifyRateLimitGroup(name, tierNames, commercialNames) === 'channel'
+  }, [optionsData])
+
+  const [{ rows, hidden }, setPricingState] = useState(() =>
+    buildGroupPricingRows(
+      groupRatio,
+      userUsableGroups,
+      topupGroupRatio,
+      isChannelGroup
+    )
   )
 
   useEffect(() => {
@@ -456,27 +558,30 @@ function GroupPricingTable({
       userUsableGroups,
       topupGroupRatio
     )
-    setRows((currentRows) => {
-      if (groupPricingSignature(currentRows) === incomingSignature) {
-        return currentRows
+    setPricingState((current) => {
+      if (
+        groupPricingSignature(current.rows, current.hidden) === incomingSignature
+      ) {
+        return current
       }
       return buildGroupPricingRows(
         groupRatio,
         userUsableGroups,
-        topupGroupRatio
+        topupGroupRatio,
+        isChannelGroup
       )
     })
-  }, [groupRatio, userUsableGroups, topupGroupRatio])
+  }, [groupRatio, userUsableGroups, topupGroupRatio, isChannelGroup])
 
   const emitRows = useCallback(
     (nextRows: GroupPricingRow[]) => {
-      setRows(nextRows)
-      const serialized = serializeGroupPricingRows(nextRows)
+      setPricingState((current) => ({ rows: nextRows, hidden: current.hidden }))
+      const serialized = serializeGroupPricingRows(nextRows, hidden)
       onChange('GroupRatio', serialized.GroupRatio)
       onChange('UserUsableGroups', serialized.UserUsableGroups)
       onChange('TopupGroupRatio', serialized.TopupGroupRatio)
     },
-    [onChange]
+    [onChange, hidden]
   )
 
   const updateRow = useCallback(
@@ -493,7 +598,14 @@ function GroupPricingTable({
   )
 
   const addRow = useCallback(() => {
-    const existingNames = new Set(rows.map((row) => row.name))
+    // Hidden names count as taken: reusing one would silently overwrite a tier
+    // entry that this table does not display.
+    const existingNames = new Set([
+      ...rows.map((row) => row.name),
+      ...Object.keys(hidden.groupRatio),
+      ...Object.keys(hidden.userUsableGroups),
+      ...Object.keys(hidden.topupGroupRatio),
+    ])
     let index = 1
     let name = `group_${index}`
     while (existingNames.has(name)) {
@@ -511,7 +623,7 @@ function GroupPricingTable({
         description: '',
       },
     ])
-  }, [emitRows, rows])
+  }, [emitRows, rows, hidden])
 
   const removeRow = useCallback(
     (id: string) => {
