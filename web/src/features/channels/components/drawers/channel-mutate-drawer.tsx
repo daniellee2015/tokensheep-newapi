@@ -132,7 +132,6 @@ import {
   getAllModels,
   getChannel,
   getChannelKey,
-  getGroups,
   getPrefillGroups,
   refreshCodexCredential,
 } from '../../api'
@@ -149,6 +148,7 @@ import {
   MODEL_FETCHABLE_TYPES,
   OPENAI_FIELD_PASSTHROUGH_TYPES,
 } from '../../constants'
+import { useChannelGroupOptions } from '../../hooks/use-channel-group-options'
 import { useChannelMutateForm } from '../../hooks/use-channel-mutate-form'
 import {
   CHANNEL_FORM_DEFAULT_VALUES,
@@ -668,11 +668,11 @@ export function ChannelMutateDrawer({
     enabled: isEditing && Boolean(channelId),
   })
 
-  // Fetch available channel groups (not user tiers)
-  const { data: groupsData, isLoading: isLoadingGroups } = useQuery({
-    queryKey: channelsQueryKeys.groups(),
-    queryFn: getGroups,
-  })
+  // Channel groups only. A channel's group is matched against GroupRatio keys
+  // when routing, and a tier name there can never be selected, so tiers are
+  // filtered out of the picker.
+  const { groups: channelGroups, isLoading: isLoadingGroups } =
+    useChannelGroupOptions()
 
   // Fetch all available models
   const { data: allModelsData } = useQuery({
@@ -910,13 +910,15 @@ export function ChannelMutateDrawer({
 
   // Transform groups to multi-select options
   const groupOptions = useMemo(() => {
-    if (!groupsData?.data) return []
-    const allGroups = new Set([...groupsData.data, ...(currentGroups || [])])
+    // Keep whatever this channel already has selected, even if it is a name the
+    // filter would hide, so editing an existing channel never silently clears
+    // its group.
+    const allGroups = new Set([...channelGroups, ...(currentGroups || [])])
     return [...allGroups].map((group) => ({
       value: group,
       label: group,
     }))
-  }, [groupsData, currentGroups])
+  }, [channelGroups, currentGroups])
 
   // Parse current models as array
   const currentModelsArray = useMemo(

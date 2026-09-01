@@ -44,8 +44,8 @@ import {
   editTagChannels,
   getTagModels,
   getAllModels,
-  getGroups,
 } from '../../api'
+import { useChannelGroupOptions } from '../../hooks/use-channel-group-options'
 import { channelsQueryKeys } from '../../lib'
 import type { TagOperationParams } from '../../types'
 import { useChannels } from '../channels-provider'
@@ -82,16 +82,12 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
     enabled: open,
   })
 
-  // Fetch channel groups (not user tiers)
-  const { data: groupsData } = useQuery({
-    queryKey: channelsQueryKeys.groups(),
-    queryFn: getGroups,
-    enabled: open,
-  })
+  // Channel groups only; tiers can never be routed to.
+  const { groups: channelGroups } = useChannelGroupOptions()
 
   const availableModels =
     allModelsData?.data?.map((m) => m.id).filter(Boolean) || []
-  const availableGroups = groupsData?.data || []
+  const availableGroups = channelGroups
 
   // Initialize form when tag changes
   useEffect(() => {

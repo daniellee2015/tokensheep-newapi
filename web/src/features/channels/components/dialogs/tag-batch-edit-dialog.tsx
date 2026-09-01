@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { Loader2, AlertCircle } from 'lucide-react'
 import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -35,8 +35,8 @@ import {
   getTagModels,
   editTagChannels,
   getAllModels,
-  getGroups,
 } from '../../api'
+import { useChannelGroupOptions } from '../../hooks/use-channel-group-options'
 import { channelsQueryKeys } from '../../lib'
 import type { TagOperationParams } from '../../types'
 import { useChannels } from '../channels-provider'
@@ -63,21 +63,18 @@ export function TagBatchEditDialog({
   const [modelMapping, setModelMapping] = useState('')
   const [groups, setGroups] = useState<string[]>([])
 
-  // Fetch available channel groups (not user tiers)
-  const { data: groupsData, isLoading: isLoadingGroups } = useQuery({
-    queryKey: channelsQueryKeys.groups(),
-    queryFn: getGroups,
-  })
+  // Channel groups only; tiers can never be routed to.
+  const { groups: channelGroups, isLoading: isLoadingGroups } =
+    useChannelGroupOptions()
 
   // Transform groups to multi-select options
   const groupOptions = useMemo(() => {
-    if (!groupsData?.data) return []
-    const allGroups = new Set([...groupsData.data, ...groups])
+    const allGroups = new Set([...channelGroups, ...groups])
     return Array.from(allGroups).map((group) => ({
       value: group,
       label: group,
     }))
-  }, [groupsData, groups])
+  }, [channelGroups, groups])
 
   useEffect(() => {
     if (open && currentTag) {

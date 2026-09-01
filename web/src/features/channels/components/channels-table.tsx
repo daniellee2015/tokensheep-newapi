@@ -46,7 +46,8 @@ import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { getLobeIcon } from '@/lib/lobe-icon'
 
-import { getChannels, searchChannels, getGroups } from '../api'
+import { getChannels, searchChannels } from '../api'
+import { useChannelGroupOptions } from '../hooks/use-channel-group-options'
 import {
   DEFAULT_PAGE_SIZE,
   CHANNEL_STATUS,
@@ -203,19 +204,17 @@ export function ChannelsTable() {
     })
   }
 
-  // Fetch channel groups for filter (not user tiers)
-  const { data: groupsData } = useQuery({
-    queryKey: channelsQueryKeys.groups(),
-    queryFn: getGroups,
-  })
+  // Channel groups only: a channel tagged with a user tier is never selected
+  // by routing, so offering tiers here just yields empty result sets.
+  const { groups: channelGroups } = useChannelGroupOptions()
 
   const groupOptions = useMemo(
     () =>
-      (groupsData?.data || []).map((g) => ({
+      channelGroups.map((g) => ({
         label: g,
         value: g,
       })),
-    [groupsData]
+    [channelGroups]
   )
 
   // Fetch channels data
