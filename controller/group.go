@@ -81,6 +81,34 @@ func groupKind(name string) string {
 	return "channel"
 }
 
+// groupRPM resolves the per-group RPM ceiling used by the API-key picker so
+// users can see "GPT-Pro: 1000 rpm" instead of a flat list without a
+// number. Returns (rpm, windowMinutes):
+//
+//   - rpm=0 / windowMinutes=0 → no ceiling (either the global switch is
+//     off, or this group is absent from ModelRequestRateLimitGroup and
+//     falls back to the site-wide default). The frontend renders that as
+//     "unlimited".
+//   - rpm>0 / windowMinutes>0 → cap is `rpm` successful requests inside a
+//     `windowMinutes`-minute rolling window. When the operator picks a
+//     >1-minute window the frontend can divide to display "per minute".
+//
+// We report limits[1] (the successful-request ceiling). That's the number
+// users can plan against — it counts *only* successful requests, so
+// clients tuning their throughput care about it. limits[0] (the total
+// count including failures) is a safety net against clients hammering
+// with bad requests and doesn't belong on a "your RPM is …" card.
+func groupRPM(name string) (int, int) {
+	if !setting.ModelRequestRateLimitEnabled {
+		return 0, 0
+	}
+	_, successCount, found := setting.GetGroupRateLimit(name)
+	if !found {
+		return 0, 0
+	}
+	return successCount, setting.ModelRequestRateLimitDurationMinutes
+}
+
 func GetUserGroups(c *gin.Context) {
 	usableGroups := make(map[string]map[string]interface{})
 	userGroup := ""
@@ -90,6 +118,7 @@ func GetUserGroups(c *gin.Context) {
 	for groupName, _ := range ratio_setting.GetGroupRatioCopy() {
 		// UserUsableGroups contains the groups that the user can use
 		if desc, ok := userUsableGroups[groupName]; ok {
+			rpm, windowMinutes := groupRPM(groupName)
 			usableGroups[groupName] = map[string]interface{}{
 				"ratio": service.GetUserGroupRatio(userGroup, groupName),
 				"desc":  desc,
@@ -98,6 +127,12 @@ func GetUserGroups(c *gin.Context) {
 				// flat list where a user tier and an upstream channel group
 				// look identical.
 				"kind": groupKind(groupName),
+				// R21: expose the per-group RPM ceiling and its window so
+				// the API-key picker renders "1000 rpm" instead of leaving
+				// the user to guess. 0/0 = no ceiling configured for this
+				// group; the frontend treats that as "unlimited".
+				"rpm":                rpm,
+				"rpm_window_minutes": windowMinutes,
 			}
 		}
 	}
@@ -106,6 +141,11 @@ func GetUserGroups(c *gin.Context) {
 			"ratio": "自动",
 			"desc":  setting.GetUsableGroupDescription("auto"),
 			"kind":  "auto",
+			// `auto` is a routing pseudo-group; it has no rate-limit row of
+			// its own, so return 0/0 alongside the same fields the real
+			// groups carry to keep the response shape uniform.
+			"rpm":                0,
+			"rpm_window_minutes": 0,
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{

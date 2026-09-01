@@ -53,6 +53,42 @@ export async function getMyTier(): Promise<MyTierView | null> {
   return res.data?.success ? (res.data.data ?? null) : null
 }
 
+// MyLimitsUsage mirrors controller/user_limits.go userLimitsUsage. R21-B
+// (API Limits card) and R21-C (Dashboard 顶部并发提示) both consume this
+// endpoint; the fields are kept identical to the Go struct so a single
+// GET refreshes both surfaces. concurrency_source is a health flag, not
+// a business value — see readSessionActive in the controller: "live" for
+// a real read, "idle" for Redis-key-not-found or Redis-less deployments,
+// "unavailable" when Redis errored (used=0 in that branch is stale, not
+// a business zero).
+export type MyLimitsUsage = {
+  user_group: string
+  concurrency_used: number
+  concurrency_limit: number
+  concurrency_source: 'live' | 'idle' | 'unavailable'
+  rpm_window_minutes: number
+  rate_limit_enabled: boolean
+}
+
+type MyLimitsUsageResponse = {
+  success: boolean
+  message?: string
+  data?: MyLimitsUsage
+}
+
+// getMyLimitsUsage fetches the live concurrent-session counter for the
+// current user. The backend degrades to concurrency_source="unavailable"
+// with used=0 on Redis errors rather than 5xx'ing (see
+// controller/user_limits.go readSessionActive), so callers should read
+// that flag before badging the number — a plain 0 in the "live" branch
+// legitimately means the user is idle right now.
+export async function getMyLimitsUsage(): Promise<MyLimitsUsage | null> {
+  const res = await api.get<MyLimitsUsageResponse>(
+    '/api/user/self/limits/usage'
+  )
+  return res.data?.success ? (res.data.data ?? null) : null
+}
+
 // Known tier group keys, in ladder order. `standard` is the paid non-tier
 // group (normal ratio, doesn't climb the contribution ladder). The i18n keys
 // tier.name.<key> hold the localized display name for each.

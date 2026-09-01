@@ -1,7 +1,11 @@
 {
   "landing.tier.popular": "Popular",
+  "landing.tier.standard.name": "Standard",
+  "tier.name.aws-b": "AWS Bedrock",
+  "tier.name.kirobus-api": "Kirobus API",
   "New API": "TokenSheep",
   "wallet.tierCards.bestie.badge": "Bestie Pass",
+  "wallet.tierCards.vip.badge": "VIP Pass",
   "wallet.tierCards.fan.badge": "Fan Pass",
   "wallet.tierCards.supporter.badge": "Supporter Pass"
 }

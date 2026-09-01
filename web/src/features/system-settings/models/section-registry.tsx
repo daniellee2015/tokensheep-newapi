@@ -21,6 +21,7 @@ import { IoNetDeploymentSettingsSection } from '../integrations/ionet-deployment
 import type { ModelSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 import { ClaudeSettingsCard } from './claude-settings-card'
+import { ErrorMaskSection } from './error-mask'
 import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
 import { GrokSettingsCard } from './grok-settings-card'
@@ -165,6 +166,20 @@ const MODELS_SECTIONS = [
             settings['channel_affinity_setting.default_ttl_seconds'],
           'channel_affinity_setting.rules':
             settings['channel_affinity_setting.rules'],
+        }}
+      />
+    ),
+  },
+  {
+    id: 'error-mask',
+    titleKey: 'Upstream Error Masking',
+    build: (settings: ModelSettings) => (
+      <ErrorMaskSection
+        defaultValues={{
+          'error_mask_setting.enabled': settings['error_mask_setting.enabled'],
+          'error_mask_setting.fallback_message':
+            settings['error_mask_setting.fallback_message'],
+          'error_mask_setting.rules': settings['error_mask_setting.rules'],
         }}
       />
     ),

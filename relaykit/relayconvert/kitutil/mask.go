@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync/atomic"
 )
 
 var (
@@ -13,6 +14,29 @@ var (
 	// maskApiKeyPattern matches patterns like 'api_key:xxx' or "api_key:xxx" to mask the API key value
 	maskApiKeyPattern = regexp.MustCompile(`(['"]?)api_key:([^\s'"]+)(['"]?)`)
 )
+
+// extraMask holds an optional post-processing step applied after the built-in
+// URL/IP/domain masking. relaykit must stay independently buildable, so it
+// cannot read the root module's settings; the root module injects its
+// configurable rule engine here at startup via SetExtraMask. When nothing is
+// injected (relaykit used standalone), masking behaviour is unchanged.
+var extraMask atomic.Pointer[func(string) string]
+
+// SetExtraMask installs the post-processing mask step. Passing nil clears it.
+func SetExtraMask(fn func(string) string) {
+	if fn == nil {
+		extraMask.Store(nil)
+		return
+	}
+	extraMask.Store(&fn)
+}
+
+func applyExtraMask(str string) string {
+	if fn := extraMask.Load(); fn != nil {
+		return (*fn)(str)
+	}
+	return str
+}
 
 // maskHostTail returns the tail parts of a domain/host that should be preserved.
 // It keeps 2 parts for likely country-code TLDs (e.g., co.uk, com.cn), otherwise keeps only the TLD.
@@ -130,5 +154,7 @@ func MaskSensitiveInfo(str string) string {
 	// Mask API keys (e.g., "api_key:AIzaSyAAAaUooTUni8AdaOkSRMda30n_Q4vrV70" -> "api_key:***")
 	str = maskApiKeyPattern.ReplaceAllString(str, "${1}api_key:***${3}")
 
-	return str
+	// Apply the injected rule engine last so its patterns see already-masked
+	// URLs/IPs and can still rewrite the surrounding prose.
+	return applyExtraMask(str)
 }
