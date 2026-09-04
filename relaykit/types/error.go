@@ -316,10 +316,19 @@ func InitOpenAIError(errorCode ErrorCode, statusCode int, ops ...NewAPIErrorOpti
 }
 
 func NewErrorWithStatusCode(err error, errorCode ErrorCode, statusCode int, ops ...NewAPIErrorOptions) *NewAPIError {
+	// Guard against a nil err. Callers on the sensitive-word / relay path
+	// were passing nil (GenRelayInfo returns nil on success but the local
+	// `err` variable is reused), which crashed at err.Error() below.
+	// Fall back to the error code as the human-readable message so nothing
+	// downstream sees an empty string either.
+	msg := string(errorCode)
+	if err != nil {
+		msg = err.Error()
+	}
 	e := &NewAPIError{
 		Err: err,
 		RelayError: OpenAIError{
-			Message: err.Error(),
+			Message: msg,
 			Type:    string(errorCode),
 		},
 		errorType:  ErrorTypeNewAPIError,

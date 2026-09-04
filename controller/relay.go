@@ -124,11 +124,27 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		meta = fastTokenCountMetaForPricing(request)
 	}
 
-	if needSensitiveCheck && meta != nil {
-		contains, words := service.CheckSensitiveText(meta.CombineText)
-		if contains {
-			logger.LogWarn(c, fmt.Sprintf("user sensitive words detected: %s", strings.Join(words, ", ")))
-			newAPIError = types.NewError(err, types.ErrorCodeSensitiveWordsDetected)
+	if needSensitiveCheck {
+		// Scan only what the user typed in this request. Feeding CombineText
+		// here (system prompt + full history + tool_result + tool defs) causes
+		// permanent session poisoning as soon as the transcript contains a
+		// keyword, which is trivially easy — the sensitive-word list itself
+		// lives in setting/sensitive.go. See
+		// service/risk_scan_text.go for the full rationale.
+		riskScanText := service.ExtractRiskScanText(request)
+		if contains, words := service.CheckSensitiveText(riskScanText); contains {
+			joined := strings.Join(words, ", ")
+			logger.LogWarn(c, fmt.Sprintf("user sensitive words detected: %s", joined))
+			// Do NOT pass `err` here — GenRelayInfo above returned nil error
+			// and NewErrorWithStatusCode would previously panic on
+			// err.Error() when err is nil. We surface the matched words as
+			// the message so it stays actionable in logs/UI.
+			newAPIError = types.NewErrorWithStatusCode(
+				fmt.Errorf("sensitive words detected: %s", joined),
+				types.ErrorCodeSensitiveWordsDetected,
+				http.StatusBadRequest,
+				types.ErrOptionWithSkipRetry(),
+			)
 			return
 		}
 	}
