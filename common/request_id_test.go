@@ -3,6 +3,8 @@ package common
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewAnthropicRequestIdShape(t *testing.T) {
@@ -16,4 +18,9 @@ func TestNewAnthropicRequestIdShape(t *testing.T) {
 	if strings.HasPrefix(id, "2026") {
 		t.Fatalf("public request-id must not use the date-prefixed internal format: %q", id)
 	}
+}
+
+func TestStripNestedRequestIDs(t *testing.T) {
+	message := "服务并发已达上限（49），请稍后重试 (request id: inner-one) (request-id: inner-two)"
+	require.Equal(t, "服务并发已达上限（49），请稍后重试", StripNestedRequestIDs(message))
 }

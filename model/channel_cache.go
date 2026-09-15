@@ -111,10 +111,10 @@ func SyncChannelCache(frequency int) {
 	}
 }
 
-func GetRandomSatisfiedChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+func GetRandomSatisfiedChannel(group string, model string, retry int, requestPath string, excludedChannelIDs ...int) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry, requestPath)
+		return GetChannel(group, model, retry, requestPath, excludedChannelIDs...)
 	}
 
 	channelSyncLock.RLock()
@@ -132,14 +132,6 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 	if len(channels) == 0 {
 		return nil, nil
 	}
-
-	if len(channels) == 1 {
-		if channel, ok := channelsIDM[channels[0]]; ok {
-			return channel, nil
-		}
-		return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channels[0])
-	}
-
 	uniquePriorities := make(map[int]bool)
 	for _, channelId := range channels {
 		if channel, ok := channelsIDM[channelId]; ok {
@@ -155,6 +147,23 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 	sort.Sort(sort.Reverse(sort.IntSlice(sortedUniquePriorities)))
 
 	if retry >= len(uniquePriorities) {
+		lowestPriority := int64(sortedUniquePriorities[len(sortedUniquePriorities)-1])
+		lowestPriorityCount := 0
+		for _, channelId := range channels {
+			channel, ok := channelsIDM[channelId]
+			if !ok {
+				return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
+			}
+			if channel.GetPriority() == lowestPriority {
+				lowestPriorityCount++
+			}
+		}
+		// Keep a sole channel retryable so CPA can rotate its internal account
+		// pool. A sole lowest-priority channel in a multi-priority route is a
+		// fallback and must not be retried repeatedly by new-api.
+		if lowestPriorityCount <= 1 && len(uniquePriorities) > 1 {
+			return nil, nil
+		}
 		retry = len(uniquePriorities) - 1
 	}
 	targetPriority := int64(sortedUniquePriorities[retry])
@@ -162,9 +171,16 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 	// get the priority for the given retry number
 	var sumWeight = 0
 	var targetChannels []*Channel
+	excluded := make(map[int]struct{}, len(excludedChannelIDs))
+	for _, channelID := range excludedChannelIDs {
+		excluded[channelID] = struct{}{}
+	}
 	for _, channelId := range channels {
 		if channel, ok := channelsIDM[channelId]; ok {
 			if channel.GetPriority() == targetPriority {
+				if _, alreadyTried := excluded[channelId]; alreadyTried {
+					continue
+				}
 				sumWeight += channel.GetWeight()
 				targetChannels = append(targetChannels, channel)
 			}
@@ -174,6 +190,16 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 	}
 
 	if len(targetChannels) == 0 {
+		// A sole channel may represent an upstream account pool (for example
+		// CPA). Let it be retried so the upstream can rotate credentials.
+		if len(channels) == 1 {
+			if channel, ok := channelsIDM[channels[0]]; ok {
+				return channel, nil
+			}
+		}
+		if len(excluded) > 0 {
+			return nil, nil
+		}
 		return nil, errors.New(fmt.Sprintf("no channel found, group: %s, model: %s, priority: %d", group, model, targetPriority))
 	}
 

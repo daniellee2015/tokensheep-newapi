@@ -61,8 +61,9 @@ func RelayMidjourneyImage(c *gin.Context) {
 		validateErr = common.ValidateURLWithFetchSetting(midjourneyTask.ImageUrl, fetchSetting.EnableSSRFProtection, fetchSetting.AllowPrivateIp, fetchSetting.DomainFilterMode, fetchSetting.IpFilterMode, fetchSetting.DomainList, fetchSetting.IpList, fetchSetting.AllowedPorts, fetchSetting.ApplyIPFilterForDomain)
 	}
 	if validateErr != nil {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": fmt.Sprintf("request blocked: %v", validateErr),
+		logger.LogError(c, fmt.Sprintf("Midjourney image URL blocked: %v", validateErr))
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Service temporarily unavailable",
 		})
 		return
 	}
@@ -76,8 +77,9 @@ func RelayMidjourneyImage(c *gin.Context) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		responseBody, _ := io.ReadAll(resp.Body)
-		c.JSON(resp.StatusCode, gin.H{
-			"error": string(responseBody),
+		logger.LogError(c, fmt.Sprintf("Midjourney image upstream status %d: %s", resp.StatusCode, common.LocalLogPreview(string(responseBody))))
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Service temporarily unavailable",
 		})
 		return
 	}
@@ -164,6 +166,14 @@ func coverMidjourneyTaskDto(c *gin.Context, originTask *model.Midjourney) (midjo
 	midjourneyTask.FailReason = originTask.FailReason
 	midjourneyTask.Action = originTask.Action
 	midjourneyTask.Description = originTask.Description
+	if originTask.FailReason != "" || strings.EqualFold(originTask.Status, "FAILURE") || strings.EqualFold(originTask.Status, "FAILED") {
+		midjourneyTask.FailReason = "Service temporarily unavailable"
+		midjourneyTask.Description = "Service temporarily unavailable"
+		midjourneyTask.ImageUrl = ""
+		midjourneyTask.VideoUrl = ""
+		midjourneyTask.PromptEn = ""
+		return
+	}
 	midjourneyTask.Prompt = originTask.Prompt
 	if originTask.Buttons != "" {
 		var buttons []dto.ActionButton
@@ -233,6 +243,9 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 		return &mjResp.Response
 	}
 	midjResponse := &mjResp.Response
+	if midjResponse.Code != 1 {
+		return midjResponse
+	}
 	midjourneyTask := &model.Midjourney{
 		UserId:      info.UserId,
 		Code:        midjResponse.Code,
@@ -322,6 +335,9 @@ func RelayMidjourneyTaskImageSeed(c *gin.Context) *dto.MidjourneyResponse {
 		return &midjResponseWithStatus.Response
 	}
 	midjResponse := &midjResponseWithStatus.Response
+	if midjResponse.Code != 1 {
+		return midjResponse
+	}
 	c.Writer.WriteHeader(midjResponseWithStatus.StatusCode)
 	respBody, err := json.Marshal(midjResponse)
 	if err != nil {
@@ -582,7 +598,9 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 	}
 	if midjResponse.Code != 1 && midjResponse.Code != 21 && midjResponse.Code != 22 {
 		//非1-提交成功,21-任务已存在和22-排队中，则记录错误原因
-		midjourneyTask.FailReason = midjResponse.Description
+		logger.LogError(c, "Midjourney upstream submit failed: "+common.LocalLogPreview(midjResponse.Description))
+		midjourneyTask.Description = "Service temporarily unavailable"
+		midjourneyTask.FailReason = "Service temporarily unavailable"
 		consumeQuota = false
 	}
 
@@ -656,6 +674,9 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 		//修改返回值
 		newBody := strings.Replace(string(responseBody), `"code":22`, `"code":1`, -1)
 		responseBody = []byte(newBody)
+	}
+	if midjResponse.Code != 1 && midjResponse.Code != 21 && midjResponse.Code != 22 {
+		return midjResponse
 	}
 	//resp.Body = io.NopCloser(bytes.NewBuffer(responseBody))
 	bodyReader := io.NopCloser(bytes.NewBuffer(responseBody))

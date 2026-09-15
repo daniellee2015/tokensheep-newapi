@@ -92,13 +92,14 @@ func AlphaSearchHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError
 		return newAPIError
 	}
 
-	if contentType := httpResp.Header.Get("Content-Type"); contentType != "" {
-		c.Writer.Header().Set("Content-Type", contentType)
+	responseBody, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError)
 	}
-	c.Writer.WriteHeader(httpResp.StatusCode)
-	if _, err := io.Copy(c.Writer, httpResp.Body); err != nil {
-		return types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithSkipRetry())
+	if embeddedErr := service.EmbeddedUpstreamError(responseBody); embeddedErr != nil {
+		return embeddedErr
 	}
+	service.IOCopyBytesGracefully(c, httpResp, responseBody)
 
 	// Upstream alpha search returns no usage; bill one web_search_preview call.
 	if info.ResponsesUsageInfo == nil {

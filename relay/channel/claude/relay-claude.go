@@ -915,7 +915,7 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		common.SysLog("error unmarshalling stream response: " + err.Error())
 		return types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
-	if claudeError := claudeResponse.GetClaudeError(); claudeError != nil && claudeError.Type != "" {
+	if claudeError := claudeResponse.GetClaudeError(); claudeError != nil {
 		return types.WithClaudeError(*claudeError, http.StatusInternalServerError)
 	}
 	if claudeInfo != nil && claudeResponse.Type == "message_stop" {
@@ -1142,7 +1142,7 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
-	if claudeError := claudeResponse.GetClaudeError(); claudeError != nil && claudeError.Type != "" {
+	if claudeError := claudeResponse.GetClaudeError(); claudeError != nil {
 		return types.WithClaudeError(*claudeError, http.StatusInternalServerError)
 	}
 	maybeMarkClaudeRefusal(c, claudeResponse.StopReason)

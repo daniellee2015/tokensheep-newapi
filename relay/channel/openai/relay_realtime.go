@@ -1,7 +1,9 @@
 package openai
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -34,6 +36,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 	usage := &dto.RealtimeUsage{}
 	localUsage := &dto.RealtimeUsage{}
 	sumUsage := &dto.RealtimeUsage{}
+	var handlerErr *types.NewAPIError
 
 	gopool.Go(func() {
 		defer func() {
@@ -121,6 +124,14 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 					errChan <- fmt.Errorf("error unmarshalling message: %v", err)
 					return
 				}
+				if realtimeEvent.Type == dto.RealtimeEventTypeError {
+					if realtimeEvent.Error != nil {
+						errChan <- types.WithOpenAIError(*realtimeEvent.Error, http.StatusInternalServerError)
+					} else {
+						errChan <- types.NewOpenAIError(errors.New("upstream realtime error"), types.ErrorCodeBadResponse, http.StatusInternalServerError)
+					}
+					return
+				}
 
 				if realtimeEvent.Type == dto.RealtimeEventTypeResponseDone {
 					realtimeUsage := realtimeEvent.Response.Usage
@@ -205,8 +216,10 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 	case <-clientClosed:
 	case <-targetClosed:
 	case err := <-errChan:
-		//return service.OpenAIErrorWrapper(err, "realtime_error", http.StatusInternalServerError), nil
 		logger.LogError(c, "realtime error: "+err.Error())
+		if errors.As(err, &handlerErr) {
+			break
+		}
 	case <-c.Done():
 	}
 
@@ -220,7 +233,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 
 	// check usage total tokens, if 0, use local usage
 
-	return nil, sumUsage
+	return handlerErr, sumUsage
 }
 
 func preConsumeUsage(ctx *gin.Context, info *relaycommon.RelayInfo, usage *dto.RealtimeUsage, totalUsage *dto.RealtimeUsage) error {

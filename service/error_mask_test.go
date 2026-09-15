@@ -32,6 +32,11 @@ func TestApplyGlobalErrorMask_RealUpstreamLeaks(t *testing.T) {
 			expected: "Service temporarily unavailable",
 		},
 		{
+			name:     "all available accounts exhausted",
+			input:    "status_code=502, All available accounts exhausted",
+			expected: "status_code=502, Service temporarily unavailable",
+		},
+		{
 			name:     "cpu overload threshold",
 			input:    "system cpu overloaded (current: 93.4%, threshold: 90%)",
 			expected: "Service temporarily unavailable",

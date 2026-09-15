@@ -554,7 +554,6 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	}
 	if upID := strings.TrimSpace(resp.Header.Get("request-id")); strings.HasPrefix(upID, "req_") {
 		c.Set(common2.UpstreamRequestIdKey, upID)
-		c.Header("request-id", upID)
 	}
 
 	_ = req.Body.Close()

@@ -156,6 +156,75 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 	return
 }
 
+const (
+	publicInvalidRequestMessage     = "Invalid request"
+	publicRateLimitMessage          = "Rate limit exceeded. Retry later."
+	publicServiceUnavailableMessage = "Service temporarily unavailable"
+)
+
+// PublicUpstreamError replaces every upstream-controlled field with a value
+// defined by this gateway. Retry, channel health and operator diagnostics must
+// use the original error before calling this function.
+func PublicUpstreamError(upstreamErr *types.NewAPIError) *types.NewAPIError {
+	if upstreamErr == nil {
+		return nil
+	}
+
+	statusCode, message, code := publicUpstreamErrorPolicy(upstreamErr.StatusCode)
+	return types.NewOpenAIError(errors.New(message), code, statusCode, types.ErrOptionWithSkipRetry())
+}
+
+// PublicUpstreamTaskError applies the same trust boundary to task endpoints.
+func PublicUpstreamTaskError(upstreamErr *taskdto.TaskError) *taskdto.TaskError {
+	if upstreamErr == nil {
+		return nil
+	}
+
+	statusCode, message, code := publicUpstreamErrorPolicy(upstreamErr.StatusCode)
+	return &taskdto.TaskError{
+		Code:       string(code),
+		Message:    message,
+		StatusCode: statusCode,
+		Error:      errors.New(message),
+	}
+}
+
+// EmbeddedUpstreamError detects an error envelope returned with a successful
+// HTTP status. Callers must invoke it before copying a JSON-capable upstream
+// body to the downstream writer.
+func EmbeddedUpstreamError(responseBody []byte) *types.NewAPIError {
+	var errResponse dto.GeneralErrorResponse
+	if err := common.Unmarshal(responseBody, &errResponse); err != nil {
+		return nil
+	}
+	if openAIError := errResponse.TryToOpenAIError(); openAIError != nil {
+		return types.WithOpenAIError(*openAIError, http.StatusInternalServerError)
+	}
+	message := errResponse.ToMessage()
+	if message == "" {
+		return nil
+	}
+	return types.NewOpenAIError(errors.New(message), types.ErrorCodeBadResponse, http.StatusInternalServerError)
+}
+
+func publicUpstreamErrorPolicy(statusCode int) (int, string, types.ErrorCode) {
+	switch statusCode {
+	case http.StatusBadRequest,
+		http.StatusNotFound,
+		http.StatusMethodNotAllowed,
+		http.StatusConflict,
+		http.StatusGone,
+		http.StatusRequestEntityTooLarge,
+		http.StatusUnsupportedMediaType,
+		http.StatusUnprocessableEntity:
+		return http.StatusBadRequest, publicInvalidRequestMessage, types.ErrorCodeInvalidRequest
+	case http.StatusTooManyRequests:
+		return http.StatusTooManyRequests, publicRateLimitMessage, types.ErrorCodeRateLimitExceeded
+	default:
+		return http.StatusServiceUnavailable, publicServiceUnavailableMessage, types.ErrorCodeServiceUnavailable
+	}
+}
+
 func ResetStatusCode(newApiErr *types.NewAPIError, statusCodeMappingStr string) {
 	if newApiErr == nil {
 		return
@@ -218,6 +287,8 @@ func TaskErrorWrapperLocal(err error, code string, statusCode int) *taskdto.Task
 
 func TaskErrorWrapper(err error, code string, statusCode int) *taskdto.TaskError {
 	text := err.Error()
+	text = common.StripNestedRequestIDs(text)
+	text = ApplyGlobalErrorMask(text)
 	lowerText := strings.ToLower(text)
 	if strings.Contains(lowerText, "post") || strings.Contains(lowerText, "dial") || strings.Contains(lowerText, "http") {
 		common.SysLog(fmt.Sprintf("error: %s", text))

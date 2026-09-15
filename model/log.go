@@ -115,12 +115,22 @@ func assignDisplayLogIds(logs []*Log, startIdx int) {
 
 func formatUserLogs(logs []*Log, startIdx int) {
 	for i := range logs {
+		logs[i].ChannelId = 0
 		logs[i].ChannelName = ""
+		logs[i].UpstreamRequestId = ""
 		var otherMap map[string]interface{}
 		otherMap, _ = common.StrToMap(logs[i].Other)
 		if otherMap != nil {
 			// Remove admin-only debug fields.
 			delete(otherMap, "admin_info")
+			// Strip legacy route diagnostics that older relay errors stored at
+			// the top level before they were moved under admin_info.
+			for _, key := range []string{
+				"channel_id", "channel_name", "channel_type", "use_channel",
+				"raw_upstream_error", "upstream_error_type", "upstream_error_code",
+			} {
+				delete(otherMap, key)
+			}
 			// Remove operation-audit details (operator/route info), admin-only.
 			delete(otherMap, "audit_info")
 			// delete(otherMap, "reject_reason")

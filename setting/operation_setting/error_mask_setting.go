@@ -27,6 +27,7 @@ var errorMaskSetting = ErrorMaskSetting{
 		// Leaks pool size, e.g. "分组 [free] 无可用凭据（0/247 可用）".
 		{Pattern: `分组\s*\[[^\]]*\]\s*无可用凭据[^。;]*`, Replace: ErrorMaskFallbackMessage, IsRegex: true},
 		{Pattern: `[Nn]o available accounts(:\s*no available accounts)?`, Replace: ErrorMaskFallbackMessage, IsRegex: true},
+		{Pattern: `[Aa]ll available accounts exhausted`, Replace: ErrorMaskFallbackMessage, IsRegex: true},
 		// Strip the framing prefix but keep whatever follows it.
 		{Pattern: `[Uu]pstream connection was interrupted mid-response after \d+ bytes:\s*`, Replace: "", IsRegex: true},
 		{Pattern: `upstream error: do request failed`, Replace: ErrorMaskFallbackMessage},

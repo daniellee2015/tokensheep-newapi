@@ -174,6 +174,34 @@ func TestGeminiTextGenerationHandlerPromptTokensIncludeToolUsePromptTokens(t *te
 	require.Equal(t, 1120, usage.CompletionTokenDetails.ReasoningTokens)
 }
 
+func TestGeminiTextGenerationHandlerDoesNotForwardBlockedResponse(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini:generateContent", nil)
+
+	blockReason := "PRIVATE_UPSTREAM_POLICY_REASON"
+	payload := dto.GeminiChatResponse{
+		PromptFeedback: &dto.GeminiChatPromptFeedback{BlockReason: &blockReason},
+	}
+	body, err := common.Marshal(payload)
+	require.NoError(t, err)
+
+	resp := &http.Response{Body: io.NopCloser(bytes.NewReader(body))}
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "gemini"},
+	}
+	usage, newAPIError := GeminiTextGenerationHandler(c, info, resp)
+
+	require.NotNil(t, usage)
+	require.NotNil(t, newAPIError)
+	require.Equal(t, http.StatusBadRequest, newAPIError.StatusCode)
+	require.Contains(t, newAPIError.Error(), blockReason)
+	require.Empty(t, recorder.Body.String())
+}
+
 func TestGeminiChatHandlerUsesEstimatedPromptTokensWhenUsagePromptMissing(t *testing.T) {
 	t.Parallel()
 

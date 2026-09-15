@@ -81,6 +81,8 @@ func tasksToDto(tasks []*model.Task, fillUser bool) []*dto.TaskDto {
 			if user, ok := userIdMap[task.UserId]; ok {
 				task.Username = user.Username
 			}
+			result[i] = relay.TaskModel2AdminDto(task)
+			continue
 		}
 		result[i] = relay.TaskModel2Dto(task)
 	}

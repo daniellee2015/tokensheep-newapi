@@ -18,6 +18,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
+	relaykitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
@@ -395,6 +396,25 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 
 	// OpenAI Video API 格式: 走各 adaptor 的 ConvertToOpenAIVideo
 	if isOpenAIVideoAPI {
+		if originTask.Status == model.TaskStatusFailure {
+			publicVideo := relaykitdto.NewOpenAIVideo()
+			publicVideo.ID = originTask.TaskID
+			publicVideo.TaskID = originTask.TaskID
+			publicVideo.Model = originTask.Properties.OriginModelName
+			publicVideo.Status = relaykitdto.VideoStatusFailed
+			publicVideo.SetProgressStr(originTask.Progress)
+			publicVideo.CreatedAt = originTask.CreatedAt
+			publicVideo.CompletedAt = originTask.UpdatedAt
+			publicVideo.Error = &relaykitdto.OpenAIVideoError{
+				Code:    "service_unavailable",
+				Message: "Service temporarily unavailable",
+			}
+			respBody, err = common.Marshal(publicVideo)
+			if err != nil {
+				taskResp = service.TaskErrorWrapper(err, "marshal_response_failed", http.StatusInternalServerError)
+			}
+			return
+		}
 		adaptor := GetTaskAdaptor(originTask.Platform)
 		if adaptor == nil {
 			taskResp = service.TaskErrorWrapperLocal(fmt.Errorf("invalid channel id: %d", originTask.ChannelId), "invalid_channel_id", http.StatusBadRequest)
@@ -501,6 +521,13 @@ func tryRealtimeFetch(task *model.Task, isOpenAIVideoAPI bool) []byte {
 		"task_id":  task.TaskID,
 		"url":      task.GetResultURL(),
 	}
+	if task.Status == model.TaskStatusFailure {
+		out["error"] = map[string]any{
+			"code":    "service_unavailable",
+			"message": "Service temporarily unavailable",
+		}
+		out["url"] = ""
+	}
 	respBody, _ := common.Marshal(dto.TaskResponse[any]{
 		Code: "success",
 		Data: out,
@@ -548,6 +575,32 @@ func mapTaskStatusToSimple(status model.TaskStatus) string {
 }
 
 func TaskModel2Dto(task *model.Task) *dto.TaskDto {
+	return taskModel2Dto(task, false)
+}
+
+func TaskModel2AdminDto(task *model.Task) *dto.TaskDto {
+	return taskModel2Dto(task, true)
+}
+
+func taskModel2Dto(task *model.Task, includeAdminInfo bool) *dto.TaskDto {
+	failReason := task.FailReason
+	resultURL := task.GetResultURL()
+	data := task.Data
+	channelID := 0
+	var properties any = model.Properties{
+		Input:           task.Properties.Input,
+		OriginModelName: task.Properties.OriginModelName,
+	}
+	if includeAdminInfo {
+		channelID = task.ChannelId
+		properties = task.Properties
+	}
+	if task.Status == model.TaskStatusFailure {
+		failReason = "Service temporarily unavailable"
+		resultURL = ""
+		data = nil
+		properties = nil
+	}
 	return &dto.TaskDto{
 		ID:         task.ID,
 		CreatedAt:  task.CreatedAt,
@@ -556,18 +609,18 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		Platform:   string(task.Platform),
 		UserId:     task.UserId,
 		Group:      task.Group,
-		ChannelId:  task.ChannelId,
+		ChannelId:  channelID,
 		Quota:      task.Quota,
 		Action:     task.Action,
 		Status:     string(task.Status),
-		FailReason: task.FailReason,
-		ResultURL:  task.GetResultURL(),
+		FailReason: failReason,
+		ResultURL:  resultURL,
 		SubmitTime: task.SubmitTime,
 		StartTime:  task.StartTime,
 		FinishTime: task.FinishTime,
 		Progress:   task.Progress,
-		Properties: task.Properties,
+		Properties: properties,
 		Username:   task.Username,
-		Data:       task.Data,
+		Data:       data,
 	}
 }

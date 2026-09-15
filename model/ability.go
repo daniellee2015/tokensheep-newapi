@@ -15,6 +15,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+var errChannelPrioritiesExhausted = errors.New("channel priorities exhausted")
+
 type Ability struct {
 	Group     string  `json:"group" gorm:"type:varchar(64);primaryKey;autoIncrement:false"`
 	Model     string  `json:"model" gorm:"type:varchar(255);primaryKey;autoIncrement:false"`
@@ -79,15 +81,23 @@ func getPriority(group string, model string, retry int) (int, error) {
 		return 0, errors.New("数据库一致性被破坏")
 	}
 
-	// 确定要使用的优先级
-	var priorityToUse int
 	if retry >= len(priorities) {
-		// 如果重试次数大于优先级数，则使用最小的优先级
-		priorityToUse = priorities[len(priorities)-1]
-	} else {
-		priorityToUse = priorities[retry]
+		var lowestPriorityCount int64
+		if errCount := DB.Model(&Ability{}).
+			Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, priorities[len(priorities)-1]).
+			Count(&lowestPriorityCount).Error; errCount != nil {
+			return 0, errCount
+		}
+		// A single channel with no fallback must remain retryable: the upstream
+		// CPA channel owns its account pool and uses this retry to rotate keys.
+		// A lone channel at the lowest priority of a multi-priority route is a
+		// real fallback, so do not send the same fallback request repeatedly.
+		if lowestPriorityCount <= 1 && len(priorities) > 1 {
+			return 0, errChannelPrioritiesExhausted
+		}
+		return priorities[len(priorities)-1], nil
 	}
-	return priorityToUse, nil
+	return priorities[retry], nil
 }
 
 func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
@@ -105,12 +115,15 @@ func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 	return channelQuery, nil
 }
 
-func GetChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+func GetChannel(group string, model string, retry int, requestPath string, excludedChannelIDs ...int) (*Channel, error) {
 	var abilities []Ability
 
 	var err error = nil
 	channelQuery, err := getChannelQuery(group, model, retry)
 	if err != nil {
+		if errors.Is(err, errChannelPrioritiesExhausted) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	if common.UsingMainDatabase(common.DatabaseTypeSQLite) || common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
@@ -122,6 +135,22 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 		return nil, err
 	}
 	abilities = filterAbilitiesByRequestPathAndModel(abilities, requestPath, model)
+	eligibleBeforeExclusion := abilities
+	if len(excludedChannelIDs) > 0 {
+		excluded := make(map[int]struct{}, len(excludedChannelIDs))
+		for _, channelID := range excludedChannelIDs {
+			excluded[channelID] = struct{}{}
+		}
+		abilities = lo.Filter(abilities, func(ability Ability, _ int) bool {
+			_, alreadyTried := excluded[ability.ChannelId]
+			return !alreadyTried
+		})
+		// A model backed by exactly one channel is commonly a CPA account pool.
+		// Keep retrying that channel so CPA can rotate credentials internally.
+		if len(abilities) == 0 && len(eligibleBeforeExclusion) == 1 {
+			abilities = eligibleBeforeExclusion
+		}
+	}
 	channel := Channel{}
 	if len(abilities) > 0 {
 		// Randomly choose one

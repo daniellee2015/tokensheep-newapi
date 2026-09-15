@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -298,6 +299,15 @@ func Max(a int, b int) int {
 
 func MessageWithRequestId(message string, id string) string {
 	return fmt.Sprintf("%s (request id: %s)", message, id)
+}
+
+var nestedRequestIDPattern = regexp.MustCompile(`(?i)\s*\(\s*request[- ]?id\s*:\s*[^)]*\)`)
+
+// StripNestedRequestIDs removes request-id annotations copied from an
+// upstream gateway. The outer gateway adds its own correlation id exactly
+// once when it renders the final response.
+func StripNestedRequestIDs(message string) string {
+	return strings.Join(strings.Fields(nestedRequestIDPattern.ReplaceAllString(message, "")), " ")
 }
 
 func RandomSleep() {

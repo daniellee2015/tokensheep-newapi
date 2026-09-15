@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	taskdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -92,6 +94,75 @@ func TestRelayErrorHandlerTruncatesInvalidJSONBodyInLog(t *testing.T) {
 	require.Contains(t, logBuffer.String(), "[truncated")
 	require.Contains(t, logBuffer.String(), fmt.Sprintf("original_length=%d", len(body)))
 	require.NotContains(t, logBuffer.String(), strings.Repeat("b", common.LocalLogContentLimit+1))
+}
+
+func TestPublicUpstreamErrorUsesOnlyGatewayControlledFields(t *testing.T) {
+	testCases := []struct {
+		name           string
+		upstreamStatus int
+		publicStatus   int
+		publicMessage  string
+		publicCode     types.ErrorCode
+	}{
+		{name: "bad request", upstreamStatus: http.StatusBadRequest, publicStatus: http.StatusBadRequest, publicMessage: "Invalid request", publicCode: types.ErrorCodeInvalidRequest},
+		{name: "upstream authentication", upstreamStatus: http.StatusUnauthorized, publicStatus: http.StatusServiceUnavailable, publicMessage: "Service temporarily unavailable", publicCode: types.ErrorCodeServiceUnavailable},
+		{name: "rate limit", upstreamStatus: http.StatusTooManyRequests, publicStatus: http.StatusTooManyRequests, publicMessage: "Rate limit exceeded. Retry later.", publicCode: types.ErrorCodeRateLimitExceeded},
+		{name: "bad gateway", upstreamStatus: http.StatusBadGateway, publicStatus: http.StatusServiceUnavailable, publicMessage: "Service temporarily unavailable", publicCode: types.ErrorCodeServiceUnavailable},
+		{name: "invalid status", upstreamStatus: 0, publicStatus: http.StatusServiceUnavailable, publicMessage: "Service temporarily unavailable", publicCode: types.ErrorCodeServiceUnavailable},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			upstream := types.WithOpenAIError(types.OpenAIError{
+				Message:  "All available accounts exhausted at https://internal.example (request id: upstream-id)",
+				Type:     "provider_private_type",
+				Code:     "provider_private_code",
+				Metadata: []byte(`{"provider":"private"}`),
+			}, tc.upstreamStatus)
+
+			public := PublicUpstreamError(upstream)
+
+			require.Equal(t, tc.publicStatus, public.StatusCode)
+			require.Equal(t, tc.publicMessage, public.Error())
+			require.Equal(t, tc.publicCode, public.GetErrorCode())
+			require.Empty(t, public.Metadata)
+			require.Equal(t, tc.publicMessage, public.ToOpenAIError().Message)
+			require.Equal(t, string(tc.publicCode), public.ToOpenAIError().Type)
+			require.Equal(t, tc.publicMessage, public.ToClaudeError().Message)
+			require.NotContains(t, public.ToOpenAIError().Message, "accounts")
+			require.NotContains(t, public.ToOpenAIError().Message, "upstream-id")
+		})
+	}
+}
+
+func TestPublicUpstreamTaskErrorDropsOriginalError(t *testing.T) {
+	upstream := &taskdto.TaskError{
+		Code:       "provider_pool_exhausted",
+		Message:    "No available accounts on node-49 (request id: upstream-id)",
+		StatusCode: http.StatusBadGateway,
+		Error:      errors.New("raw provider error"),
+	}
+
+	public := PublicUpstreamTaskError(upstream)
+
+	require.Equal(t, http.StatusServiceUnavailable, public.StatusCode)
+	require.Equal(t, "service_unavailable", public.Code)
+	require.Equal(t, "Service temporarily unavailable", public.Message)
+	require.EqualError(t, public.Error, "Service temporarily unavailable")
+}
+
+func TestEmbeddedUpstreamErrorRecognizesHTTP200ErrorEnvelopes(t *testing.T) {
+	for _, body := range []string{
+		`{"error":{"message":"private upstream failure","type":"private_type","code":"private_code"}}`,
+		`{"message":"private gateway failure"}`,
+	} {
+		embeddedErr := EmbeddedUpstreamError([]byte(body))
+		require.NotNil(t, embeddedErr)
+		require.Equal(t, http.StatusInternalServerError, embeddedErr.StatusCode)
+		require.Contains(t, embeddedErr.Error(), "private")
+	}
+
+	require.Nil(t, EmbeddedUpstreamError([]byte(`{"text":"successful transcription"}`)))
 }
 
 func TestRelayErrorHandlerKeepsStructuredErrorMessage(t *testing.T) {
