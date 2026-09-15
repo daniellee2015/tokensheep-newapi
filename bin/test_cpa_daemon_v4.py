@@ -55,9 +55,9 @@ class QuotaDecisionTests(unittest.TestCase):
         self.assertFalse(daemon.looks_dead("httpNone:"))
         self.assertTrue(daemon.looks_dead("auth-refresh-failed"))
 
-    def test_quota_target_defaults_to_caddy_route(self):
+    def test_quota_target_defaults_to_stable_blue_process(self):
         with patch.dict(daemon.os.environ, {}, clear=True):
-            self.assertEqual(daemon._resolve_cpa_url(), "http://caddy")
+            self.assertEqual(daemon._resolve_cpa_url(), "http://cli-proxy-api-blue:8317")
 
     def test_explicit_quota_target_wins(self):
         with patch.dict(daemon.os.environ, {"CPA_URL": "http://blue:8317"}, clear=True):

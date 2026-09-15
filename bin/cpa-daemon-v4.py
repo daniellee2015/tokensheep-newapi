@@ -73,7 +73,7 @@
 
 环境变量:
     CPA_MGMT_KEY (必填)
-    CPA_URL                default http://caddy (the same blue/green route as traffic)
+    CPA_URL                default http://cli-proxy-api-blue:8317
     CPA_CADDY_CONTAINER    default caddy
     CPA_ANTIGRAVITY_UA     default antigravity/hub/2.9.1 darwin/arm64
     CPA_MAX_ACTIVE         default 40
@@ -98,15 +98,17 @@ import time
 from datetime import datetime, timezone
 
 def _resolve_cpa_url():
-    """Use the same reverse-proxy route as production traffic.
+    """Use one stable CPA process for both auth indexes and quota calls.
 
-    CPA_URL wins if set explicitly. Querying Caddy avoids a stale ACTIVE_COLOR
-    file sending quota reads to the standby blue/green container.
+    CPA_URL wins if set explicitly. The daemon lists auth files and then calls
+    the quota endpoint by auth_index, so both operations must hit the same
+    process. A transient blue outage is harmless because unreadable quota now
+    preserves account state until the next cycle.
     """
     explicit = os.getenv("CPA_URL", "").strip()
     if explicit:
         return explicit
-    return "http://caddy"
+    return "http://cli-proxy-api-blue:8317"
 
 
 MGMT_KEY = os.getenv("CPA_MGMT_KEY", "")
