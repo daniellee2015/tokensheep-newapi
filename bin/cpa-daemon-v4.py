@@ -30,7 +30,7 @@
     gemini_weekly <= WEEKLY_EXHAUSTED_THRESHOLD  → 必须 disable
     gemini_weekly >= WEEKLY_HEALTHY_THRESHOLD    → 可以 enable
     中间区间                                       → 保持现状 (不动)
-    quota 查询失败 (auth 失效/403/网络)            → 若当前 enabled 则 disable
+    quota 查询失败或数据无效                      → 保持当前状态
 
 为什么其余三个桶只记录不判开关:
   - gemini-5h: 时间尺度不匹配。daemon 30min 一轮, 而 5h 桶几小时就 reset,
@@ -47,7 +47,7 @@
 死号隔离 (v4.1 新增):
     refresh token 失效的号, CPA 连 access token 都换不出来, api-call 返回
     {"error":"auth token refresh failed"} 且 wrapper 里没有 status_code 字段,
-    daemon 侧表现为 quota_err == "httpNone:"。这种号永远读不到 quota, 会被
+    daemon 侧仅在明确收到该错误时标记 auth-refresh-failed。这种号读不到 quota, 会被
     每轮白查一次。连续 DEAD_STREAK_THRESHOLD 轮判定为死号后, 把 auth 文件移到
     DEAD_DIR (默认 auths/dead/), 不删除 —— 保留原文件便于事后重新 OAuth 授权。
     隔离状态记在 DEAD_STATE_FILE, 重启不丢。单轮隔离数受 MAX_QUARANTINE_CYCLE
@@ -73,12 +73,14 @@
 
 环境变量:
     CPA_MGMT_KEY (必填)
-    CPA_URL                default http://cli-proxy-api-blue:8317
+    CPA_URL                default http://caddy (the same blue/green route as traffic)
     CPA_CADDY_CONTAINER    default caddy
     CPA_ANTIGRAVITY_UA     default antigravity/hub/2.9.1 darwin/arm64
     CPA_MAX_ACTIVE         default 40
     CPA_MAX_ENABLE_CYCLE   default 5
     CPA_CYCLE_SEC          default 1800
+    CPA_WEEKLY_EXHAUSTED   default 0.02
+    CPA_WEEKLY_HEALTHY     default 0.10
     CPA_AUTH_DIR           default /data/cli-proxy-api/auths
     CPA_DEAD_STREAK        default 3    连续几轮 refresh-failed 才隔离
     CPA_MAX_QUARANTINE     default 5    单轮最多隔离几个
@@ -88,6 +90,7 @@
 import argparse
 import json
 import logging
+import math
 import os
 import subprocess
 import sys
@@ -95,28 +98,15 @@ import time
 from datetime import datetime, timezone
 
 def _resolve_cpa_url():
-    """Point at whichever blue/green container is currently active.
+    """Use the same reverse-proxy route as production traffic.
 
-    CPA_URL wins if set explicitly. Otherwise read ACTIVE_COLOR from the
-    deploy .env so a blue/green switch does not leave the daemon talking to
-    a stopped container (bin/bluegreen-deploy.sh flips that file last).
+    CPA_URL wins if set explicitly. Querying Caddy avoids a stale ACTIVE_COLOR
+    file sending quota reads to the standby blue/green container.
     """
     explicit = os.getenv("CPA_URL", "").strip()
     if explicit:
         return explicit
-    env_path = os.getenv("CPA_ENV_FILE", "/data/cli-proxy-api/.env")
-    color = "green"
-    try:
-        with open(env_path, encoding="utf-8") as fh:
-            for line in fh:
-                if line.startswith("ACTIVE_COLOR="):
-                    parsed = line.split("=", 1)[1].strip()
-                    if parsed in ("blue", "green"):
-                        color = parsed
-                    break
-    except OSError:
-        pass
-    return f"http://cli-proxy-api-{color}:8317"
+    return "http://caddy"
 
 
 MGMT_KEY = os.getenv("CPA_MGMT_KEY", "")
@@ -130,8 +120,10 @@ MAX_ENABLE_PER_CYCLE = int(os.getenv("CPA_MAX_ENABLE_CYCLE", "5"))
 CYCLE_SEC = int(os.getenv("CPA_CYCLE_SEC", "1800"))
 
 # gemini-weekly remainingFraction 阈值
-WEEKLY_EXHAUSTED = 0.02   # <= 2% 视为耗尽, 必须关
-WEEKLY_HEALTHY = 0.10     # >= 10% 视为健康, 可以开
+WEEKLY_EXHAUSTED = float(os.getenv("CPA_WEEKLY_EXHAUSTED", "0.02"))
+WEEKLY_HEALTHY = float(os.getenv("CPA_WEEKLY_HEALTHY", "0.10"))
+if not 0 <= WEEKLY_EXHAUSTED < WEEKLY_HEALTHY <= 1:
+    raise ValueError("expected 0 <= CPA_WEEKLY_EXHAUSTED < CPA_WEEKLY_HEALTHY <= 1")
 
 # 决策桶: 只有这个桶参与开关判定, 其余桶仅记录 (理由见模块 docstring)
 DECISION_BUCKET = "gemini-weekly"
@@ -146,8 +138,8 @@ DEAD_STREAK_THRESHOLD = int(os.getenv("CPA_DEAD_STREAK", "3"))
 MAX_QUARANTINE_PER_CYCLE = int(os.getenv("CPA_MAX_QUARANTINE", "5"))
 QUARANTINE_ENABLED = os.getenv("CPA_QUARANTINE", "1") not in ("0", "false", "False")
 # api-call 在 refresh token 失效时返回的 quota_err 形状: wrapper 里没有
-# status_code 字段, fetch_quota 于是拼出 "httpNone:"。
-DEAD_QUOTA_ERR_PREFIX = "httpNone:"
+# status_code 字段, fetch_quota 会保留这个明确的刷新失败标记。
+DEAD_QUOTA_ERR_PREFIX = "auth-refresh-failed"
 
 LOG = logging.getLogger("cpa-daemon-v4")
 
@@ -212,6 +204,8 @@ def fetch_quota(auth_index):
     if not wrap:
         return None, "api-call-no-response"
     code = wrap.get("status_code")
+    if code is None and wrap.get("error") == "auth token refresh failed":
+        return None, DEAD_QUOTA_ERR_PREFIX
     inner = _parse_json_loose(wrap.get("body", ""))
     if code != 200:
         msg = ""
@@ -277,15 +271,8 @@ def reset_in_human(reset_iso):
 # ---------- 死号隔离 ----------
 
 def looks_dead(quota_err):
-    """True when quota_err means the refresh token itself is unusable.
-
-    Distinguishes a dead credential from a transient failure: a real HTTP
-    status (http401:, http403:, http500:) means CPA did mint a token and the
-    upstream answered, so the credential still works. "httpNone:" means the
-    api-call wrapper carried no status_code at all, which is what CPA returns
-    when it could not refresh the token in the first place.
-    """
-    return bool(quota_err) and str(quota_err).startswith(DEAD_QUOTA_ERR_PREFIX)
+    """Only an explicit refresh failure counts toward credential quarantine."""
+    return quota_err == DEAD_QUOTA_ERR_PREFIX
 
 
 def load_dead_streaks():
@@ -367,7 +354,8 @@ def apply_quarantine(rows, apply_changes):
         del streaks[stale]
 
     if not dead_now:
-        save_dead_streaks(streaks)
+        if apply_changes:
+            save_dead_streaks(streaks)
         return 0
 
     LOG.warning("dead auths confirmed (>=%d consecutive refresh failures): %d",
@@ -378,7 +366,8 @@ def apply_quarantine(rows, apply_changes):
     if not QUARANTINE_ENABLED:
         LOG.info("quarantine disabled (CPA_QUARANTINE=0): leaving %d dead auths in place",
                  len(dead_now))
-        save_dead_streaks(streaks)
+        if apply_changes:
+            save_dead_streaks(streaks)
         return 0
     if not apply_changes:
         LOG.info("DRY-RUN: would quarantine %d dead auths into %s",
@@ -410,18 +399,19 @@ def decide(auth, buckets, quota_err):
     disabled = bool(auth.get("disabled"))
 
     if quota_err:
-        # 查不到 quota: 已启用的关掉 (可能 auth 失效), 已关闭的保持关闭
-        if not disabled:
-            return "disable", f"quota-unreadable({quota_err})"
+        # Quota API is itself rate-limited and can fail transiently.  Never
+        # turn an enabled account off merely because a read failed; doing so
+        # caused accounts with healthy quota to disappear from the pool.
+        # Refresh-token failures are handled by the dead-auth quarantine path.
         return "keep", f"quota-unreadable({quota_err})"
 
     # Only DECISION_BUCKET gates enable/disable. The other buckets are
     # reported but deliberately not consulted — see module docstring.
     gw = buckets.get(DECISION_BUCKET, {}).get("frac")
     if gw is None:
-        if not disabled:
-            return "disable", f"no-{DECISION_BUCKET}-bucket"
         return "keep", f"no-{DECISION_BUCKET}-bucket"
+    if isinstance(gw, bool) or not isinstance(gw, (int, float)) or not math.isfinite(gw) or not 0 <= gw <= 1:
+        return "keep", f"invalid-{DECISION_BUCKET}-fraction"
 
     if gw <= WEEKLY_EXHAUSTED:
         if not disabled:
@@ -438,6 +428,10 @@ def decide(auth, buckets, quota_err):
 
 
 def run_cycle(apply_changes):
+    global CPA_URL
+    CPA_URL = _resolve_cpa_url()
+    LOG.info("quota target=%s endpoint=%s thresholds=%.3f/%.3f", CPA_URL, QUOTA_URL,
+             WEEKLY_EXHAUSTED, WEEKLY_HEALTHY)
     auths = list_antigravity_auths()
     active_now = sum(1 for a in auths if not a.get("disabled"))
     LOG.info("antigravity auths=%d active=%d (max_active=%d)", len(auths), active_now, MAX_ACTIVE)
@@ -462,7 +456,9 @@ def run_cycle(apply_changes):
     for email, a, buckets, err, action, reason in rows:
         def pct(bucket_id):
             frac = buckets.get(bucket_id, {}).get("frac")
-            return f"{frac*100:.1f}%" if frac is not None else "-"
+            if isinstance(frac, bool) or not isinstance(frac, (int, float)) or not math.isfinite(frac) or not 0 <= frac <= 1:
+                return "-"
+            return f"{frac*100:.1f}%"
         LOG.info("%-42s %-8s %-8s %-8s %-8s %-8s %-8s %s",
                  email,
                  pct("gemini-weekly"),
@@ -493,14 +489,23 @@ def run_cycle(apply_changes):
         return
 
     # 先 disable (止血优先, 不限量)
+    disabled_count = 0
     for email, a, reason in to_disable:
         ok = set_disabled(a.get("name", ""), True)
+        if ok:
+            disabled_count += 1
         LOG.warning("DISABLE %s (%s) -> %s", email, reason, "ok" if ok else "FAILED")
 
     # 再 enable, 受 MAX_ENABLE_PER_CYCLE 和 MAX_ACTIVE 限制
-    projected_active = active_now - len(to_disable)
+    # A failed PATCH must not be counted as a freed slot. Refresh the snapshot
+    # before enabling, since operators may also change accounts during the scan.
+    current_auths = list_antigravity_auths()
+    projected_active = sum(not a.get("disabled") for a in current_auths)
+    current_disabled = {a.get("name"): bool(a.get("disabled")) for a in current_auths}
     enabled_count = 0
     for email, a, reason in to_enable:
+        if not current_disabled.get(a.get("name"), False):
+            continue
         if enabled_count >= MAX_ENABLE_PER_CYCLE:
             LOG.info("skip enable %s: per-cycle cap %d reached", email, MAX_ENABLE_PER_CYCLE)
             break
@@ -513,7 +518,7 @@ def run_cycle(apply_changes):
         LOG.info("ENABLE %s (%s) -> %s", email, reason, "ok" if ok else "FAILED")
 
     LOG.info("applied: disabled=%d enabled=%d quarantined=%d",
-             len(to_disable), enabled_count, quarantined)
+             disabled_count, enabled_count, quarantined)
 
 
 def main():
@@ -524,7 +529,7 @@ def main():
     args = p.parse_args()
 
     logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s",
-                        level=logging.INFO, datefmt="%H:%M:%S")
+                        level=logging.INFO, datefmt="%Y-%m-%dT%H:%M:%S%z")
 
     if not MGMT_KEY:
         LOG.error("CPA_MGMT_KEY not set")
