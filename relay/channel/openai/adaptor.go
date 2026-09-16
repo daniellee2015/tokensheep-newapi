@@ -11,6 +11,7 @@ import (
 	"net/textproto"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -32,6 +33,8 @@ import (
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
 	"github.com/gin-gonic/gin"
 )
@@ -602,6 +605,12 @@ func detectImageMimeType(filename string) string {
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
+	normalizedInput, err := restoreResponsesFunctionCallNamespaces(request.Input, request.Tools)
+	if err != nil {
+		return nil, err
+	}
+	request.Input = normalizedInput
+
 	//  转换模型推理力度后缀
 	effort, originModel := reasoning.ParseOpenAIReasoningEffortFromModelSuffix(request.Model)
 	if effort != "" {
@@ -618,6 +627,71 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 		info.SetReasoningEffort(request.Reasoning.Effort)
 	}
 	return request, nil
+}
+
+// restoreResponsesFunctionCallNamespaces repairs function-call history emitted
+// by namespaced Responses tools. Some clients round-trip the call without its
+// namespace even though the matching declaration still carries it. Only a
+// unique declaration is safe to restore; ambiguous or undeclared calls remain
+// untouched so routing never changes a tool's identity by guessing.
+func restoreResponsesFunctionCallNamespaces(input json.RawMessage, tools json.RawMessage) (json.RawMessage, error) {
+	if len(input) == 0 || len(tools) == 0 {
+		return input, nil
+	}
+	if !gjson.ValidBytes(input) {
+		return nil, errors.New("invalid Responses input JSON")
+	}
+	if !gjson.ValidBytes(tools) {
+		return nil, errors.New("invalid Responses tools JSON")
+	}
+
+	toolList := gjson.ParseBytes(tools)
+	inputList := gjson.ParseBytes(input)
+	if !toolList.IsArray() || !inputList.IsArray() {
+		return input, nil
+	}
+
+	namespaceByName := make(map[string]string)
+	ambiguousNames := make(map[string]struct{})
+	for _, tool := range toolList.Array() {
+		if tool.Get("type").String() != "function" {
+			continue
+		}
+		name := strings.TrimSpace(tool.Get("name").String())
+		namespace := strings.TrimSpace(tool.Get("namespace").String())
+		if name == "" || namespace == "" {
+			continue
+		}
+		if existing, ok := namespaceByName[name]; ok && existing != namespace {
+			delete(namespaceByName, name)
+			ambiguousNames[name] = struct{}{}
+			continue
+		}
+		if _, ambiguous := ambiguousNames[name]; !ambiguous {
+			namespaceByName[name] = namespace
+		}
+	}
+
+	normalized := []byte(input)
+	for index, item := range inputList.Array() {
+		if item.Get("type").String() != "function_call" {
+			continue
+		}
+		if namespace := item.Get("namespace"); namespace.Exists() && strings.TrimSpace(namespace.String()) != "" {
+			continue
+		}
+		name := strings.TrimSpace(item.Get("name").String())
+		namespace, ok := namespaceByName[name]
+		if !ok {
+			continue
+		}
+		var err error
+		normalized, err = sjson.SetBytes(normalized, strconv.Itoa(index)+".namespace", namespace)
+		if err != nil {
+			return nil, fmt.Errorf("restore namespace for Responses function_call %q: %w", name, err)
+		}
+	}
+	return json.RawMessage(normalized), nil
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
