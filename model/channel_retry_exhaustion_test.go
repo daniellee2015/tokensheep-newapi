@@ -125,7 +125,7 @@ func TestChannelSelectionKeepsSinglePrimaryRetryableForUpstreamPool(t *testing.T
 	priority := int64(0)
 	channel := &Channel{
 		Id:       channelID,
-		Type:     constant.ChannelTypeOpenAI,
+		Type:     constant.ChannelTypeGemini,
 		Name:     "single-primary",
 		Status:   common.ChannelStatusEnabled,
 		Group:    "default",
@@ -169,6 +169,50 @@ func TestChannelSelectionKeepsSinglePrimaryRetryableForUpstreamPool(t *testing.T
 			require.NoError(t, err)
 			require.NotNil(t, excluded)
 			require.Equal(t, channelID, excluded.Id)
+		})
+	}
+}
+
+func TestChannelSelectionDoesNotRepeatSingleNonPoolChannel(t *testing.T) {
+	const channelID = 980041
+	modelName := fmt.Sprintf("channel-single-non-pool-%d", channelID)
+	priority := int64(0)
+	channel := &Channel{
+		Id:       channelID,
+		Type:     constant.ChannelTypeOpenAI,
+		Name:     "single-non-pool",
+		Status:   common.ChannelStatusEnabled,
+		Group:    "default",
+		Models:   modelName,
+		Priority: &priority,
+	}
+	require.NoError(t, DB.Create(channel).Error)
+	require.NoError(t, DB.Create(&Ability{
+		Group: "default", Model: modelName, ChannelId: channelID,
+		Enabled: true, Priority: &priority,
+	}).Error)
+
+	originalMemoryCacheEnabled := common.MemoryCacheEnabled
+	t.Cleanup(func() {
+		require.NoError(t, DB.Where("model = ?", modelName).Delete(&Ability{}).Error)
+		require.NoError(t, DB.Where("id = ?", channelID).Delete(&Channel{}).Error)
+		common.MemoryCacheEnabled = originalMemoryCacheEnabled
+		InitChannelCache()
+	})
+
+	for _, memoryCacheEnabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("memory-cache-%t", memoryCacheEnabled), func(t *testing.T) {
+			common.MemoryCacheEnabled = memoryCacheEnabled
+			InitChannelCache()
+
+			first, err := GetRandomSatisfiedChannel("default", modelName, 0, "")
+			require.NoError(t, err)
+			require.NotNil(t, first)
+			require.Equal(t, channelID, first.Id)
+
+			retry, err := GetRandomSatisfiedChannel("default", modelName, 1, "", channelID)
+			require.NoError(t, err)
+			require.Nil(t, retry)
 		})
 	}
 }

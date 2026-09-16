@@ -145,10 +145,14 @@ func GetChannel(group string, model string, retry int, requestPath string, exclu
 			_, alreadyTried := excluded[ability.ChannelId]
 			return !alreadyTried
 		})
-		// A model backed by exactly one channel is commonly a CPA account pool.
-		// Keep retrying that channel so CPA can rotate credentials internally.
+		// A sole Gemini channel may be a CPA account pool. Keep retrying that
+		// channel so CPA can rotate credentials internally. Other providers are
+		// single upstreams; retrying them only repeats the same failure.
 		if len(abilities) == 0 && len(eligibleBeforeExclusion) == 1 {
-			abilities = eligibleBeforeExclusion
+			var selectedChannel Channel
+			if err := DB.Select("id, type").First(&selectedChannel, "id = ?", eligibleBeforeExclusion[0].ChannelId).Error; err == nil && selectedChannel.Type == constant.ChannelTypeGemini {
+				abilities = eligibleBeforeExclusion
+			}
 		}
 	}
 	channel := Channel{}

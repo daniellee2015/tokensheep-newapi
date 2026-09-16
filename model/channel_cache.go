@@ -190,11 +190,13 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 	}
 
 	if len(targetChannels) == 0 {
-		// A sole channel may represent an upstream account pool (for example
-		// CPA). Let it be retried so the upstream can rotate credentials.
+		// A sole Gemini channel may represent a CPA account pool. Other
+		// providers are single upstreams; retrying them repeats the same error.
 		if len(channels) == 1 {
 			if channel, ok := channelsIDM[channels[0]]; ok {
-				return channel, nil
+				if channel.Type == constant.ChannelTypeGemini {
+					return channel, nil
+				}
 			}
 		}
 		if len(excluded) > 0 {
