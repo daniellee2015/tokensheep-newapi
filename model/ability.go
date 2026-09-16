@@ -119,12 +119,19 @@ func GetChannel(group string, model string, retry int, requestPath string, exclu
 	var abilities []Ability
 
 	var err error = nil
-	channelQuery, err := getChannelQuery(group, model, retry)
-	if err != nil {
-		if errors.Is(err, errChannelPrioritiesExhausted) {
-			return nil, nil
+	var channelQuery *gorm.DB
+	if len(excludedChannelIDs) > 0 {
+		// Retry selection must exhaust every untried channel at a higher
+		// priority before descending to the next fallback priority.
+		channelQuery = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
+	} else {
+		channelQuery, err = getChannelQuery(group, model, retry)
+		if err != nil {
+			if errors.Is(err, errChannelPrioritiesExhausted) {
+				return nil, nil
+			}
+			return nil, err
 		}
-		return nil, err
 	}
 	if common.UsingMainDatabase(common.DatabaseTypeSQLite) || common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
 		err = channelQuery.Order("weight DESC").Find(&abilities).Error
@@ -153,6 +160,20 @@ func GetChannel(group string, model string, retry int, requestPath string, exclu
 			if err := DB.Select("id, type").First(&selectedChannel, "id = ?", eligibleBeforeExclusion[0].ChannelId).Error; err == nil && selectedChannel.Type == constant.ChannelTypeGemini {
 				abilities = eligibleBeforeExclusion
 			}
+		}
+		if len(abilities) > 0 {
+			highestPriority := int64(0)
+			hasPriority := false
+			for _, ability := range abilities {
+				priority := lo.FromPtrOr(ability.Priority, int64(0))
+				if !hasPriority || priority > highestPriority {
+					highestPriority = priority
+					hasPriority = true
+				}
+			}
+			abilities = lo.Filter(abilities, func(ability Ability, _ int) bool {
+				return lo.FromPtrOr(ability.Priority, int64(0)) == highestPriority
+			})
 		}
 	}
 	channel := Channel{}
