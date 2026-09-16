@@ -653,22 +653,32 @@ func restoreResponsesFunctionCallNamespaces(input json.RawMessage, tools json.Ra
 
 	namespaceByName := make(map[string]string)
 	ambiguousNames := make(map[string]struct{})
-	for _, tool := range toolList.Array() {
-		if tool.Get("type").String() != "function" {
-			continue
-		}
-		name := strings.TrimSpace(tool.Get("name").String())
-		namespace := strings.TrimSpace(tool.Get("namespace").String())
+	addToolNamespace := func(name string, namespace string) {
+		name = strings.TrimSpace(name)
+		namespace = strings.TrimSpace(namespace)
 		if name == "" || namespace == "" {
-			continue
+			return
 		}
 		if existing, ok := namespaceByName[name]; ok && existing != namespace {
 			delete(namespaceByName, name)
 			ambiguousNames[name] = struct{}{}
-			continue
+			return
 		}
 		if _, ambiguous := ambiguousNames[name]; !ambiguous {
 			namespaceByName[name] = namespace
+		}
+	}
+	for _, tool := range toolList.Array() {
+		switch tool.Get("type").String() {
+		case "function":
+			addToolNamespace(tool.Get("name").String(), tool.Get("namespace").String())
+		case "namespace":
+			namespace := tool.Get("name").String()
+			for _, nestedTool := range tool.Get("tools").Array() {
+				if nestedTool.Get("type").String() == "function" {
+					addToolNamespace(nestedTool.Get("name").String(), namespace)
+				}
+			}
 		}
 	}
 

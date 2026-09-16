@@ -32,6 +32,30 @@ func TestConvertOpenAIResponsesRequestRestoresUniqueFunctionCallNamespace(t *tes
 	]`, string(got.Input))
 }
 
+func TestConvertOpenAIResponsesRequestRestoresNamespaceContainerFunctionCall(t *testing.T) {
+	request := dto.OpenAIResponsesRequest{
+		Model: "gpt-5.6-sol",
+		Tools: json.RawMessage(`[
+			{"type":"namespace","name":"functions","tools":[
+				{"type":"function","name":"js","description":"Run JavaScript"},
+				{"type":"function","name":"exec","description":"Run a tool"}
+			]}
+		]`),
+		Input: json.RawMessage(`[
+			{"type":"function_call","call_id":"call_1","name":"js","arguments":"{}"},
+			{"type":"function_call_output","call_id":"call_1","output":"ok"}
+		]`),
+	}
+
+	converted, err := (&Adaptor{}).ConvertOpenAIResponsesRequest(nil, nil, request)
+	require.NoError(t, err)
+	got := converted.(dto.OpenAIResponsesRequest)
+	require.JSONEq(t, `[
+		{"type":"function_call","call_id":"call_1","name":"js","namespace":"functions","arguments":"{}"},
+		{"type":"function_call_output","call_id":"call_1","output":"ok"}
+	]`, string(got.Input))
+}
+
 func TestConvertOpenAIResponsesRequestDoesNotGuessAmbiguousNamespace(t *testing.T) {
 	request := dto.OpenAIResponsesRequest{
 		Model: "gpt-6-astra",
@@ -44,6 +68,24 @@ func TestConvertOpenAIResponsesRequestDoesNotGuessAmbiguousNamespace(t *testing.
 			{"type":"function_call","call_id":"call_1","name":"send_message","arguments":"{}"},
 			{"type":"function_call","call_id":"call_2","name":"plain_tool","arguments":"{}"},
 			{"type":"function_call","call_id":"call_3","name":"unknown_tool","arguments":"{}"}
+		]`),
+	}
+
+	converted, err := (&Adaptor{}).ConvertOpenAIResponsesRequest(nil, nil, request)
+	require.NoError(t, err)
+	got := converted.(dto.OpenAIResponsesRequest)
+	require.JSONEq(t, string(request.Input), string(got.Input))
+}
+
+func TestConvertOpenAIResponsesRequestDoesNotGuessAcrossNamespaceContainers(t *testing.T) {
+	request := dto.OpenAIResponsesRequest{
+		Model: "gpt-6-astra",
+		Tools: json.RawMessage(`[
+			{"type":"namespace","name":"functions","tools":[{"type":"function","name":"exec"}]},
+			{"type":"namespace","name":"collaboration","tools":[{"type":"function","name":"exec"}]}
+		]`),
+		Input: json.RawMessage(`[
+			{"type":"function_call","call_id":"call_1","name":"exec","arguments":"{}"}
 		]`),
 	}
 
