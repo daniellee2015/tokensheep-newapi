@@ -5620,7 +5620,10 @@
     "rateLimit.section.userTier.empty": "No user-tier rate limits configured. Click \"Add group\" to get started.",
     "rateLimit.section.channel": "Channel group RPM",
     "rateLimit.section.channel.help": "Second-wall throttle on upstream channel capacity, applied after the per-user tier cap.",
-    "rateLimit.section.channel.empty": "No channel-group rate limits configured. Click \"Add group\" to get started."
+    "rateLimit.section.channel.empty": "No channel-group rate limits configured. Click \"Add group\" to get started.",
+    "Channel concurrency limit": "Giới hạn đồng thời của kênh",
+    "Channel concurrency limit must be between 0 and 10000": "Giới hạn đồng thời của kênh phải nằm trong khoảng từ 0 đến 10000",
+    "Maximum in-flight requests sent through this channel. Use 0 for unlimited.": "Số yêu cầu đang xử lý tối đa được gửi qua kênh này. Đặt 0 để không giới hạn."
   },
   "Upstream Error Masking": "Upstream Error Masking",
   "Error Message Masking": "Error Message Masking",

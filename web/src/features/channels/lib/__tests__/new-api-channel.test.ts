@@ -23,7 +23,13 @@ import {
   CHANNEL_TYPE_OPTIONS,
   MODEL_FETCHABLE_TYPES,
 } from '../../constants'
-import { CHANNEL_FORM_DEFAULT_VALUES, channelFormSchema } from '../channel-form'
+import type { Channel } from '../../types'
+import {
+  CHANNEL_FORM_DEFAULT_VALUES,
+  channelFormSchema,
+  transformChannelToFormDefaults,
+  transformFormDataToUpdatePayload,
+} from '../channel-form'
 import { getChannelTypeConfig } from '../channel-type-config'
 import { getChannelTypeIcon, getKeyPromptForType } from '../channel-utils'
 
@@ -87,5 +93,48 @@ describe('New API channel', () => {
     })
 
     expect(result.success).toBe(true)
+  })
+
+  test('loads and saves the per-channel concurrency limit', () => {
+    const channel = {
+      id: 96,
+      type: CHANNEL_TYPE_NEW_API,
+      name: 'Limited upstream',
+      status: 1,
+      key: '',
+      created_time: 0,
+      test_time: 0,
+      response_time: 0,
+      balance_updated_time: 0,
+      models: 'gpt-5',
+      group: 'default',
+      used_quota: 0,
+      other: '',
+      other_info: '',
+      remark: '',
+      max_input_tokens: 0,
+      settings: JSON.stringify({ concurrency_limit: 50 }),
+      channel_info: {
+        is_multi_key: false,
+        multi_key_size: 0,
+        multi_key_polling_index: 0,
+        multi_key_mode: 'random' as const,
+      },
+    } as Channel
+
+    const values = transformChannelToFormDefaults(channel)
+    expect(values.concurrency_limit).toBe(50)
+
+    const payload = transformFormDataToUpdatePayload(values, channel.id)
+    expect(JSON.parse(payload.settings ?? '{}').concurrency_limit).toBe(50)
+  })
+
+  test('rejects channel concurrency limits outside the supported range', () => {
+    expect(
+      channelFormSchema.safeParse({
+        ...newAPIForm('https://new-api.example'),
+        concurrency_limit: 10001,
+      }).success
+    ).toBe(false)
   })
 })

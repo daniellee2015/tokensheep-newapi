@@ -5620,7 +5620,10 @@
     "rateLimit.section.userTier.empty": "暂未为用户档位配置限流。点击\"添加分组\"。",
     "rateLimit.section.channel": "渠道组 RPM",
     "rateLimit.section.channel.help": "上游渠道承载力的二次拦截（GPT-Pro / aws-q / claude-max / kirobus-api …）。",
-    "rateLimit.section.channel.empty": "暂未为渠道组配置限流。点击\"添加分组\"。"
+    "rateLimit.section.channel.empty": "暂未为渠道组配置限流。点击\"添加分组\"。",
+    "Channel concurrency limit": "渠道并发上限",
+    "Channel concurrency limit must be between 0 and 10000": "渠道并发上限必须在 0 到 10000 之间",
+    "Maximum in-flight requests sent through this channel. Use 0 for unlimited.": "通过此渠道发送的最大在途请求数。设为 0 表示不限制。"
   },
   "Upstream Error Masking": "上游错误脱敏",
   "Error Message Masking": "错误消息脱敏",

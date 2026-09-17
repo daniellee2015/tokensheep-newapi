@@ -5620,7 +5620,10 @@
     "rateLimit.section.userTier.empty": "No user-tier rate limits configured. Click \"Add group\" to get started.",
     "rateLimit.section.channel": "Channel group RPM",
     "rateLimit.section.channel.help": "Second-wall throttle on upstream channel capacity, applied after the per-user tier cap.",
-    "rateLimit.section.channel.empty": "No channel-group rate limits configured. Click \"Add group\" to get started."
+    "rateLimit.section.channel.empty": "No channel-group rate limits configured. Click \"Add group\" to get started.",
+    "Channel concurrency limit": "チャネル同時実行数の上限",
+    "Channel concurrency limit must be between 0 and 10000": "チャネル同時実行数の上限は 0～10000 の範囲で指定してください",
+    "Maximum in-flight requests sent through this channel. Use 0 for unlimited.": "このチャネルから送信できる処理中リクエストの最大数です。無制限にするには 0 を指定します。"
   },
   "Upstream Error Masking": "Upstream Error Masking",
   "Error Message Masking": "Error Message Masking",

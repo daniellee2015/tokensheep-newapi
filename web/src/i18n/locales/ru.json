@@ -5620,7 +5620,10 @@
     "rateLimit.section.userTier.empty": "No user-tier rate limits configured. Click \"Add group\" to get started.",
     "rateLimit.section.channel": "Channel group RPM",
     "rateLimit.section.channel.help": "Second-wall throttle on upstream channel capacity, applied after the per-user tier cap.",
-    "rateLimit.section.channel.empty": "No channel-group rate limits configured. Click \"Add group\" to get started."
+    "rateLimit.section.channel.empty": "No channel-group rate limits configured. Click \"Add group\" to get started.",
+    "Channel concurrency limit": "Лимит параллельных запросов канала",
+    "Channel concurrency limit must be between 0 and 10000": "Лимит параллельных запросов канала должен быть от 0 до 10 000",
+    "Maximum in-flight requests sent through this channel. Use 0 for unlimited.": "Максимальное число выполняющихся запросов через этот канал. Значение 0 снимает ограничение."
   },
   "Upstream Error Masking": "Upstream Error Masking",
   "Error Message Masking": "Error Message Masking",
