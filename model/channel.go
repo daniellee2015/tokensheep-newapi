@@ -996,6 +996,9 @@ func (channel *Channel) ValidateSettings() error {
 			return fmt.Errorf("advanced_custom is required")
 		}
 	}
+	if channelOtherSettings.ConcurrencyLimit < 0 || channelOtherSettings.ConcurrencyLimit > 10000 {
+		return fmt.Errorf("invalid concurrency_limit: %d", channelOtherSettings.ConcurrencyLimit)
+	}
 	if channelOtherSettings.AdvancedCustom != nil {
 		if err := channelOtherSettings.AdvancedCustom.Validate(); err != nil {
 			return err

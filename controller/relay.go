@@ -229,16 +229,42 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
 
-		switch relayFormat {
-		case types.RelayFormatOpenAIRealtime:
-			newAPIError = relay.WssHelper(c, relayInfo)
-		case types.RelayFormatClaude:
-			newAPIError = relay.ClaudeHelper(c, relayInfo)
-		case types.RelayFormatGemini:
-			newAPIError = geminiRelayHandler(c, relayInfo)
-		default:
-			newAPIError = relayHandler(c, relayInfo)
+		channelOtherSettings, _ := common.GetContextKeyType[dto.ChannelOtherSettings](c, constant.ContextKeyChannelOtherSetting)
+		releaseChannel, concurrencyErr := middleware.AcquireChannelConcurrency(
+			c.Request.Context(),
+			channel.Id,
+			channelOtherSettings.ConcurrencyLimit,
+		)
+		if concurrencyErr != nil {
+			rawChannelError := types.NewOpenAIError(
+				fmt.Errorf("channel #%d concurrency limit %d unavailable: %w", channel.Id, channelOtherSettings.ConcurrencyLimit, concurrencyErr),
+				types.ErrorCode("channel_concurrency_limit_exceeded"),
+				http.StatusServiceUnavailable,
+			)
+			lastChannelError = types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey,
+				common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan())
+			lastRawChannelError = rawChannelError
+			newAPIError = service.PublicUpstreamError(rawChannelError)
+			logger.LogWarn(c, rawChannelError.Error())
+			if c.Request.Context().Err() == nil && retryParam.GetRetry() < common.RetryTimes {
+				continue
+			}
+			break
 		}
+
+		func() {
+			defer releaseChannel()
+			switch relayFormat {
+			case types.RelayFormatOpenAIRealtime:
+				newAPIError = relay.WssHelper(c, relayInfo)
+			case types.RelayFormatClaude:
+				newAPIError = relay.ClaudeHelper(c, relayInfo)
+			case types.RelayFormatGemini:
+				newAPIError = geminiRelayHandler(c, relayInfo)
+			default:
+				newAPIError = relayHandler(c, relayInfo)
+			}
+		}()
 
 		if newAPIError == nil {
 			relayInfo.LastError = nil
@@ -634,7 +660,32 @@ func RelayTask(c *gin.Context) {
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
 
-		result, taskErr = relay.RelayTaskSubmit(c, relayInfo)
+		channelOtherSettings, _ := common.GetContextKeyType[dto.ChannelOtherSettings](c, constant.ContextKeyChannelOtherSetting)
+		releaseChannel, concurrencyErr := middleware.AcquireChannelConcurrency(
+			c.Request.Context(),
+			channel.Id,
+			channelOtherSettings.ConcurrencyLimit,
+		)
+		if concurrencyErr != nil {
+			rawChannelError := types.NewOpenAIError(
+				fmt.Errorf("channel #%d concurrency limit %d unavailable: %w", channel.Id, channelOtherSettings.ConcurrencyLimit, concurrencyErr),
+				types.ErrorCode("channel_concurrency_limit_exceeded"),
+				http.StatusServiceUnavailable,
+			)
+			lastChannelError = types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey,
+				common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan())
+			lastRawChannelError = rawChannelError
+			taskErr = service.TaskErrorWrapperLocal(errors.New("Service temporarily unavailable"), "service_unavailable", http.StatusServiceUnavailable)
+			logger.LogWarn(c, rawChannelError.Error())
+			if c.Request.Context().Err() == nil && retryParam.GetRetry() < common.RetryTimes {
+				continue
+			}
+			break
+		}
+		func() {
+			defer releaseChannel()
+			result, taskErr = relay.RelayTaskSubmit(c, relayInfo)
+		}()
 		if taskErr == nil {
 			break
 		}

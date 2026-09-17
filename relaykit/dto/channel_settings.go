@@ -79,6 +79,9 @@ const (
 )
 
 type ChannelOtherSettings struct {
+	// ConcurrencyLimit caps simultaneous in-flight requests sent through this
+	// channel. Zero disables the channel-level limit.
+	ConcurrencyLimit                      int                   `json:"concurrency_limit,omitempty"`
 	AzureResponsesVersion                 string                `json:"azure_responses_version,omitempty"`
 	VertexKeyType                         VertexKeyType         `json:"vertex_key_type,omitempty"` // "json" or "api_key"
 	OpenRouterEnterprise                  *bool                 `json:"openrouter_enterprise,omitempty"`
