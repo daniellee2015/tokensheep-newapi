@@ -35,11 +35,25 @@ class QuotaDecisionTests(unittest.TestCase):
     def test_daemon_disabled_account_rejoins_at_ten_percent(self):
         action, _ = daemon.decide(
             {"disabled": True},
-            {"gemini-weekly": {"frac": 0.10}},
+            {"gemini-weekly": {"frac": 0.10}, "gemini-5h": {"frac": 0.10}},
             None,
             auto_disabled=True,
         )
         self.assertEqual(action, "enable")
+
+    def test_daemon_disabled_account_waits_for_five_hour_bucket(self):
+        blocked_buckets = (
+            {"gemini-weekly": {"frac": 1.0}},
+            {"gemini-weekly": {"frac": 1.0}, "gemini-5h": {"frac": 0.0}},
+            {"gemini-weekly": {"frac": 1.0}, "gemini-5h": {"frac": 0.09}},
+            {"gemini-weekly": {"frac": 1.0}, "gemini-5h": {"frac": "1"}},
+        )
+        for buckets in blocked_buckets:
+            with self.subTest(buckets=buckets):
+                action, _ = daemon.decide(
+                    {"disabled": True}, buckets, None, auto_disabled=True
+                )
+                self.assertEqual(action, "keep")
 
     def test_exhausted_weekly_disables_even_with_five_hour_capacity(self):
         action, _ = daemon.decide(
@@ -129,7 +143,7 @@ class QuotaDecisionTests(unittest.TestCase):
         ), patch.object(
             daemon,
             "extract_buckets",
-            return_value={"gemini-weekly": {"frac": 1.0}},
+            return_value={"gemini-weekly": {"frac": 1.0}, "gemini-5h": {"frac": 1.0}},
         ), patch.object(daemon, "apply_quarantine", return_value=0), patch.object(
             daemon, "load_quota_disabled", return_value={"a.json"}
         ), patch.object(daemon, "save_quota_disabled") as save, patch.object(

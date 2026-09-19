@@ -26,9 +26,10 @@
     —— 反复打空 5h 会把 weekly 抽干, 那之后到 weekly reset 前这个号在该 group
     上就废了。
 
-决策规则 (只用 gemini-weekly 判开关):
+决策规则:
     gemini_weekly <= WEEKLY_EXHAUSTED_THRESHOLD  → 必须 disable
-    gemini_weekly >= WEEKLY_HEALTHY_THRESHOLD    → 仅自动恢复 daemon 自己关闭的账号
+    gemini_weekly >= WEEKLY_HEALTHY_THRESHOLD 且 gemini_5h >= FIVE_HOUR_HEALTHY
+                                                → 仅自动恢复 daemon 自己关闭的账号
     中间区间                                       → 保持现状 (不动)
     quota 查询失败或数据无效                      → 保持当前状态
 
@@ -36,11 +37,13 @@
     disabled。daemon 只会把自己因 weekly 耗尽而关闭的账号写入持久化状态文件,
     并在额度恢复后重新开启它们。
 
-为什么其余三个桶只记录不判开关:
+为什么 gemini-5h 只作为恢复门槛、不主动关号:
   - gemini-5h: 时间尺度不匹配。daemon 30min 一轮, 而 5h 桶几小时就 reset,
-    判完就是滞后数据; 若拿它关号会出现"5h 空→关号→5min 后 5h 恢复→仍要等
-    30min 下一轮才开回来"的白损失。5h 撞墙由 CPA 实时处理: 2026-08-29 修好的
-    429 分类 + 2026-08-30 修好的选号层注册表检查 (CPA 7530ce0c), 撞了立刻跳过。
+    拿它主动关号会出现"5h 空→关号→5min 后 5h 恢复→仍要等 30min 下一轮"
+    的白损失。5h 撞墙由 CPA 实时处理: 2026-08-29 修好的 429 分类 +
+    2026-08-30 修好的选号层注册表检查 (CPA 7530ce0c), 撞了立刻跳过。
+    但 disabled 账号重新进入号池前必须确认 5h 桶也已恢复, 不能只看 weekly。
+为什么 3p 两个桶只记录不判开关:
   - 3p-weekly / 3p-5h: 走 CPA 的流量只有 Gemini (new-api 那条通道
     own-cpa-multi-gemini-mapped-* 的 models 全是 gemini-*), Claude 侧由
     kiro-rs 兜底。拿 3p 桶关号会把 Gemini 还能跑的号误关。
@@ -85,6 +88,7 @@
     CPA_CYCLE_SEC          default 1800
     CPA_WEEKLY_EXHAUSTED   default 0.02
     CPA_WEEKLY_HEALTHY     default 0.10
+    CPA_FIVE_HOUR_HEALTHY  default 0.10
     CPA_AUTO_DISABLED_STATE default /var/lib/cpa-daemon-v4/quota-disabled.json
     CPA_AUTH_DIR           default /data/cli-proxy-api/auths
     CPA_DEAD_STREAK        default 3    连续几轮 refresh-failed 才隔离
@@ -129,11 +133,15 @@ CYCLE_SEC = int(os.getenv("CPA_CYCLE_SEC", "1800"))
 # gemini-weekly remainingFraction 阈值
 WEEKLY_EXHAUSTED = float(os.getenv("CPA_WEEKLY_EXHAUSTED", "0.02"))
 WEEKLY_HEALTHY = float(os.getenv("CPA_WEEKLY_HEALTHY", "0.10"))
+FIVE_HOUR_HEALTHY = float(os.getenv("CPA_FIVE_HOUR_HEALTHY", "0.10"))
 if not 0 <= WEEKLY_EXHAUSTED < WEEKLY_HEALTHY <= 1:
     raise ValueError("expected 0 <= CPA_WEEKLY_EXHAUSTED < CPA_WEEKLY_HEALTHY <= 1")
+if not 0 < FIVE_HOUR_HEALTHY <= 1:
+    raise ValueError("expected 0 < CPA_FIVE_HOUR_HEALTHY <= 1")
 
-# 决策桶: 只有这个桶参与开关判定, 其余桶仅记录 (理由见模块 docstring)
+# Weekly controls automatic shutdown; five-hour also gates automatic recovery.
 DECISION_BUCKET = "gemini-weekly"
+FIVE_HOUR_BUCKET = "gemini-5h"
 # 日志表里展示的桶顺序 (Google 目前返回这四个)
 REPORT_BUCKETS = ("gemini-weekly", "gemini-5h", "3p-weekly", "3p-5h")
 
@@ -442,8 +450,8 @@ def decide(auth, buckets, quota_err, auto_disabled=False):
         # Refresh-token failures are handled by the dead-auth quarantine path.
         return "keep", f"quota-unreadable({quota_err})"
 
-    # Only DECISION_BUCKET gates enable/disable. The other buckets are
-    # reported but deliberately not consulted — see module docstring.
+    # Weekly exhaustion controls shutdown. Five-hour capacity is checked below
+    # before a daemon-owned disabled account can rejoin the pool.
     gw = buckets.get(DECISION_BUCKET, {}).get("frac")
     if gw is None:
         return "keep", f"no-{DECISION_BUCKET}-bucket"
@@ -457,9 +465,24 @@ def decide(auth, buckets, quota_err, auto_disabled=False):
 
     if gw >= WEEKLY_HEALTHY:
         if disabled:
-            if auto_disabled:
-                return "enable", f"{DECISION_BUCKET}={gw*100:.1f}%"
-            return "keep", f"{DECISION_BUCKET}={gw*100:.1f}% (manual off)"
+            if not auto_disabled:
+                return "keep", f"{DECISION_BUCKET}={gw*100:.1f}% (manual off)"
+            five_hour = buckets.get(FIVE_HOUR_BUCKET, {}).get("frac")
+            if five_hour is None:
+                return "keep", f"no-{FIVE_HOUR_BUCKET}-bucket"
+            if (
+                isinstance(five_hour, bool)
+                or not isinstance(five_hour, (int, float))
+                or not math.isfinite(five_hour)
+                or not 0 <= five_hour <= 1
+            ):
+                return "keep", f"invalid-{FIVE_HOUR_BUCKET}-fraction"
+            if five_hour < FIVE_HOUR_HEALTHY:
+                return "keep", f"{FIVE_HOUR_BUCKET}={five_hour*100:.1f}% (not ready)"
+            return "enable", (
+                f"{DECISION_BUCKET}={gw*100:.1f}%, "
+                f"{FIVE_HOUR_BUCKET}={five_hour*100:.1f}%"
+            )
         return "keep", f"{DECISION_BUCKET}={gw*100:.1f}% (healthy)"
 
     # 灰区: 不主动改
@@ -469,8 +492,10 @@ def decide(auth, buckets, quota_err, auto_disabled=False):
 def run_cycle(apply_changes):
     global CPA_URL
     CPA_URL = _resolve_cpa_url()
-    LOG.info("quota target=%s endpoint=%s thresholds=%.3f/%.3f", CPA_URL, QUOTA_URL,
-             WEEKLY_EXHAUSTED, WEEKLY_HEALTHY)
+    LOG.info(
+        "quota target=%s endpoint=%s thresholds=weekly %.3f/%.3f five-hour %.3f",
+        CPA_URL, QUOTA_URL, WEEKLY_EXHAUSTED, WEEKLY_HEALTHY, FIVE_HOUR_HEALTHY,
+    )
     auths = list_antigravity_auths()
     quota_disabled = load_quota_disabled()
     auth_by_name = {a.get("name", ""): a for a in auths if a.get("name")}
@@ -505,7 +530,7 @@ def run_cycle(apply_changes):
     # 但只有 DECISION_BUCKET 参与开关 —— 其余三列纯观测, 用于事后判断
     # "5h 反复打空是否在抽干 weekly" 这类问题。
     LOG.info("%-42s %-8s %-8s %-8s %-8s %-8s %-8s %s",
-             "EMAIL", "GEM-WK*", "RESET-IN", "GEM-5H", "3P-WK", "3P-5H", "ACTION", "REASON")
+             "EMAIL", "GEM-WK*", "RESET-IN", "GEM-5H*", "3P-WK", "3P-5H", "ACTION", "REASON")
     for email, a, buckets, err, action, reason in rows:
         def pct(bucket_id):
             frac = buckets.get(bucket_id, {}).get("frac")
