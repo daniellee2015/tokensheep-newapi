@@ -28,9 +28,13 @@
 
 决策规则 (只用 gemini-weekly 判开关):
     gemini_weekly <= WEEKLY_EXHAUSTED_THRESHOLD  → 必须 disable
-    gemini_weekly >= WEEKLY_HEALTHY_THRESHOLD    → 可以 enable
+    gemini_weekly >= WEEKLY_HEALTHY_THRESHOLD    → 仅自动恢复 daemon 自己关闭的账号
     中间区间                                       → 保持现状 (不动)
     quota 查询失败或数据无效                      → 保持当前状态
+
+    management UI 手动关闭的账号不属于 daemon 管理状态, 无论剩余额度多少都保持
+    disabled。daemon 只会把自己因 weekly 耗尽而关闭的账号写入持久化状态文件,
+    并在额度恢复后重新开启它们。
 
 为什么其余三个桶只记录不判开关:
   - gemini-5h: 时间尺度不匹配。daemon 30min 一轮, 而 5h 桶几小时就 reset,
@@ -81,6 +85,7 @@
     CPA_CYCLE_SEC          default 1800
     CPA_WEEKLY_EXHAUSTED   default 0.02
     CPA_WEEKLY_HEALTHY     default 0.10
+    CPA_AUTO_DISABLED_STATE default /var/lib/cpa-daemon-v4/quota-disabled.json
     CPA_AUTH_DIR           default /data/cli-proxy-api/auths
     CPA_DEAD_STREAK        default 3    连续几轮 refresh-failed 才隔离
     CPA_MAX_QUARANTINE     default 5    单轮最多隔离几个
@@ -131,6 +136,12 @@ if not 0 <= WEEKLY_EXHAUSTED < WEEKLY_HEALTHY <= 1:
 DECISION_BUCKET = "gemini-weekly"
 # 日志表里展示的桶顺序 (Google 目前返回这四个)
 REPORT_BUCKETS = ("gemini-weekly", "gemini-5h", "3p-weekly", "3p-5h")
+
+# Only accounts recorded here may be automatically re-enabled. This keeps a
+# management UI disable operation authoritative across daemon cycles.
+AUTO_DISABLED_STATE_FILE = os.getenv(
+    "CPA_AUTO_DISABLED_STATE", "/var/lib/cpa-daemon-v4/quota-disabled.json"
+)
 
 # 死号隔离
 AUTH_DIR = os.getenv("CPA_AUTH_DIR", "/data/cli-proxy-api/auths")
@@ -230,6 +241,30 @@ def set_disabled(name, disabled):
         "-d", payload,
     ])
     return out.strip().endswith("200")
+
+
+def load_quota_disabled():
+    try:
+        with open(AUTO_DISABLED_STATE_FILE, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return set()
+    if not isinstance(data, list):
+        return set()
+    return {name for name in data if isinstance(name, str) and name}
+
+
+def save_quota_disabled(names):
+    tmp = AUTO_DISABLED_STATE_FILE + ".tmp"
+    try:
+        state_dir = os.path.dirname(AUTO_DISABLED_STATE_FILE)
+        if state_dir:
+            os.makedirs(state_dir, exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(sorted(names), fh, indent=2)
+        os.replace(tmp, AUTO_DISABLED_STATE_FILE)
+    except OSError as exc:
+        LOG.warning("could not persist quota-disabled state: %s", exc)
 
 
 # ---------- quota 解析 ----------
@@ -396,7 +431,7 @@ def apply_quarantine(rows, apply_changes):
 
 # ---------- 决策 ----------
 
-def decide(auth, buckets, quota_err):
+def decide(auth, buckets, quota_err, auto_disabled=False):
     """返回 (action, reason)。action ∈ {'disable', 'enable', 'keep'}"""
     disabled = bool(auth.get("disabled"))
 
@@ -422,7 +457,9 @@ def decide(auth, buckets, quota_err):
 
     if gw >= WEEKLY_HEALTHY:
         if disabled:
-            return "enable", f"{DECISION_BUCKET}={gw*100:.1f}%"
+            if auto_disabled:
+                return "enable", f"{DECISION_BUCKET}={gw*100:.1f}%"
+            return "keep", f"{DECISION_BUCKET}={gw*100:.1f}% (manual off)"
         return "keep", f"{DECISION_BUCKET}={gw*100:.1f}% (healthy)"
 
     # 灰区: 不主动改
@@ -435,6 +472,18 @@ def run_cycle(apply_changes):
     LOG.info("quota target=%s endpoint=%s thresholds=%.3f/%.3f", CPA_URL, QUOTA_URL,
              WEEKLY_EXHAUSTED, WEEKLY_HEALTHY)
     auths = list_antigravity_auths()
+    quota_disabled = load_quota_disabled()
+    auth_by_name = {a.get("name", ""): a for a in auths if a.get("name")}
+    stale_quota_disabled = {
+        name
+        for name in quota_disabled
+        if name not in auth_by_name or not auth_by_name[name].get("disabled")
+    }
+    if stale_quota_disabled:
+        quota_disabled.difference_update(stale_quota_disabled)
+        if apply_changes:
+            save_quota_disabled(quota_disabled)
+        LOG.info("cleared %d stale quota-disabled markers", len(stale_quota_disabled))
     active_now = sum(1 for a in auths if not a.get("disabled"))
     LOG.info("antigravity auths=%d active=%d (max_active=%d)", len(auths), active_now, MAX_ACTIVE)
 
@@ -447,7 +496,9 @@ def run_cycle(apply_changes):
             continue
         quota, err = fetch_quota(idx)
         buckets = extract_buckets(quota) if quota else {}
-        action, reason = decide(a, buckets, err)
+        action, reason = decide(
+            a, buckets, err, auto_disabled=a.get("name", "") in quota_disabled
+        )
         rows.append((email, a, buckets, err, action, reason))
 
     # 打印决策表。四个桶全展示 (gemini-weekly 带 reset 倒计时, 它是决策桶),
@@ -496,6 +547,8 @@ def run_cycle(apply_changes):
         ok = set_disabled(a.get("name", ""), True)
         if ok:
             disabled_count += 1
+            quota_disabled.add(a.get("name", ""))
+            save_quota_disabled(quota_disabled)
         LOG.warning("DISABLE %s (%s) -> %s", email, reason, "ok" if ok else "FAILED")
 
     # 再 enable, 受 MAX_ENABLE_PER_CYCLE 和 MAX_ACTIVE 限制
@@ -517,6 +570,8 @@ def run_cycle(apply_changes):
         ok = set_disabled(a.get("name", ""), False)
         if ok:
             enabled_count += 1
+            quota_disabled.discard(a.get("name", ""))
+            save_quota_disabled(quota_disabled)
         LOG.info("ENABLE %s (%s) -> %s", email, reason, "ok" if ok else "FAILED")
 
     LOG.info("applied: disabled=%d enabled=%d quarantined=%d",

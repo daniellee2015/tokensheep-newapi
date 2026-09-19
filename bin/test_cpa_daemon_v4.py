@@ -1,6 +1,7 @@
 import importlib.util
 import math
 from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -25,9 +26,18 @@ class QuotaDecisionTests(unittest.TestCase):
         )
         self.assertEqual(action, "keep")
 
-    def test_recovered_account_rejoins_at_ten_percent(self):
+    def test_manually_disabled_healthy_account_stays_disabled(self):
         action, _ = daemon.decide(
             {"disabled": True}, {"gemini-weekly": {"frac": 0.10}}, None
+        )
+        self.assertEqual(action, "keep")
+
+    def test_daemon_disabled_account_rejoins_at_ten_percent(self):
+        action, _ = daemon.decide(
+            {"disabled": True},
+            {"gemini-weekly": {"frac": 0.10}},
+            None,
+            auto_disabled=True,
         )
         self.assertEqual(action, "enable")
 
@@ -55,6 +65,13 @@ class QuotaDecisionTests(unittest.TestCase):
         self.assertFalse(daemon.looks_dead("httpNone:"))
         self.assertTrue(daemon.looks_dead("auth-refresh-failed"))
 
+    def test_quota_disabled_state_survives_restart(self):
+        with tempfile.TemporaryDirectory() as tmp_dir, patch.object(
+            daemon, "AUTO_DISABLED_STATE_FILE", str(Path(tmp_dir) / "quota-disabled.json")
+        ):
+            daemon.save_quota_disabled({"b.json", "a.json"})
+            self.assertEqual(daemon.load_quota_disabled(), {"a.json", "b.json"})
+
     def test_quota_target_defaults_to_stable_blue_process(self):
         with patch.dict(daemon.os.environ, {}, clear=True):
             self.assertEqual(daemon._resolve_cpa_url(), "http://cli-proxy-api-blue:8317")
@@ -80,11 +97,47 @@ class QuotaDecisionTests(unittest.TestCase):
             daemon, "fetch_quota", side_effect=[({}, None), ({}, None)]
         ), patch.object(daemon, "decide", side_effect=[("disable", "empty"), ("enable", "healthy")]), patch.object(
             daemon, "apply_quarantine", return_value=0
+        ), patch.object(daemon, "load_quota_disabled", return_value=set()), patch.object(
+            daemon, "save_quota_disabled"
         ), patch.object(daemon, "MAX_ACTIVE", 1), patch.object(
             daemon, "set_disabled", return_value=False
         ) as set_status:
             daemon.run_cycle(True)
         set_status.assert_called_once_with("a.json", True)
+
+    def test_successful_quota_disable_is_recorded_for_recovery(self):
+        auth = {"email": "a", "name": "a.json", "auth_index": "a", "disabled": False}
+        with patch.object(daemon, "list_antigravity_auths", return_value=[auth]), patch.object(
+            daemon, "fetch_quota", return_value=({"groups": []}, None)
+        ), patch.object(
+            daemon,
+            "extract_buckets",
+            return_value={"gemini-weekly": {"frac": 0.0}},
+        ), patch.object(daemon, "apply_quarantine", return_value=0), patch.object(
+            daemon, "load_quota_disabled", return_value=set()
+        ), patch.object(daemon, "save_quota_disabled") as save, patch.object(
+            daemon, "set_disabled", return_value=True
+        ) as set_status:
+            daemon.run_cycle(True)
+        set_status.assert_called_once_with("a.json", True)
+        save.assert_called_with({"a.json"})
+
+    def test_successful_recovery_clears_quota_disabled_marker(self):
+        auth = {"email": "a", "name": "a.json", "auth_index": "a", "disabled": True}
+        with patch.object(daemon, "list_antigravity_auths", return_value=[auth]), patch.object(
+            daemon, "fetch_quota", return_value=({"groups": []}, None)
+        ), patch.object(
+            daemon,
+            "extract_buckets",
+            return_value={"gemini-weekly": {"frac": 1.0}},
+        ), patch.object(daemon, "apply_quarantine", return_value=0), patch.object(
+            daemon, "load_quota_disabled", return_value={"a.json"}
+        ), patch.object(daemon, "save_quota_disabled") as save, patch.object(
+            daemon, "set_disabled", return_value=True
+        ) as set_status:
+            daemon.run_cycle(True)
+        set_status.assert_called_once_with("a.json", False)
+        save.assert_called_with(set())
 
 
 if __name__ == "__main__":
