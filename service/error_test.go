@@ -228,6 +228,53 @@ func TestRelayErrorHandlerPreservesRetryAfter(t *testing.T) {
 	}
 }
 
+func TestRelayErrorHandlerPacesModelCapacityFallbackWithoutRetryHeader(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+		want       time.Duration
+	}{
+		{
+			name:       "structured capacity reason",
+			statusCode: http.StatusServiceUnavailable,
+			body:       `{"error":{"code":503,"message":"No capacity available for model gemini-test on the server","status":"UNAVAILABLE","details":[{"reason":"MODEL_CAPACITY_EXHAUSTED"}]}}`,
+			want:       time.Second,
+		},
+		{
+			name:       "temporary unavailable retry message",
+			statusCode: http.StatusServiceUnavailable,
+			body:       `{"error":{"code":503,"message":"Model gemini-test is temporarily unavailable. Retry in 1s."}}`,
+			want:       time.Second,
+		},
+		{
+			name:       "generic service unavailable",
+			statusCode: http.StatusServiceUnavailable,
+			body:       `{"error":{"code":503,"message":"upstream connection failed"}}`,
+		},
+		{
+			name:       "capacity text on bad request",
+			statusCode: http.StatusBadRequest,
+			body:       `{"error":{"code":400,"message":"No capacity available for model gemini-test on the server"}}`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resp := &http.Response{
+				StatusCode: test.statusCode,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(test.body)),
+			}
+
+			newAPIError := RelayErrorHandler(context.Background(), resp, false)
+
+			require.NotNil(t, newAPIError)
+			require.Equal(t, test.want, newAPIError.RetryAfter())
+		})
+	}
+}
+
 func TestRelayErrorHandlerKeepsInvalidJSONBodyInDebugLog(t *testing.T) {
 	withDebugEnabled(t, true)
 

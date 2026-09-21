@@ -125,6 +125,14 @@ func relayErrorHandlerAt(ctx context.Context, resp *http.Response, showBodyWhenF
 	var errResponse dto.GeneralErrorResponse
 	responseBodyText := string(responseBody)
 	responseBodyPreview := common.LocalLogPreview(responseBodyText)
+	if retryAfter <= 0 && resp.StatusCode == http.StatusServiceUnavailable {
+		lowerBody := strings.ToLower(responseBodyText)
+		if strings.Contains(lowerBody, "model_capacity_exhausted") ||
+			strings.Contains(lowerBody, "no capacity available for model") ||
+			(strings.Contains(lowerBody, "temporarily unavailable") && strings.Contains(lowerBody, "retry in 1s")) {
+			retryAfter = time.Second
+		}
+	}
 	buildErrWithBody := func(message string) error {
 		if message == "" {
 			return fmt.Errorf("bad response status code %d, body: %s", resp.StatusCode, responseBodyText)
