@@ -1,11 +1,14 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"math/rand/v2"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -290,6 +293,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if !willRetry {
 			break
 		}
+		if errWait := waitBeforeChannelFallback(c.Request.Context(), rawChannelError); errWait != nil {
+			break
+		}
 	}
 
 	useChannel := c.GetStringSlice("use_channel")
@@ -320,6 +326,15 @@ func writeRelayError(c *gin.Context, ws *websocket.Conn, relayFormat types.Relay
 			c.Writer.Header().Del(header)
 		}
 		c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if retryAfter := newAPIError.RetryAfter(); retryAfter > 0 {
+			seconds := int64(retryAfter / time.Second)
+			if retryAfter%time.Second != 0 {
+				seconds++
+			}
+			if seconds > 0 {
+				c.Writer.Header().Set("Retry-After", strconv.FormatInt(seconds, 10))
+			}
+		}
 	}
 	switch relayFormat {
 	case types.RelayFormatOpenAIRealtime:
@@ -452,6 +467,34 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 		return false
 	}
 	return operation_setting.ShouldRetryByStatusCode(code)
+}
+
+const maxChannelFallbackDelay = 5 * time.Second
+
+func channelFallbackDelay(err *types.NewAPIError) time.Duration {
+	if err == nil || (err.StatusCode != http.StatusTooManyRequests && err.StatusCode != http.StatusServiceUnavailable) {
+		return 0
+	}
+	retryAfter := err.RetryAfter()
+	if retryAfter <= 0 || retryAfter > maxChannelFallbackDelay {
+		return 0
+	}
+	return retryAfter
+}
+
+func waitBeforeChannelFallback(ctx context.Context, err *types.NewAPIError) error {
+	delay := channelFallbackDelay(err)
+	if delay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay + rand.N(delay))
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {

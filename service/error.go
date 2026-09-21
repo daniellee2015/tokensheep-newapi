@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	taskdto "github.com/QuantumNous/new-api/dto"
@@ -104,6 +105,16 @@ func ClaudeErrorWrapperLocal(err error, code string, statusCode int) *dto.Claude
 }
 
 func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFail bool) (newApiErr *types.NewAPIError) {
+	return relayErrorHandlerAt(ctx, resp, showBodyWhenFail, time.Now())
+}
+
+func relayErrorHandlerAt(ctx context.Context, resp *http.Response, showBodyWhenFail bool, now time.Time) (newApiErr *types.NewAPIError) {
+	retryAfter := parseUpstreamRetryAfter(resp.Header.Get("Retry-After"), now)
+	defer func() {
+		if newApiErr != nil {
+			newApiErr.SetRetryAfter(retryAfter)
+		}
+	}()
 	newApiErr = types.InitOpenAIError(types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
 
 	responseBody, err := io.ReadAll(resp.Body)
@@ -156,6 +167,28 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 	return
 }
 
+func parseUpstreamRetryAfter(value string, now time.Time) time.Duration {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	if seconds, errParse := strconv.ParseInt(value, 10, 64); errParse == nil {
+		if seconds <= 0 || seconds > int64((30*24*time.Hour)/time.Second) {
+			return 0
+		}
+		return time.Duration(seconds) * time.Second
+	}
+	retryAt, errParse := http.ParseTime(value)
+	if errParse != nil {
+		return 0
+	}
+	retryAfter := retryAt.Sub(now)
+	if retryAfter <= 0 || retryAfter > 30*24*time.Hour {
+		return 0
+	}
+	return retryAfter
+}
+
 const (
 	publicInvalidRequestMessage     = "Invalid request"
 	publicRateLimitMessage          = "Rate limit exceeded. Retry later."
@@ -171,7 +204,9 @@ func PublicUpstreamError(upstreamErr *types.NewAPIError) *types.NewAPIError {
 	}
 
 	statusCode, message, code := publicUpstreamErrorPolicy(upstreamErr.StatusCode)
-	return types.NewOpenAIError(errors.New(message), code, statusCode, types.ErrOptionWithSkipRetry())
+	publicErr := types.NewOpenAIError(errors.New(message), code, statusCode, types.ErrOptionWithSkipRetry())
+	publicErr.SetRetryAfter(upstreamErr.RetryAfter())
+	return publicErr
 }
 
 // PublicUpstreamTaskError applies the same trust boundary to task endpoints.

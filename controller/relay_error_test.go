@@ -1,10 +1,12 @@
 package controller
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -95,6 +97,7 @@ func TestWriteRelayErrorReplacesUpstreamRepresentationHeaders(t *testing.T) {
 		types.ErrorCodeServiceUnavailable,
 		http.StatusServiceUnavailable,
 	)
+	relayErr.SetRetryAfter(1500 * time.Millisecond)
 	writeRelayError(c, nil, types.RelayFormatOpenAI, relayErr)
 
 	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
@@ -102,6 +105,38 @@ func TestWriteRelayErrorReplacesUpstreamRepresentationHeaders(t *testing.T) {
 	require.NotEqual(t, "999", recorder.Header().Get("Content-Length"))
 	require.Empty(t, recorder.Header().Get("Content-Disposition"))
 	require.Empty(t, recorder.Header().Get("X-Codex-Turn-State"))
+	require.Equal(t, "2", recorder.Header().Get("Retry-After"))
+}
+
+func TestChannelFallbackDelayUsesOnlyShortRetryableSignals(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		retryAfter time.Duration
+		want       time.Duration
+	}{
+		{name: "short 429", statusCode: http.StatusTooManyRequests, retryAfter: time.Second, want: time.Second},
+		{name: "short 503", statusCode: http.StatusServiceUnavailable, retryAfter: 2 * time.Second, want: 2 * time.Second},
+		{name: "long quota reset", statusCode: http.StatusTooManyRequests, retryAfter: time.Minute},
+		{name: "bad request", statusCode: http.StatusBadRequest, retryAfter: time.Second},
+		{name: "missing delay", statusCode: http.StatusTooManyRequests},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := types.NewErrorWithStatusCode(assertionError("upstream failure"), types.ErrorCodeBadResponseStatusCode, test.statusCode)
+			err.SetRetryAfter(test.retryAfter)
+			require.Equal(t, test.want, channelFallbackDelay(err))
+		})
+	}
+}
+
+func TestWaitBeforeChannelFallbackHonorsCancellation(t *testing.T) {
+	err := types.NewErrorWithStatusCode(assertionError("upstream busy"), types.ErrorCodeBadResponseStatusCode, http.StatusTooManyRequests)
+	err.SetRetryAfter(time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	require.ErrorIs(t, waitBeforeChannelFallback(ctx, err), context.Canceled)
 }
 
 type assertionError string

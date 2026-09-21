@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	taskdto "github.com/QuantumNous/new-api/dto"
@@ -119,6 +120,7 @@ func TestPublicUpstreamErrorUsesOnlyGatewayControlledFields(t *testing.T) {
 				Code:     "provider_private_code",
 				Metadata: []byte(`{"provider":"private"}`),
 			}, tc.upstreamStatus)
+			upstream.SetRetryAfter(time.Second)
 
 			public := PublicUpstreamError(upstream)
 
@@ -129,6 +131,7 @@ func TestPublicUpstreamErrorUsesOnlyGatewayControlledFields(t *testing.T) {
 			require.Equal(t, tc.publicMessage, public.ToOpenAIError().Message)
 			require.Equal(t, string(tc.publicCode), public.ToOpenAIError().Type)
 			require.Equal(t, tc.publicMessage, public.ToClaudeError().Message)
+			require.Equal(t, time.Second, public.RetryAfter())
 			require.NotContains(t, public.ToOpenAIError().Message, "accounts")
 			require.NotContains(t, public.ToOpenAIError().Message, "upstream-id")
 		})
@@ -191,6 +194,38 @@ func TestRelayErrorHandlerKeepsOpenAIErrorMessage(t *testing.T) {
 
 	require.NotNil(t, newAPIError)
 	require.Equal(t, message, newAPIError.Error())
+}
+
+func TestRelayErrorHandlerPreservesRetryAfter(t *testing.T) {
+	tests := []struct {
+		name       string
+		header     string
+		want       time.Duration
+		statusCode int
+	}{
+		{name: "delta seconds", header: "1", want: time.Second, statusCode: http.StatusTooManyRequests},
+		{name: "http date", header: time.Now().UTC().Add(3 * time.Second).Format(http.TimeFormat), want: 3 * time.Second, statusCode: http.StatusServiceUnavailable},
+		{name: "invalid", header: "later", statusCode: http.StatusTooManyRequests},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			now := time.Now().UTC().Truncate(time.Second)
+			header := test.header
+			if test.name == "http date" {
+				header = now.Add(test.want).Format(http.TimeFormat)
+			}
+			resp := &http.Response{
+				StatusCode: test.statusCode,
+				Header:     http.Header{"Retry-After": []string{header}},
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"busy"}}`)),
+			}
+
+			newAPIError := relayErrorHandlerAt(context.Background(), resp, false, now)
+
+			require.NotNil(t, newAPIError)
+			require.Equal(t, test.want, newAPIError.RetryAfter())
+		})
+	}
 }
 
 func TestRelayErrorHandlerKeepsInvalidJSONBodyInDebugLog(t *testing.T) {

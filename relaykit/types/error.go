@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	kitutil "github.com/QuantumNous/new-api/relaykit/relayconvert/kitutil"
 )
@@ -98,6 +99,23 @@ type NewAPIError struct {
 	errorCode      ErrorCode
 	StatusCode     int
 	Metadata       json.RawMessage
+	retryAfter     time.Duration
+}
+
+// SetRetryAfter stores a validated upstream retry delay for gateway retry policy.
+func (e *NewAPIError) SetRetryAfter(retryAfter time.Duration) {
+	if e == nil {
+		return
+	}
+	e.retryAfter = retryAfter
+}
+
+// RetryAfter returns the validated upstream retry delay, or zero when absent.
+func (e *NewAPIError) RetryAfter() time.Duration {
+	if e == nil {
+		return 0
+	}
+	return e.retryAfter
 }
 
 // Unwrap enables errors.Is / errors.As to work with NewAPIError by exposing the underlying error.
