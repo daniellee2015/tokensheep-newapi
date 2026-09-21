@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import math
 from pathlib import Path
 import tempfile
@@ -110,6 +111,25 @@ class QuotaDecisionTests(unittest.TestCase):
     def test_explicit_quota_target_wins(self):
         with patch.dict(daemon.os.environ, {"CPA_URL": "http://blue:8317"}, clear=True):
             self.assertEqual(daemon._resolve_cpa_url(), "http://blue:8317")
+
+    def test_quota_request_uses_account_project(self):
+        response = json.dumps(
+            {"status_code": 200, "body": json.dumps({"groups": []})}
+        )
+        with patch.object(daemon, "_run", return_value=response) as run:
+            quota, error = daemon.fetch_quota("auth-index", "account-project")
+        self.assertEqual(quota, {"groups": []})
+        self.assertIsNone(error)
+        command = run.call_args.args[0]
+        payload = json.loads(command[command.index("-d") + 1])
+        self.assertEqual(json.loads(payload["data"]), {"project": "account-project"})
+
+    def test_quota_request_without_project_is_not_trusted(self):
+        with patch.object(daemon, "_run") as run:
+            quota, error = daemon.fetch_quota("auth-index", "")
+        self.assertIsNone(quota)
+        self.assertEqual(error, "missing-project-id")
+        run.assert_not_called()
 
     def test_dry_run_does_not_advance_quarantine_streak(self):
         row = ("account", {"name": "account.json"}, {}, "auth-refresh-failed", "keep", "unreadable")

@@ -203,8 +203,10 @@ def list_antigravity_auths():
     return [f for f in d.get("files", []) if f.get("provider") == "antigravity"]
 
 
-def fetch_quota(auth_index):
+def fetch_quota(auth_index, project_id):
     """返回 (quota_dict, error_str)。quota_dict 为 None 时 error_str 说明原因。"""
+    if not project_id:
+        return None, "missing-project-id"
     payload = json.dumps({
         "auth_index": auth_index,
         "method": "POST",
@@ -214,7 +216,7 @@ def fetch_quota(auth_index):
             "Content-Type": "application/json",
             "User-Agent": ANTIGRAVITY_UA,
         },
-        "data": "{}",
+        "data": json.dumps({"project": project_id}),
     })
     out = _run([
         "docker", "exec", CADDY, "curl", "-sS", "--max-time", "25",
@@ -525,7 +527,8 @@ def run_cycle(apply_changes):
         if not idx:
             rows.append((email, a, {}, "no-auth-index", "keep", "no-auth-index"))
             continue
-        quota, err = fetch_quota(idx)
+        project_id = a.get("project_id") or a.get("projectId")
+        quota, err = fetch_quota(idx, project_id)
         buckets = extract_buckets(quota) if quota else {}
         action, reason = decide(
             a, buckets, err, auto_disabled=a.get("name", "") in quota_disabled
