@@ -173,7 +173,7 @@ func TestChannelSelectionExhaustsUntriedChannelsBeforeLowerPriority(t *testing.T
 	}
 }
 
-func TestChannelSelectionKeepsSinglePrimaryRetryableForUpstreamPool(t *testing.T) {
+func TestChannelSelectionDoesNotRepeatSingleGeminiPoolChannel(t *testing.T) {
 	const channelID = 980031
 	modelName := fmt.Sprintf("channel-single-primary-%d", channelID)
 	priority := int64(0)
@@ -210,19 +210,16 @@ func TestChannelSelectionKeepsSinglePrimaryRetryableForUpstreamPool(t *testing.T
 			require.NotNil(t, first)
 			require.Equal(t, channelID, first.Id)
 
-			// Retry 1 is intentionally still the same channel. CPA uses this
-			// request to select another credential from its internal pool.
+			// CPA owns credential rotation inside this channel. Repeating the
+			// channel here amplifies one client failure into another pool sweep.
 			retry, err := GetRandomSatisfiedChannel("default", modelName, 1, "", first.Id)
 			require.NoError(t, err)
-			require.NotNil(t, retry)
-			require.Equal(t, channelID, retry.Id)
+			require.Nil(t, retry)
 
-			// The sole channel remains retryable even when recorded as tried; the
-			// outer retry limit, rather than channel exclusion, bounds this path.
+			// Further retries remain exhausted instead of selecting the same pool.
 			excluded, err := GetRandomSatisfiedChannel("default", modelName, 2, "", channelID)
 			require.NoError(t, err)
-			require.NotNil(t, excluded)
-			require.Equal(t, channelID, excluded.Id)
+			require.Nil(t, excluded)
 		})
 	}
 }

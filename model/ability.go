@@ -142,7 +142,6 @@ func GetChannel(group string, model string, retry int, requestPath string, exclu
 		return nil, err
 	}
 	abilities = filterAbilitiesByRequestPathAndModel(abilities, requestPath, model)
-	eligibleBeforeExclusion := abilities
 	if len(excludedChannelIDs) > 0 {
 		excluded := make(map[int]struct{}, len(excludedChannelIDs))
 		for _, channelID := range excludedChannelIDs {
@@ -152,15 +151,6 @@ func GetChannel(group string, model string, retry int, requestPath string, exclu
 			_, alreadyTried := excluded[ability.ChannelId]
 			return !alreadyTried
 		})
-		// A sole Gemini channel may be a CPA account pool. Keep retrying that
-		// channel so CPA can rotate credentials internally. Other providers are
-		// single upstreams; retrying them only repeats the same failure.
-		if len(abilities) == 0 && len(eligibleBeforeExclusion) == 1 {
-			var selectedChannel Channel
-			if err := DB.Select("id, type").First(&selectedChannel, "id = ?", eligibleBeforeExclusion[0].ChannelId).Error; err == nil && selectedChannel.Type == constant.ChannelTypeGemini {
-				abilities = eligibleBeforeExclusion
-			}
-		}
 		if len(abilities) > 0 {
 			highestPriority := int64(0)
 			hasPriority := false

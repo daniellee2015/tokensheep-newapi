@@ -174,13 +174,6 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 			}
 		}
 		if !foundPriority {
-			// A sole Gemini channel may represent a CPA account pool. Keep
-			// retrying it so CPA can rotate credentials internally.
-			if len(channels) == 1 {
-				if channel, ok := channelsIDM[channels[0]]; ok && channel.Type == constant.ChannelTypeGemini {
-					return channel, nil
-				}
-			}
 			return nil, nil
 		}
 	} else {
