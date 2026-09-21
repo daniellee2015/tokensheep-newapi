@@ -112,6 +112,12 @@ class QuotaDecisionTests(unittest.TestCase):
         with patch.dict(daemon.os.environ, {"CPA_URL": "http://blue:8317"}, clear=True):
             self.assertEqual(daemon._resolve_cpa_url(), "http://blue:8317")
 
+    def test_quota_endpoint_matches_antigravity_request_host(self):
+        self.assertEqual(
+            daemon.QUOTA_URL,
+            "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+        )
+
     def test_quota_request_uses_account_project(self):
         response = json.dumps(
             {"status_code": 200, "body": json.dumps({"groups": []})}

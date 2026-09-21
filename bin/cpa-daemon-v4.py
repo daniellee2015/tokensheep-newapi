@@ -5,7 +5,7 @@
 
 数据来源:
     POST /v0/management/api-call  (CPA 转发)
-      → POST https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary
+      → POST https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary
       → 必须 User-Agent: antigravity/hub/<ver> darwin/arm64 (aidev_client 会 403)
 
 返回结构:
@@ -81,6 +81,7 @@ gemini-5h 使用关闭/恢复滞回:
     CPA_URL                default http://cli-proxy-api-blue:8317
     CPA_CADDY_CONTAINER    default caddy
     CPA_ANTIGRAVITY_UA     default antigravity/hub/2.9.1 darwin/arm64
+    CPA_QUOTA_URL          default daily-cloudcode-pa retrieveUserQuotaSummary
     CPA_MAX_ACTIVE         default 40
     CPA_MAX_ENABLE_CYCLE   default 5
     CPA_CYCLE_SEC          default 1800
@@ -123,7 +124,10 @@ MGMT_KEY = os.getenv("CPA_MGMT_KEY", "")
 CPA_URL = _resolve_cpa_url()
 CADDY = os.getenv("CPA_CADDY_CONTAINER", "caddy")
 ANTIGRAVITY_UA = os.getenv("CPA_ANTIGRAVITY_UA", "antigravity/hub/2.9.1 darwin/arm64")
-QUOTA_URL = "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary"
+QUOTA_URL = os.getenv(
+    "CPA_QUOTA_URL",
+    "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+)
 
 MAX_ACTIVE = int(os.getenv("CPA_MAX_ACTIVE", "40"))
 MAX_ENABLE_PER_CYCLE = int(os.getenv("CPA_MAX_ENABLE_CYCLE", "5"))
