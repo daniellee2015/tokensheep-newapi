@@ -238,7 +238,10 @@ func OpenAIChatRequestToGeminiGenerateContent(c context.Context, textRequest dto
 	var systemContent []string
 	for _, message := range textRequest.Messages {
 		if message.Role == "system" || message.Role == "developer" {
-			systemContent = append(systemContent, message.StringContent())
+			systemText := message.StringContent()
+			if strings.TrimSpace(systemText) != "" {
+				systemContent = append(systemContent, systemText)
+			}
 			continue
 		}
 		if message.Role == "tool" || message.Role == "function" {
