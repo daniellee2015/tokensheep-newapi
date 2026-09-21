@@ -85,7 +85,7 @@ gemini-5h 使用关闭/恢复滞回:
     CPA_MAX_ACTIVE         default 40
     CPA_MAX_ENABLE_CYCLE   default 5
     CPA_CYCLE_SEC          default 1800
-    CPA_WEEKLY_EXHAUSTED   default 0.02
+    CPA_WEEKLY_EXHAUSTED   default 0.05
     CPA_WEEKLY_HEALTHY     default 0.10
     CPA_FIVE_HOUR_EXHAUSTED default 0.02
     CPA_FIVE_HOUR_HEALTHY  default 0.10
@@ -134,7 +134,7 @@ MAX_ENABLE_PER_CYCLE = int(os.getenv("CPA_MAX_ENABLE_CYCLE", "5"))
 CYCLE_SEC = int(os.getenv("CPA_CYCLE_SEC", "1800"))
 
 # gemini-weekly remainingFraction 阈值
-WEEKLY_EXHAUSTED = float(os.getenv("CPA_WEEKLY_EXHAUSTED", "0.02"))
+WEEKLY_EXHAUSTED = float(os.getenv("CPA_WEEKLY_EXHAUSTED", "0.05"))
 WEEKLY_HEALTHY = float(os.getenv("CPA_WEEKLY_HEALTHY", "0.10"))
 FIVE_HOUR_EXHAUSTED = float(os.getenv("CPA_FIVE_HOUR_EXHAUSTED", "0.02"))
 FIVE_HOUR_HEALTHY = float(os.getenv("CPA_FIVE_HOUR_HEALTHY", "0.10"))

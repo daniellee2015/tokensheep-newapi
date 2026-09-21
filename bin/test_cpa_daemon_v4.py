@@ -17,9 +17,15 @@ spec.loader.exec_module(daemon)
 class QuotaDecisionTests(unittest.TestCase):
     def test_quota_above_exhausted_threshold_stays_enabled(self):
         action, _ = daemon.decide(
-            {"disabled": False}, {"gemini-weekly": {"frac": 0.03}}, None
+            {"disabled": False}, {"gemini-weekly": {"frac": 0.06}}, None
         )
         self.assertEqual(action, "keep")
+
+    def test_five_percent_weekly_bucket_is_disabled(self):
+        action, _ = daemon.decide(
+            {"disabled": False}, {"gemini-weekly": {"frac": 0.05}}, None
+        )
+        self.assertEqual(action, "disable")
 
     def test_hysteresis_does_not_reopen_account_below_ten_percent(self):
         action, _ = daemon.decide(
