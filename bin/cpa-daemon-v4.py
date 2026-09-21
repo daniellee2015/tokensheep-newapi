@@ -28,21 +28,19 @@
 
 决策规则:
     gemini_weekly <= WEEKLY_EXHAUSTED_THRESHOLD  → 必须 disable
+    gemini_5h <= FIVE_HOUR_EXHAUSTED_THRESHOLD   → 暂时 disable
     gemini_weekly >= WEEKLY_HEALTHY_THRESHOLD 且 gemini_5h >= FIVE_HOUR_HEALTHY
                                                 → 仅自动恢复 daemon 自己关闭的账号
     中间区间                                       → 保持现状 (不动)
     quota 查询失败或数据无效                      → 保持当前状态
 
     management UI 手动关闭的账号不属于 daemon 管理状态, 无论剩余额度多少都保持
-    disabled。daemon 只会把自己因 weekly 耗尽而关闭的账号写入持久化状态文件,
+    disabled。daemon 只会把自己因 quota 耗尽而关闭的账号写入持久化状态文件,
     并在额度恢复后重新开启它们。
 
-为什么 gemini-5h 只作为恢复门槛、不主动关号:
-  - gemini-5h: 时间尺度不匹配。daemon 30min 一轮, 而 5h 桶几小时就 reset,
-    拿它主动关号会出现"5h 空→关号→5min 后 5h 恢复→仍要等 30min 下一轮"
-    的白损失。5h 撞墙由 CPA 实时处理: 2026-08-29 修好的 429 分类 +
-    2026-08-30 修好的选号层注册表检查 (CPA 7530ce0c), 撞了立刻跳过。
-    但 disabled 账号重新进入号池前必须确认 5h 桶也已恢复, 不能只看 weekly。
+gemini-5h 使用关闭/恢复滞回:
+  - 5h 桶真正耗尽时主动关号, 避免 CPA 在并发下继续把请求分配给必然 429 的账号。
+  - 桶恢复到 FIVE_HOUR_HEALTHY 后才重新开号, 避免在临界值附近反复开关。
 为什么 3p 两个桶只记录不判开关:
   - 3p-weekly / 3p-5h: 走 CPA 的流量只有 Gemini (new-api 那条通道
     own-cpa-multi-gemini-mapped-* 的 models 全是 gemini-*), Claude 侧由
@@ -88,6 +86,7 @@
     CPA_CYCLE_SEC          default 1800
     CPA_WEEKLY_EXHAUSTED   default 0.02
     CPA_WEEKLY_HEALTHY     default 0.10
+    CPA_FIVE_HOUR_EXHAUSTED default 0.02
     CPA_FIVE_HOUR_HEALTHY  default 0.10
     CPA_AUTO_DISABLED_STATE default /var/lib/cpa-daemon-v4/quota-disabled.json
     CPA_AUTH_DIR           default /data/cli-proxy-api/auths
@@ -133,13 +132,16 @@ CYCLE_SEC = int(os.getenv("CPA_CYCLE_SEC", "1800"))
 # gemini-weekly remainingFraction 阈值
 WEEKLY_EXHAUSTED = float(os.getenv("CPA_WEEKLY_EXHAUSTED", "0.02"))
 WEEKLY_HEALTHY = float(os.getenv("CPA_WEEKLY_HEALTHY", "0.10"))
+FIVE_HOUR_EXHAUSTED = float(os.getenv("CPA_FIVE_HOUR_EXHAUSTED", "0.02"))
 FIVE_HOUR_HEALTHY = float(os.getenv("CPA_FIVE_HOUR_HEALTHY", "0.10"))
 if not 0 <= WEEKLY_EXHAUSTED < WEEKLY_HEALTHY <= 1:
     raise ValueError("expected 0 <= CPA_WEEKLY_EXHAUSTED < CPA_WEEKLY_HEALTHY <= 1")
-if not 0 < FIVE_HOUR_HEALTHY <= 1:
-    raise ValueError("expected 0 < CPA_FIVE_HOUR_HEALTHY <= 1")
+if not 0 <= FIVE_HOUR_EXHAUSTED < FIVE_HOUR_HEALTHY <= 1:
+    raise ValueError(
+        "expected 0 <= CPA_FIVE_HOUR_EXHAUSTED < CPA_FIVE_HOUR_HEALTHY <= 1"
+    )
 
-# Weekly controls automatic shutdown; five-hour also gates automatic recovery.
+# Weekly and five-hour exhaustion control shutdown; both gate recovery.
 DECISION_BUCKET = "gemini-weekly"
 FIVE_HOUR_BUCKET = "gemini-5h"
 # 日志表里展示的桶顺序 (Google 目前返回这四个)
@@ -450,8 +452,8 @@ def decide(auth, buckets, quota_err, auto_disabled=False):
         # Refresh-token failures are handled by the dead-auth quarantine path.
         return "keep", f"quota-unreadable({quota_err})"
 
-    # Weekly exhaustion controls shutdown. Five-hour capacity is checked below
-    # before a daemon-owned disabled account can rejoin the pool.
+    # Weekly and five-hour exhaustion control shutdown. Recovery uses higher
+    # thresholds below so an account does not flap near an empty bucket.
     gw = buckets.get(DECISION_BUCKET, {}).get("frac")
     if gw is None:
         return "keep", f"no-{DECISION_BUCKET}-bucket"
@@ -463,19 +465,23 @@ def decide(auth, buckets, quota_err, auto_disabled=False):
             return "disable", f"{DECISION_BUCKET}={gw*100:.1f}%"
         return "keep", f"{DECISION_BUCKET}={gw*100:.1f}% (already off)"
 
+    five_hour = buckets.get(FIVE_HOUR_BUCKET, {}).get("frac")
+    valid_five_hour = (
+        not isinstance(five_hour, bool)
+        and isinstance(five_hour, (int, float))
+        and math.isfinite(five_hour)
+        and 0 <= five_hour <= 1
+    )
+    if not disabled and valid_five_hour and five_hour <= FIVE_HOUR_EXHAUSTED:
+        return "disable", f"{FIVE_HOUR_BUCKET}={five_hour*100:.1f}%"
+
     if gw >= WEEKLY_HEALTHY:
         if disabled:
             if not auto_disabled:
                 return "keep", f"{DECISION_BUCKET}={gw*100:.1f}% (manual off)"
-            five_hour = buckets.get(FIVE_HOUR_BUCKET, {}).get("frac")
             if five_hour is None:
                 return "keep", f"no-{FIVE_HOUR_BUCKET}-bucket"
-            if (
-                isinstance(five_hour, bool)
-                or not isinstance(five_hour, (int, float))
-                or not math.isfinite(five_hour)
-                or not 0 <= five_hour <= 1
-            ):
+            if not valid_five_hour:
                 return "keep", f"invalid-{FIVE_HOUR_BUCKET}-fraction"
             if five_hour < FIVE_HOUR_HEALTHY:
                 return "keep", f"{FIVE_HOUR_BUCKET}={five_hour*100:.1f}% (not ready)"

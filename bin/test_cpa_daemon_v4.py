@@ -63,6 +63,23 @@ class QuotaDecisionTests(unittest.TestCase):
         )
         self.assertEqual(action, "disable")
 
+    def test_exhausted_five_hour_bucket_temporarily_disables_account(self):
+        action, reason = daemon.decide(
+            {"disabled": False},
+            {"gemini-weekly": {"frac": 0.41}, "gemini-5h": {"frac": 0.0}},
+            None,
+        )
+        self.assertEqual(action, "disable")
+        self.assertEqual(reason, "gemini-5h=0.0%")
+
+    def test_five_hour_shutdown_uses_hysteresis(self):
+        action, _ = daemon.decide(
+            {"disabled": False},
+            {"gemini-weekly": {"frac": 0.41}, "gemini-5h": {"frac": 0.03}},
+            None,
+        )
+        self.assertEqual(action, "keep")
+
     def test_failed_or_invalid_quota_does_not_change_account_status(self):
         for disabled in (False, True):
             for fraction in (None, -1, 2, "0", False, math.nan, math.inf):
