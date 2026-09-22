@@ -24,7 +24,7 @@
 
 版本号描述的是 new-api 渠道配置、CPA 重试配置和 daemon 控制规则组成的整套机制，不等同于某一个二进制版本。数据库渠道配置不包含在容器镜像中；恢复或迁移时必须同时恢复本节的机制版本和下方组件版本，不能只回滚镜像。
 
-### v3 组件版本
+### v4 组件版本
 
 | 组件 | 当前生产版本 |
 |---|---|
@@ -34,7 +34,7 @@
 | CPA digest | `sha256:b1c0b7c57ef2a78433de5f2f3aadff1d9ac815fa7c334c37e8c9582ee4885894` |
 | daemon | `cpa-daemon-v4.py`，SHA-256 `a96f3553e1b506391532e75f31f7de832580d7b72bd05e8de7aa28ccd044b323` |
 
-### v3 不变量
+### v4 不变量
 
 1. 3/3.6/3.7/Pro 请求只能走 `12 -> 87`，最多两个不同 channel ID。
 2. 3.8 请求只能走 `12 -> 88`，最多两个不同 channel ID。
@@ -45,7 +45,7 @@
 7. 同一 Google project 下的不同 credential 不视为独立故障域；generic 429 不得通过增加 fallback 层数处理。
 8. 渠道 97 的 `gemini-3.1-flash-image` 只属于独立 `image` 分组，不参与 `gemini-lowprice`、`gemini-sale`、`gemini-stable` 的重试链；跨互斥分组的同名模型不算同一请求内的重复 fallback。
 
-出现与以上任一条冲突的配置时，不能继续标记为 `AG-RF v3`，必须修正或升版并记录差异。
+出现与以上任一条冲突的配置时，不能继续标记为 `AG-RF v4`，必须修正或升版并记录差异。
 
 ---
 
