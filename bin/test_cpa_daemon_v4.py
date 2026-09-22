@@ -15,6 +15,10 @@ spec.loader.exec_module(daemon)
 
 
 class QuotaDecisionTests(unittest.TestCase):
+    def test_tiny_nonzero_quota_is_not_displayed_as_zero(self):
+        self.assertEqual(daemon.quota_fraction_pct(0.0), "0.0%")
+        self.assertEqual(daemon.quota_fraction_pct(0.0004), "<0.1%")
+
     def test_quota_above_exhausted_threshold_stays_enabled(self):
         action, _ = daemon.decide(
             {"disabled": False}, {"gemini-weekly": {"frac": 0.06}}, None

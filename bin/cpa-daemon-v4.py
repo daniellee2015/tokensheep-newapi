@@ -321,6 +321,15 @@ def reset_in_human(reset_iso):
     return f"{m}m"
 
 
+def quota_fraction_pct(frac):
+    """Format a validated quota fraction without rounding tiny capacity to 0."""
+    if frac == 0:
+        return "0.0%"
+    if 0 < frac < 0.001:
+        return "<0.1%"
+    return f"{frac * 100:.1f}%"
+
+
 # ---------- 死号隔离 ----------
 
 def looks_dead(quota_err):
@@ -468,8 +477,8 @@ def decide(auth, buckets, quota_err, auto_disabled=False):
 
     if gw <= WEEKLY_EXHAUSTED:
         if not disabled:
-            return "disable", f"{DECISION_BUCKET}={gw*100:.1f}%"
-        return "keep", f"{DECISION_BUCKET}={gw*100:.1f}% (already off)"
+            return "disable", f"{DECISION_BUCKET}={quota_fraction_pct(gw)}"
+        return "keep", f"{DECISION_BUCKET}={quota_fraction_pct(gw)} (already off)"
 
     five_hour = buckets.get(FIVE_HOUR_BUCKET, {}).get("frac")
     valid_five_hour = (
@@ -479,26 +488,26 @@ def decide(auth, buckets, quota_err, auto_disabled=False):
         and 0 <= five_hour <= 1
     )
     if not disabled and valid_five_hour and five_hour <= FIVE_HOUR_EXHAUSTED:
-        return "disable", f"{FIVE_HOUR_BUCKET}={five_hour*100:.1f}%"
+        return "disable", f"{FIVE_HOUR_BUCKET}={quota_fraction_pct(five_hour)}"
 
     if gw >= WEEKLY_HEALTHY:
         if disabled:
             if not auto_disabled:
-                return "keep", f"{DECISION_BUCKET}={gw*100:.1f}% (manual off)"
+                return "keep", f"{DECISION_BUCKET}={quota_fraction_pct(gw)} (manual off)"
             if five_hour is None:
                 return "keep", f"no-{FIVE_HOUR_BUCKET}-bucket"
             if not valid_five_hour:
                 return "keep", f"invalid-{FIVE_HOUR_BUCKET}-fraction"
             if five_hour < FIVE_HOUR_HEALTHY:
-                return "keep", f"{FIVE_HOUR_BUCKET}={five_hour*100:.1f}% (not ready)"
+                return "keep", f"{FIVE_HOUR_BUCKET}={quota_fraction_pct(five_hour)} (not ready)"
             return "enable", (
-                f"{DECISION_BUCKET}={gw*100:.1f}%, "
-                f"{FIVE_HOUR_BUCKET}={five_hour*100:.1f}%"
+                f"{DECISION_BUCKET}={quota_fraction_pct(gw)}, "
+                f"{FIVE_HOUR_BUCKET}={quota_fraction_pct(five_hour)}"
             )
-        return "keep", f"{DECISION_BUCKET}={gw*100:.1f}% (healthy)"
+        return "keep", f"{DECISION_BUCKET}={quota_fraction_pct(gw)} (healthy)"
 
     # 灰区: 不主动改
-    return "keep", f"{DECISION_BUCKET}={gw*100:.1f}% (grey zone)"
+    return "keep", f"{DECISION_BUCKET}={quota_fraction_pct(gw)} (grey zone)"
 
 
 def run_cycle(apply_changes):
@@ -549,7 +558,7 @@ def run_cycle(apply_changes):
             frac = buckets.get(bucket_id, {}).get("frac")
             if isinstance(frac, bool) or not isinstance(frac, (int, float)) or not math.isfinite(frac) or not 0 <= frac <= 1:
                 return "-"
-            return f"{frac*100:.1f}%"
+            return quota_fraction_pct(frac)
         LOG.info("%-42s %-8s %-8s %-8s %-8s %-8s %-8s %s",
                  email,
                  pct("gemini-weekly"),
