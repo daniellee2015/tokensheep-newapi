@@ -352,6 +352,11 @@ project 容量或入口级排队限流。
 已将 99、100 设为 disabled，只保留 87 作为 Pro 的唯一映射渠道；102 的 3.7 深层
 fallback 也保持 disabled。
 
+随后又按 source capability 做了交叉核对：渠道 88 原先还声明了 `gemini-3-flash`、
+`gemini-3.6-flash` 等与 87 重叠的 source model，存在异常时形成第三层
+`12 -> 87 -> 88` 的可能。现已将 88 收窄为只接受 `gemini-3.8-flash` 和
+`gemini-3.8-flash-high`，只承担 3.8 -> 3.7；87 继续承担 3/3.6/3.7/Pro -> 3.8。
+
 两个 fallback 渠道都必须低于主渠道 priority。它们的 source model capability 应保持方向互斥，避免一次请求同时看到无关方向的映射渠道。
 
 价格相同只解决计费一致性，不代表模型语义完全一致。迁移时仍要确认工具调用、长上下文、thinking、结构化输出和流式响应在两个模型上都兼容。
