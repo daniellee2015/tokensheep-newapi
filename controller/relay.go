@@ -457,6 +457,15 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 		return false
 	}
 	code := openaiErr.StatusCode
+	// A long upstream retry window is a quota/capacity boundary, not a
+	// transient channel failure. Retrying another channel in the same request
+	// is especially harmful for mapped channels that share the same CPA/project:
+	// it duplicates the rejected call while the upstream is explicitly asking
+	// us to wait. Short retry windows remain eligible for paced fallback.
+	if (code == http.StatusTooManyRequests || code == http.StatusServiceUnavailable) &&
+		openaiErr.RetryAfter() > maxChannelFallbackDelay {
+		return false
+	}
 	if code >= 200 && code < 300 {
 		return false
 	}

@@ -130,6 +130,27 @@ func TestChannelFallbackDelayUsesOnlyShortRetryableSignals(t *testing.T) {
 	}
 }
 
+func TestShouldRetrySkipsLongQuotaCooldown(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+
+	long429 := types.NewErrorWithStatusCode(
+		assertionError("rate limit exceeded"),
+		types.ErrorCodeBadResponseStatusCode,
+		http.StatusTooManyRequests,
+	)
+	long429.SetRetryAfter(10 * time.Minute)
+	require.False(t, shouldRetry(c, long429, 2))
+
+	short429 := types.NewErrorWithStatusCode(
+		assertionError("rate limit exceeded"),
+		types.ErrorCodeBadResponseStatusCode,
+		http.StatusTooManyRequests,
+	)
+	short429.SetRetryAfter(time.Second)
+	require.True(t, shouldRetry(c, short429, 2))
+}
+
 func TestWaitBeforeChannelFallbackHonorsCancellation(t *testing.T) {
 	err := types.NewErrorWithStatusCode(assertionError("upstream busy"), types.ErrorCodeBadResponseStatusCode, http.StatusTooManyRequests)
 	err.SetRetryAfter(time.Second)
