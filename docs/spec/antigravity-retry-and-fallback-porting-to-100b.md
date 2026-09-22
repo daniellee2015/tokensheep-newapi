@@ -31,7 +31,7 @@
 new-api 渠道 12：真实模型，priority=0
     |
     v
-CPA：真实模型，每次渠道调用最多选择 3 个 credential
+CPA：真实模型，每次渠道调用最多选择 1 个 credential
     |
     | 最终失败且属于 new-api 可重试错误
     | 等待短 Retry-After（仅 429/503，最多 5 秒）
@@ -39,7 +39,7 @@ CPA：真实模型，每次渠道调用最多选择 3 个 credential
 new-api 渠道 87 或 88：模型映射，priority=-1
     |
     v
-CPA：映射模型，每次渠道调用最多选择 3 个 credential
+CPA：映射模型，每次渠道调用最多选择 1 个 credential
     |
     | 普通 429：1-2s、2-4s、4-8s 封顶的 equal-jitter 退避
     | 5h/weekly：按桶类型设置模型级或账号级冷却
@@ -127,7 +127,7 @@ Antigravity 至少存在以下几类 429：
 
 ### 2.2 为什么 404/容量 503 不在 CPA 扫账号
 
-`requested model or endpoint is unavailable`、`MODEL_CAPACITY_EXHAUSTED` 和 `No capacity available for model` 描述的是当前请求模型或端点，不是某一个 credential 的健康状态。换 3 个 credential 通常只会得到相同结果，还会在高并发下浪费号池容量。
+`requested model or endpoint is unavailable`、`MODEL_CAPACITY_EXHAUSTED` 和 `No capacity available for model` 描述的是当前请求模型或端点，不是某一个 credential 的健康状态。即使在代码测试上允许换多个 credential，生产当前也不应为这些错误扫号池。
 
 CPA 将这些错误标记为 request scoped：停止 credential failover，同时禁止给 credential 写错误冷却。new-api 再通过独立渠道的模型映射，把原模型切到备选模型。
 
@@ -153,7 +153,7 @@ VPS196 当前语义配置：
 
 ```yaml
 request-retry: 0
-max-retry-credentials: 3
+max-retry-credentials: 1
 disable-cooling: true
 antigravity:
   enforce-short-cooldown: true
@@ -164,7 +164,7 @@ antigravity:
 | 配置 | 当前值 | 实际语义 |
 |---|---:|---|
 | `request-retry` | 0 | 只有初始 round，不在账号集合耗尽后开启额外 round |
-| `max-retry-credentials` | 3 | 每个 round 最多选择 3 个不同 credential；当前只有 round 0，因此一次 CPA 调用最多选择 3 个 credential |
+| `max-retry-credentials` | 1 | 每个 round 只选择 1 个 credential；当前只有 round 0，不在同一 project 内连续换号放大 429 |
 | `disable-cooling` | true | 关闭旧式长时间通用 cooling；Antigravity 的短冷却仍由下一项强制执行 |
 | `enforce-short-cooldown` | true | 即使通用 cooling 被关闭，429 后仍保留 Antigravity 的账号 + 模型短冷却 |
 
@@ -177,7 +177,7 @@ CPA commit `1d57a590` 为普通无结构 429 增加了两个信号：
 - 错误对外携带 `RetryAfter=1s`。
 - conductor 读取 `CredentialFailoverDelay=1s`。
 
-连续 credential 拥塞采用 equal-jitter 指数退避：
+代码仍保留连续 credential 失败的 equal-jitter 退避契约，供独立 project 池或未来显式提高上限时使用：
 
 | 连续失败序号 | 等待范围 |
 |---:|---|
@@ -187,7 +187,7 @@ CPA commit `1d57a590` 为普通无结构 429 增加了两个信号：
 
 如果已经没有下一个允许的 credential，则不再等待。请求 context 被取消时，等待立即结束。
 
-当前 `max-retry-credentials=3`，因此一次 CPA 调用的常见形状是：账号 A 失败 -> 等 1-2 秒 -> 账号 B 失败 -> 等 2-4 秒 -> 账号 C；不会在最后一个账号失败后再空等。
+当前生产 `max-retry-credentials=1`，因此一次 CPA 调用不会在同一 project 内继续尝试第二或第三个 credential；new-api 仍最多执行一次跨模型 fallback。只有在明确接入独立 project 池并重新验证放大上界后，才可提高该值。
 
 ### 3.3 10 秒短冷却下限
 
@@ -286,7 +286,8 @@ new-api 的全局 retry 设置为 3，表示循环最多包含初始尝试和 3 
 - 是否已经写出响应字节。
 - 请求 context 是否已取消。
 
-当前一个原模型通常只有“主渠道 + 对应方向的一个映射渠道”，所以通常最多经过 2 个 new-api channel ID，而不是强行凑满 4 次。
+当前原模型通常只有“主渠道 + 对应方向的一个映射渠道”，所以通常最多经过 2 个不同的
+new-api channel ID。任何路径都不会为了凑满 4 次而重复已使用 channel ID。
 
 ### 4.4 当前生产渠道
 
@@ -295,10 +296,11 @@ VPS22 PostgreSQL 当前配置基线：
 | ID | 名称 | 状态 | Priority | 用途 |
 |---:|---|---:|---:|---|
 | 12 | `own-cpa-multi-gemini-mapped-AD9x` | 1（启用） | 0 | 真实模型主渠道 |
-| 87 | `own-cpa-gemini-fallback-to-38` | 1（启用） | -1 | 3.7/相关源模型映射到 3.8 |
+| 87 | `own-cpa-gemini-fallback-to-38` | 1（启用） | -1 | 3.7/相关源模型映射到 3.8；3.1 Pro 映射到 3.8 |
 | 88 | `own-cpa-gemini-fallback-38-to-37` | 1（启用） | -1 | 3.8 映射到 3.7 |
 | 90 | `own-cpa-gemini-fallback-38-to-37` | 2（禁用） | -1 | 与 88 重复，保持禁用 |
 | 91 | `own-cpa-gemini-fallback-to-31-lite` | 2（禁用） | -3 | 更深层 3.1-lite 降级，当前不启用 |
+| 102 | `own-cpa-gemini-pro-fallback-to-37` | 2（禁用） | -2 | 失败实验：共享 project 限流时继续打 3.7 只会放大请求 |
 
 迁移时 ID 会变化，不能把 12/87/88 当作业务常量。必须按名称、上游目标、模型能力、映射和 priority 重新核对。
 
@@ -327,7 +329,28 @@ base URL + credential/key + provider + source model capability + model mapping
 ```text
 请求真实 3.7：先走主渠道的真实 3.7；失败后走渠道 87，把 3.7 映射到 3.8
 请求真实 3.8：先走主渠道的真实 3.8；失败后走渠道 88，把 3.8 映射到 3.7
+请求 3.1 Pro：先走主渠道的真实 Pro；失败后走渠道 87 映射到 3.8
 ```
+
+2026-09-22 事故中，旧配置把 `gemini-3.1-pro-high` 从 `gemini-pro-agent` 降级到
+`gemini-3.1-pro-low`。两个 Pro 变体在同一个共享 project 上同时返回通用 429：15 分钟内
+CPA 产生 293 次真实上游 429，涉及全部 22 个 active credential；93 个失败调用都尝试了
+3 个 credential。new-api 的 `12 -> 87` fallback 虽然正常执行，但仍以 503 结束。
+
+同一窗口 Flash 模型仍有稳定成功流量，因此第一级 Pro fallback 改为跨模型族的 3.8。
+随后曾短暂启用渠道 102，把 3.8 失败继续降级到 3.7；前三个自然流量样本全部按
+`12 -> 87 -> 102` 失败，3.7 同样返回通用 429，没有一次成功，单请求最坏上游尝试反而从
+6 次增加到 9 次，因此立即禁用 102。
+
+模型降级只能绕开单模型容量故障，不能制造新的 project 容量；当所有 active credential 都
+属于同一个 project 且该 project 整体限流时，继续堆叠 fallback 是错误方向，最终需要独立
+project 容量或入口级排队限流。
+
+同一事故窗口还发现 VPS22 曾同时启用渠道 99（Pro -> `gemini-pro-agent`）和渠道 100
+（Pro -> 3.8），它们与渠道 87 的 Pro 映射重复，实际路径出现过
+`12 -> 99 -> 87 -> 100`。这会让一个共享 project 的 429 被重复放大。2026-09-22
+已将 99、100 设为 disabled，只保留 87 作为 Pro 的唯一映射渠道；102 的 3.7 深层
+fallback 也保持 disabled。
 
 两个 fallback 渠道都必须低于主渠道 priority。它们的 source model capability 应保持方向互斥，避免一次请求同时看到无关方向的映射渠道。
 
@@ -436,9 +459,8 @@ cpa-sidecar-sync.service: disabled/inactive
 在 10-20 RPM 下，普通健康流量应大部分由主渠道和第一个 CPA credential 完成。偶发普通 429 会：
 
 1. 当前账号 + 模型进入至少 10 秒冷却。
-2. CPA 等待 1-2 秒再选第二个 credential。
-3. 连续失败时再等待 2-4 秒选第三个 credential。
-4. CPA 仍失败后，new-api 根据短 `Retry-After` 再等待，然后进入映射渠道。
+2. 当前生产上限为 1，CPA 不再在同一渠道内选择第二个 credential。
+3. CPA 仍失败后，new-api 根据短 `Retry-After` 再等待，然后只进入一次映射渠道。
 
 如果低并发下仍持续出现大面积 429，优先检查：
 
@@ -464,7 +486,7 @@ cpa-sidecar-sync.service: disabled/inactive
 
 ### 6.3 当前放大上界如何理解
 
-当前常见模型有 2 个符合条件的 new-api 渠道：主渠道和一个映射渠道；每次 CPA 调用最多选择 3 个 credential。因此常见硬边界是最多 2 次 CPA 渠道调用、每次最多 3 个 credential 选择。
+当前常见模型有 2 个符合条件的 new-api 渠道：主渠道和一个映射渠道；每次 CPA 调用最多选择 1 个 credential。因此常见硬边界是最多 2 次 CPA 渠道调用、每次最多 1 个 credential 选择。
 
 这不是“最多 6 个 Google HTTP 请求”的保证。CPA executor 内部仍可能因协议路径、base URL 或流式 bootstrap 产生额外 HTTP 动作。可观测和容量规划必须分别统计：
 
@@ -575,7 +597,8 @@ CPA 属于另一个仓库，100b 的 new-api 基线也会继续演进。即使�
 - [ ] 503 model capacity 为 request scoped。
 - [ ] weekly hard wall 为 credential scoped，并使用真实 reset。
 - [ ] 亚秒 5h retry 至少产生 10 秒账号 + 模型冷却。
-- [ ] `max-retry-credentials=3` 时单 round 不选择第 4 个 credential。
+- [ ] 代码契约：`max-retry-credentials=3` 时单 round 不选择第 4 个 credential。
+- [ ] 生产配置：`max-retry-credentials=1`，自然流量中单个 CPA 渠道调用不出现第二个 credential。
 - [ ] `request-retry=0` 时不开始额外 round。
 
 ### 9.3 daemon 单元测试
@@ -647,7 +670,7 @@ GitHub Actions run: 35609197255 (success)
 - [ ] 必要时单独重建 cursor sidecar。
 - [ ] 再更新 blue。
 - [ ] 从 Caddy 容器内直连 blue 健康检查。
-- [ ] 确认 `request-retry=0`、`max-retry-credentials=3`。
+- [ ] 确认 `request-retry=0`、`max-retry-credentials=1`。
 - [ ] 确认 short cooldown 强制开启。
 - [ ] 确认 daemon active，旧 sidecar sync inactive。
 - [ ] 确认 daemon 只连接一个稳定 CPA 实例完成 auth index 与 quota 查询。
