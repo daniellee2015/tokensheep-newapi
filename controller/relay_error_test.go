@@ -151,6 +151,25 @@ func TestShouldRetrySkipsLongQuotaCooldown(t *testing.T) {
 	require.True(t, shouldRetry(c, short429, 2))
 }
 
+func TestShouldRetrySkipsUnstructuredQuotaExhaustion(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+
+	quota429 := types.NewErrorWithStatusCode(
+		assertionError("Resource has been exhausted (e.g. check quota)."),
+		types.ErrorCodeBadResponseStatusCode,
+		http.StatusTooManyRequests,
+	)
+	require.False(t, shouldRetry(c, quota429, 2))
+
+	individualQuota429 := types.NewErrorWithStatusCode(
+		assertionError("Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 132h."),
+		types.ErrorCodeBadResponseStatusCode,
+		http.StatusTooManyRequests,
+	)
+	require.False(t, shouldRetry(c, individualQuota429, 2))
+}
+
 func TestWaitBeforeChannelFallbackHonorsCancellation(t *testing.T) {
 	err := types.NewErrorWithStatusCode(assertionError("upstream busy"), types.ErrorCodeBadResponseStatusCode, http.StatusTooManyRequests)
 	err.SetRetryAfter(time.Second)

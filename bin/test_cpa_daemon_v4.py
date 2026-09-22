@@ -31,14 +31,14 @@ class QuotaDecisionTests(unittest.TestCase):
         )
         self.assertEqual(action, "keep")
 
-    def test_auto_disabled_account_with_nonzero_weekly_stays_or_recovers(self):
+    def test_auto_disabled_account_below_recovery_floor_stays_in_reserve(self):
         action, _ = daemon.decide(
             {"disabled": True},
-            {"gemini-weekly": {"frac": 0.05}, "gemini-5h": {"frac": 0.05}},
+            {"gemini-weekly": {"frac": 0.049}, "gemini-5h": {"frac": 0.049}},
             None,
             auto_disabled=True,
         )
-        self.assertEqual(action, "enable")
+        self.assertEqual(action, "keep")
 
     def test_manually_disabled_healthy_account_stays_disabled(self):
         action, _ = daemon.decide(
@@ -54,6 +54,17 @@ class QuotaDecisionTests(unittest.TestCase):
             auto_disabled=True,
         )
         self.assertEqual(action, "enable")
+
+    def test_daemon_disabled_account_waits_for_both_recovery_floors(self):
+        for buckets in (
+            {"gemini-weekly": {"frac": 0.10}, "gemini-5h": {"frac": 0.049}},
+            {"gemini-weekly": {"frac": 0.049}, "gemini-5h": {"frac": 0.10}},
+        ):
+            with self.subTest(buckets=buckets):
+                action, _ = daemon.decide(
+                    {"disabled": True}, buckets, None, auto_disabled=True
+                )
+                self.assertEqual(action, "keep")
 
     def test_daemon_disabled_account_waits_for_five_hour_bucket(self):
         blocked_buckets = (
@@ -74,14 +85,26 @@ class QuotaDecisionTests(unittest.TestCase):
             {"disabled": False},
             {"gemini-weekly": {"frac": 0.0}, "gemini-5h": {"frac": 0.98}},
             None,
+            exhaustion_streaks={"gemini-weekly": 2},
         )
         self.assertEqual(action, "disable")
+
+    def test_single_zero_quota_read_is_pending(self):
+        action, reason = daemon.decide(
+            {"disabled": False},
+            {"gemini-weekly": {"frac": 0.0}, "gemini-5h": {"frac": 0.98}},
+            None,
+            exhaustion_streaks={"gemini-weekly": 1},
+        )
+        self.assertEqual(action, "keep")
+        self.assertIn("pending", reason)
 
     def test_exhausted_five_hour_bucket_temporarily_disables_account(self):
         action, reason = daemon.decide(
             {"disabled": False},
             {"gemini-weekly": {"frac": 0.41}, "gemini-5h": {"frac": 0.0}},
             None,
+            exhaustion_streaks={"gemini-5h": 2},
         )
         self.assertEqual(action, "disable")
         self.assertEqual(reason, "gemini-5h=0.0%")
@@ -171,7 +194,7 @@ class QuotaDecisionTests(unittest.TestCase):
             daemon, "save_quota_disabled"
         ), patch.object(daemon, "MAX_ACTIVE", 1), patch.object(
             daemon, "set_disabled", return_value=False
-        ) as set_status:
+        ) as set_status, patch.object(daemon, "save_exhaustion_streaks"):
             daemon.run_cycle(True)
         set_status.assert_called_once_with("a.json", True)
 
@@ -187,7 +210,9 @@ class QuotaDecisionTests(unittest.TestCase):
             daemon, "load_quota_disabled", return_value=set()
         ), patch.object(daemon, "save_quota_disabled") as save, patch.object(
             daemon, "set_disabled", return_value=True
-        ) as set_status:
+        ) as set_status, patch.object(daemon, "EXHAUSTION_CONFIRMATIONS", 1), patch.object(
+            daemon, "save_exhaustion_streaks"
+        ):
             daemon.run_cycle(True)
         set_status.assert_called_once_with("a.json", True)
         save.assert_called_with({"a.json"})
@@ -204,7 +229,7 @@ class QuotaDecisionTests(unittest.TestCase):
             daemon, "load_quota_disabled", return_value={"a.json"}
         ), patch.object(daemon, "save_quota_disabled") as save, patch.object(
             daemon, "set_disabled", return_value=True
-        ) as set_status:
+        ) as set_status, patch.object(daemon, "save_exhaustion_streaks"):
             daemon.run_cycle(True)
         set_status.assert_called_once_with("a.json", False)
         save.assert_called_with(set())

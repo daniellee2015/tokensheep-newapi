@@ -457,6 +457,12 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 		return false
 	}
 	code := openaiErr.StatusCode
+	if code == http.StatusTooManyRequests && isQuotaExhaustionWithoutRetryHint(openaiErr) {
+		// Antigravity uses this body for credential/project quota exhaustion but
+		// often omits Retry-After. Retrying a mapped channel in the same request
+		// just sends the same exhausted project through another channel ID.
+		return false
+	}
 	// A long upstream retry window is a quota/capacity boundary, not a
 	// transient channel failure. Retrying another channel in the same request
 	// is especially harmful for mapped channels that share the same CPA/project:
@@ -476,6 +482,16 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 		return false
 	}
 	return operation_setting.ShouldRetryByStatusCode(code)
+}
+
+func isQuotaExhaustionWithoutRetryHint(err *types.NewAPIError) bool {
+	if err == nil || err.RetryAfter() > 0 {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "resource has been exhausted") ||
+		strings.Contains(lower, "individual quota reached") ||
+		strings.Contains(lower, "quota exhausted")
 }
 
 const maxChannelFallbackDelay = 5 * time.Second

@@ -4,7 +4,7 @@
 > **最后更新**：2026-09-22
 > **文档版本**：1.4
 > **生产机制版本**：`AG-RF v4`
-> **状态**：`AG-RF v4` 已在代码与 daemon 部署目标中生效；本文是当前权威基线
+> **状态**：`AG-RF v5` 已在代码与 daemon 部署目标中生效；本文是当前权威基线
 > **交付目的**：记录 tokensheep new-api + CPA 的最终处理机制，供以后在 100b fork 上重新实现。
 > **适用链路**：客户端 -> new-api（VPS22）-> CPA/CLIProxyAPI（VPS196）-> Google Antigravity。
 > **安全约束**：本文不记录管理密钥、API key、OAuth token、账号邮箱或用户请求正文。
@@ -20,7 +20,8 @@
 | `AG-RF v1` | 2026-09-21 | `b20ef2400` | CPA 每渠道最多 3 个 credential；初版 12/87/88 fallback；88 仍包含与 87 重叠的 source model | 历史版本，禁止作为回滚目标 |
 | `AG-RF v2` | 2026-09-22 | `b6722a7a2` | CPA 降为每渠道 1 个 credential；Pro 统一由 87 映射到 3.8；99、100、102 禁用 | 已被 v3 取代 |
 | `AG-RF v3` | 2026-09-22 | `f4c558f57` | 保留 v2；88 收窄为仅处理 3.8 -> 3.7，消除与 87 的 source overlap | **当前生产版本** |
-| `AG-RF v4` | 2026-09-22 | `d9bb2938c` | 保留 v3；daemon 只在 weekly 或 5h 桶为 0 时自动关闭，非零额度不再因预留阈值关闭 | **当前版本** |
+| `AG-RF v4` | 2026-09-22 | `d9bb2938c` | 保留 v3；daemon 只在 weekly 或 5h 桶为 0 时自动关闭，非零额度不再因预留阈值关闭 | 历史版本 |
+| `AG-RF v5` | 2026-09-22 | pending | 无结构 quota exhausted 429 不在同一请求重复映射 fallback；daemon 只恢复 weekly/5h 均至少 5% 的自动关闭账号，低额度保留为备用 | **当前版本** |
 
 版本号描述的是 new-api 渠道配置、CPA 重试配置和 daemon 控制规则组成的整套机制，不等同于某一个二进制版本。数据库渠道配置不包含在容器镜像中；恢复或迁移时必须同时恢复本节的机制版本和下方组件版本，不能只回滚镜像。
 
@@ -59,7 +60,7 @@
 2. 单账号或单模型短暂拥塞时，CPA 会记录模型/账号冷却；`AG-RF v3` 的单次渠道调用只选择一个 credential，后续请求再由池调度选择其他可用账号。
 3. CPA 已经尝试过仍失败时，new-api 才会切到低优先级的模型映射渠道。
 4. 同一个 new-api 渠道 ID 在一个请求内不会重复命中。
-5. 周桶或 5 小时桶真正耗尽的账号由 daemon 关闭，两个桶恢复到非零后再开启；只要桶仍大于 0%，不因预留阈值关闭。
+5. 周桶或 5 小时桶真正耗尽的账号由 daemon 关闭；只有两个桶都至少恢复到 5% 才自动开启，低于 5% 的账号保留为备用额度。
 6. daemon 不会自动打开管理员手动关闭的账号。
 7. 重试有明确上限，避免高并发时把一个客户端请求放大成无界的上游请求风暴。
 
@@ -120,7 +121,7 @@ Antigravity 至少存在以下几类 429：
 |---|---|---|
 | 5 小时滑动桶 | `RATE_LIMIT_EXCEEDED`，通常带短 `retryDelay` | 当前账号 + 模型短冷却；当前调用不选第二个 credential |
 | 周桶硬墙 | `QUOTA_EXHAUSTED`，或 `Individual quota reached ... Resets in ...` | 整个 credential 冷却到真实 reset，不做徒劳短重试 |
-| 普通无结构 429 | `Resource has been exhausted (e.g. check quota).`，无可靠桶信息 | 视为短暂拥塞，模型至少冷却 10 秒；后续请求再由池调度换号 |
+| 普通无结构 429 | `Resource has been exhausted (e.g. check quota).`，无可靠桶信息 | 当前请求停止映射 fallback，避免同一耗尽 project 被重复撞；后续请求再由池调度换号 |
 | 模型容量错误 | 有时返回 429，有时返回 503，并包含模型暂不可用语义 | 不污染整个账号；由 new-api 进入模型映射 fallback |
 
 把所有 429 都解释成“账号没有周额度”会误关健康账号；把所有 429 都解释成“立刻换号”又会制造扫池风暴。分类是这套机制能工作的前提。
@@ -149,7 +150,7 @@ Antigravity 至少存在以下几类 429：
 | 404：`requested model or endpoint is unavailable` | 标为 request/model scoped，不扫账号池、不冷却账号 | 若生产 retry 状态码策略允许，选择下一个未使用的低优先级渠道 | 否 | 是 |
 | 429：结构化 5h 短限流 | 按 `RetryInfo` 分类并冷却当前账号 + 模型；v3 不在同一渠道调用内换号 | CPA 最终仍失败且携带短 `Retry-After` 时，等待后切渠道 | 后续请求是 | 最终失败后是 |
 | 429：weekly hard wall | 整个 credential 冷却到 reset | CPA 池仍无可用账号时才切映射渠道 | 是，但不可再次选择该 credential | 是 |
-| 429：普通无结构 exhausted | 设置 `RetryAfter=1s` 和短冷却；`CredentialFailoverDelay` 代码保留，但 v3 上限为 1，不在当前渠道调用内换号 | 保留 `Retry-After`，等待 `[1s,2s)` 后切渠道 | 后续请求是 | 最终失败后是 |
+| 429：普通无结构 exhausted | 设置短冷却；当前请求不再切映射渠道，后续请求再由池调度换号 | 保留上游 429，避免把同一失败域放大成 503 | 后续请求是 | 当前请求否 |
 | 503：`MODEL_CAPACITY_EXHAUSTED` | request/model scoped，不扫账号池、不冷却账号 | 无响应头时合成 1 秒 delay，等待 `[1s,2s)` 后切映射渠道 | 否 | 是 |
 | 503：`No capacity available for model` | 同上 | 同上 | 否 | 是 |
 | 503：`temporarily unavailable` + `Retry in 1s` | request/model scoped | 无响应头时合成 1 秒 delay，再切映射渠道 | 否 | 是 |
@@ -432,9 +433,11 @@ https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary
 
 ```text
 CPA_WEEKLY_EXHAUSTED=0.0
-CPA_WEEKLY_HEALTHY=0.10  # 兼容旧配置，不再作为恢复门槛
+CPA_WEEKLY_HEALTHY=0.10  # 兼容旧配置，仅保留用于旧环境
 CPA_FIVE_HOUR_EXHAUSTED=0.0
-CPA_FIVE_HOUR_HEALTHY=0.10  # 兼容旧配置，不再作为恢复门槛
+CPA_FIVE_HOUR_HEALTHY=0.10  # 兼容旧配置，仅保留用于旧环境
+CPA_RECOVERY_MIN_WEEKLY=0.05
+CPA_RECOVERY_MIN_FIVE_HOUR=0.05
 CPA_MAX_ACTIVE=40
 CPA_MAX_ENABLE_CYCLE=5
 CPA_CYCLE_SEC=1800
@@ -447,12 +450,13 @@ CPA_CYCLE_SEC=1800
 | enabled | weekly `==0%` | disable，并记入 daemon 自动关闭状态 |
 | enabled | weekly `>0%`，5h 有效且 `==0%` | disable，并记入 daemon 自动关闭状态 |
 | enabled | weekly/5h 不触发关闭 | keep |
-| disabled，且是 daemon 关闭 | weekly `>0%` 且 5h `>0%` | 允许 enable（受每轮上限限制） |
+| disabled，且是 daemon 关闭 | weekly `>=5%` 且 5h `>=5%` | 允许 enable（受每轮上限限制） |
+| disabled，且是 daemon 关闭 | 两个桶均非零但任一 `<5%` | keep，作为备用额度，不进入主池 |
 | disabled，且是 daemon 关闭 | weekly `==0%`、5h `==0%`，或 5h 缺失/非法 | keep，等待恢复 |
 | disabled，且不是 daemon 关闭 | 任意健康 quota | keep，视为管理员手动关闭 |
 | 任意 | quota 读取失败或桶数据非法 | keep，不因读取失败改变状态 |
 
-关闭和恢复现在使用同一个真实耗尽边界：只有 0% 触发关闭，两个桶都重新大于 0% 才恢复。恢复仍受每轮最多 5 个和 `MAX_ACTIVE` 限制，避免一次性把整池打回上游。
+关闭和恢复使用不同边界：只有 0% 触发关闭；恢复要求两个桶都至少 5%。恢复仍受每轮最多 5 个和 `MAX_ACTIVE` 限制，避免一次性把整池打回上游。
 
 ### 5.3 手动关闭优先
 
@@ -654,7 +658,7 @@ CPA 属于另一个仓库，100b 的 new-api 基线也会继续演进。即使�
 
 - [ ] weekly `0%` 关闭，任意非零 weekly 不因 weekly 关闭。
 - [ ] 5h `0%` 关闭，任意非零 5h 不因 5h 关闭。
-- [ ] weekly/5h 都大于 `0%` 才恢复，且受每轮开启上限限制。
+- [ ] weekly/5h 都至少 `5%` 才恢复，且受每轮开启上限限制。
 - [ ] 手动 disabled 即使 100% 也不恢复。
 - [ ] quota unreadable 保持当前状态。
 - [ ] refresh failure 需连续 3 轮才隔离。

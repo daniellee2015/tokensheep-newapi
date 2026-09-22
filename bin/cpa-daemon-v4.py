@@ -29,8 +29,9 @@
 决策规则:
     gemini_weekly <= WEEKLY_EXHAUSTED_THRESHOLD  → 必须 disable
     gemini_5h <= FIVE_HOUR_EXHAUSTED_THRESHOLD   → 暂时 disable
-    gemini_weekly > 0 且 gemini_5h > 0                    → 仅自动恢复 daemon 自己关闭的账号
-    中间区间                                       → 保持现状 (不动)
+    gemini_weekly >= 5% 且 gemini_5h >= 5%              → 仅自动恢复 daemon 自己关闭的账号
+    非零但低于 5%                                      → 保持关闭，作为备用额度
+    中间区间                                             → 保持现状 (不动)
     quota 查询失败或数据无效                      → 保持当前状态
 
     management UI 手动关闭的账号不属于 daemon 管理状态, 无论剩余额度多少都保持
@@ -39,8 +40,8 @@
 
 gemini-5h 使用真实耗尽边界:
   - 5h 桶真正耗尽时主动关号, 避免 CPA 在并发下继续把请求分配给必然 429 的账号。
-  - 5h 桶恢复到任意非零值后才重新开号; 关闭条件已经是 0, 不再用 10% 预留值
-    把仍能请求的账号长期卡在 disabled。
+  - 5h 桶恢复到至少 5% 后才重新开号; 关闭条件已经是 0, 低于 5% 的额度保留给
+    低峰或人工应急，不自动放入主池。
 为什么 3p 两个桶只记录不判开关:
   - 3p-weekly / 3p-5h: 走 CPA 的流量只有 Gemini (new-api 那条通道
     own-cpa-multi-gemini-mapped-* 的 models 全是 gemini-*), Claude 侧由
@@ -89,6 +90,10 @@ gemini-5h 使用真实耗尽边界:
     CPA_WEEKLY_HEALTHY     default 0.10
     CPA_FIVE_HOUR_EXHAUSTED default 0.0
     CPA_FIVE_HOUR_HEALTHY  default 0.10
+    CPA_RECOVERY_MIN_WEEKLY default 0.05
+    CPA_RECOVERY_MIN_FIVE_HOUR default 0.05
+    CPA_EXHAUSTION_CONFIRMATIONS default 2
+    CPA_EXHAUSTION_STATE default /var/lib/cpa-daemon-v4/quota-exhaustion-streak.json
     CPA_AUTO_DISABLED_STATE default /var/lib/cpa-daemon-v4/quota-disabled.json
     CPA_AUTH_DIR           default /data/cli-proxy-api/auths
     CPA_DEAD_STREAK        default 3    连续几轮 refresh-failed 才隔离
@@ -138,16 +143,20 @@ WEEKLY_EXHAUSTED = float(os.getenv("CPA_WEEKLY_EXHAUSTED", "0.0"))
 WEEKLY_HEALTHY = float(os.getenv("CPA_WEEKLY_HEALTHY", "0.10"))
 FIVE_HOUR_EXHAUSTED = float(os.getenv("CPA_FIVE_HOUR_EXHAUSTED", "0.0"))
 FIVE_HOUR_HEALTHY = float(os.getenv("CPA_FIVE_HOUR_HEALTHY", "0.10"))
-if not 0 <= WEEKLY_EXHAUSTED < WEEKLY_HEALTHY <= 1:
-    raise ValueError("expected 0 <= CPA_WEEKLY_EXHAUSTED < CPA_WEEKLY_HEALTHY <= 1")
-if not 0 <= FIVE_HOUR_EXHAUSTED < FIVE_HOUR_HEALTHY <= 1:
+RECOVERY_MIN_WEEKLY = float(os.getenv("CPA_RECOVERY_MIN_WEEKLY", "0.05"))
+RECOVERY_MIN_FIVE_HOUR = float(os.getenv("CPA_RECOVERY_MIN_FIVE_HOUR", "0.05"))
+EXHAUSTION_CONFIRMATIONS = int(os.getenv("CPA_EXHAUSTION_CONFIRMATIONS", "2"))
+if not 0 <= WEEKLY_EXHAUSTED < RECOVERY_MIN_WEEKLY <= 1:
+    raise ValueError("expected 0 <= CPA_WEEKLY_EXHAUSTED < CPA_RECOVERY_MIN_WEEKLY <= 1")
+if not 0 <= FIVE_HOUR_EXHAUSTED < RECOVERY_MIN_FIVE_HOUR <= 1:
     raise ValueError(
-        "expected 0 <= CPA_FIVE_HOUR_EXHAUSTED < CPA_FIVE_HOUR_HEALTHY <= 1"
+        "expected 0 <= CPA_FIVE_HOUR_EXHAUSTED < CPA_RECOVERY_MIN_FIVE_HOUR <= 1"
     )
+if EXHAUSTION_CONFIRMATIONS < 1:
+    raise ValueError("expected CPA_EXHAUSTION_CONFIRMATIONS >= 1")
 
-# Weekly and five-hour exhaustion control shutdown; recovery uses the same
-# nonzero boundary so accounts previously disabled by the old reserve policy
-# can return to the pool once they still have usable quota.
+# Weekly and five-hour exhaustion control shutdown; recovery uses a separate
+# reserve floor so tiny remaining buckets do not rejoin the active pool.
 DECISION_BUCKET = "gemini-weekly"
 FIVE_HOUR_BUCKET = "gemini-5h"
 # 日志表里展示的桶顺序 (Google 目前返回这四个)
@@ -157,6 +166,9 @@ REPORT_BUCKETS = ("gemini-weekly", "gemini-5h", "3p-weekly", "3p-5h")
 # management UI disable operation authoritative across daemon cycles.
 AUTO_DISABLED_STATE_FILE = os.getenv(
     "CPA_AUTO_DISABLED_STATE", "/var/lib/cpa-daemon-v4/quota-disabled.json"
+)
+EXHAUSTION_STATE_FILE = os.getenv(
+    "CPA_EXHAUSTION_STATE", "/var/lib/cpa-daemon-v4/quota-exhaustion-streak.json"
 )
 
 # 死号隔离
@@ -283,6 +295,35 @@ def save_quota_disabled(names):
         os.replace(tmp, AUTO_DISABLED_STATE_FILE)
     except OSError as exc:
         LOG.warning("could not persist quota-disabled state: %s", exc)
+
+
+def load_exhaustion_streaks():
+    try:
+        with open(EXHAUSTION_STATE_FILE, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {
+        name: {bucket: int(count) for bucket, count in buckets.items()
+               if bucket in (DECISION_BUCKET, FIVE_HOUR_BUCKET) and isinstance(count, int) and count > 0}
+        for name, buckets in data.items()
+        if isinstance(name, str) and isinstance(buckets, dict)
+    }
+
+
+def save_exhaustion_streaks(streaks):
+    tmp = EXHAUSTION_STATE_FILE + ".tmp"
+    try:
+        state_dir = os.path.dirname(EXHAUSTION_STATE_FILE)
+        if state_dir:
+            os.makedirs(state_dir, exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(streaks, fh, indent=2, sort_keys=True)
+        os.replace(tmp, EXHAUSTION_STATE_FILE)
+    except OSError as exc:
+        LOG.warning("could not persist quota exhaustion state: %s", exc)
 
 
 # ---------- quota 解析 ----------
@@ -458,9 +499,10 @@ def apply_quarantine(rows, apply_changes):
 
 # ---------- 决策 ----------
 
-def decide(auth, buckets, quota_err, auto_disabled=False):
+def decide(auth, buckets, quota_err, auto_disabled=False, exhaustion_streaks=None):
     """返回 (action, reason)。action ∈ {'disable', 'enable', 'keep'}"""
     disabled = bool(auth.get("disabled"))
+    exhaustion_streaks = exhaustion_streaks or {}
 
     if quota_err:
         # Quota API is itself rate-limited and can fail transiently.  Never
@@ -469,8 +511,9 @@ def decide(auth, buckets, quota_err, auto_disabled=False):
         # Refresh-token failures are handled by the dead-auth quarantine path.
         return "keep", f"quota-unreadable({quota_err})"
 
-    # Weekly and five-hour exhaustion control shutdown. Recovery uses higher
-    # thresholds below so an account does not flap near an empty bucket.
+    # Weekly and five-hour exhaustion control shutdown. Recovery has a 5%
+    # reserve floor so a tiny remaining bucket is not promoted into the main
+    # active pool immediately after a reset or a manual intervention.
     gw = buckets.get(DECISION_BUCKET, {}).get("frac")
     if gw is None:
         return "keep", f"no-{DECISION_BUCKET}-bucket"
@@ -479,6 +522,12 @@ def decide(auth, buckets, quota_err, auto_disabled=False):
 
     if gw <= WEEKLY_EXHAUSTED:
         if not disabled:
+            streak = exhaustion_streaks.get(DECISION_BUCKET, 0)
+            if streak < EXHAUSTION_CONFIRMATIONS:
+                return "keep", (
+                    f"{DECISION_BUCKET}={quota_fraction_pct(gw)} "
+                    f"(exhaustion pending {streak}/{EXHAUSTION_CONFIRMATIONS})"
+                )
             return "disable", f"{DECISION_BUCKET}={quota_fraction_pct(gw)}"
         return "keep", f"{DECISION_BUCKET}={quota_fraction_pct(gw)} (already off)"
 
@@ -490,6 +539,12 @@ def decide(auth, buckets, quota_err, auto_disabled=False):
         and 0 <= five_hour <= 1
     )
     if not disabled and valid_five_hour and five_hour <= FIVE_HOUR_EXHAUSTED:
+        streak = exhaustion_streaks.get(FIVE_HOUR_BUCKET, 0)
+        if streak < EXHAUSTION_CONFIRMATIONS:
+            return "keep", (
+                f"{FIVE_HOUR_BUCKET}={quota_fraction_pct(five_hour)} "
+                f"(exhaustion pending {streak}/{EXHAUSTION_CONFIRMATIONS})"
+            )
         return "disable", f"{FIVE_HOUR_BUCKET}={quota_fraction_pct(five_hour)}"
 
     if gw > WEEKLY_EXHAUSTED:
@@ -502,6 +557,16 @@ def decide(auth, buckets, quota_err, auto_disabled=False):
                 return "keep", f"invalid-{FIVE_HOUR_BUCKET}-fraction"
             if five_hour <= FIVE_HOUR_EXHAUSTED:
                 return "keep", f"{FIVE_HOUR_BUCKET}={quota_fraction_pct(five_hour)} (not ready)"
+            if gw < RECOVERY_MIN_WEEKLY:
+                return "keep", (
+                    f"{DECISION_BUCKET}={quota_fraction_pct(gw)} "
+                    f"(reserve floor {quota_fraction_pct(RECOVERY_MIN_WEEKLY)})"
+                )
+            if five_hour < RECOVERY_MIN_FIVE_HOUR:
+                return "keep", (
+                    f"{FIVE_HOUR_BUCKET}={quota_fraction_pct(five_hour)} "
+                    f"(reserve floor {quota_fraction_pct(RECOVERY_MIN_FIVE_HOUR)})"
+                )
             return "enable", (
                 f"{DECISION_BUCKET}={quota_fraction_pct(gw)}, "
                 f"{FIVE_HOUR_BUCKET}={quota_fraction_pct(five_hour)}"
@@ -516,16 +581,17 @@ def run_cycle(apply_changes):
     global CPA_URL
     CPA_URL = _resolve_cpa_url()
     LOG.info(
-        "quota target=%s endpoint=%s thresholds=weekly exhausted %.3f recovery>%.3f; five-hour exhausted %.3f recovery>%.3f",
+        "quota target=%s endpoint=%s thresholds=weekly exhausted %.3f recovery>=%.3f; five-hour exhausted %.3f recovery>=%.3f",
         CPA_URL,
         QUOTA_URL,
         WEEKLY_EXHAUSTED,
-        WEEKLY_EXHAUSTED,
+        RECOVERY_MIN_WEEKLY,
         FIVE_HOUR_EXHAUSTED,
-        FIVE_HOUR_EXHAUSTED,
+        RECOVERY_MIN_FIVE_HOUR,
     )
     auths = list_antigravity_auths()
     quota_disabled = load_quota_disabled()
+    exhaustion_streaks = load_exhaustion_streaks()
     auth_by_name = {a.get("name", ""): a for a in auths if a.get("name")}
     stale_quota_disabled = {
         name
@@ -550,10 +616,44 @@ def run_cycle(apply_changes):
         project_id = a.get("project_id") or a.get("projectId")
         quota, err = fetch_quota(idx, project_id)
         buckets = extract_buckets(quota) if quota else {}
+        account_streaks = exhaustion_streaks.get(a.get("name", ""), {})
+        if not err:
+            next_streaks = dict(account_streaks)
+            for bucket_id in (DECISION_BUCKET, FIVE_HOUR_BUCKET):
+                fraction = buckets.get(bucket_id, {}).get("frac")
+                valid_fraction = (
+                    not isinstance(fraction, bool)
+                    and isinstance(fraction, (int, float))
+                    and math.isfinite(fraction)
+                    and 0 <= fraction <= 1
+                )
+                exhausted = valid_fraction and fraction <= (
+                    WEEKLY_EXHAUSTED if bucket_id == DECISION_BUCKET else FIVE_HOUR_EXHAUSTED
+                )
+                if exhausted:
+                    next_streaks[bucket_id] = next_streaks.get(bucket_id, 0) + 1
+                else:
+                    next_streaks.pop(bucket_id, None)
+            if next_streaks:
+                exhaustion_streaks[a.get("name", "")] = next_streaks
+            else:
+                exhaustion_streaks.pop(a.get("name", ""), None)
+            account_streaks = next_streaks
         action, reason = decide(
-            a, buckets, err, auto_disabled=a.get("name", "") in quota_disabled
+            a,
+            buckets,
+            err,
+            auto_disabled=a.get("name", "") in quota_disabled,
+            exhaustion_streaks=account_streaks,
         )
         rows.append((email, a, buckets, err, action, reason))
+
+    if apply_changes:
+        known_names = {a.get("name", "") for a in auths if a.get("name")}
+        exhaustion_streaks = {
+            name: streaks for name, streaks in exhaustion_streaks.items() if name in known_names
+        }
+        save_exhaustion_streaks(exhaustion_streaks)
 
     # 打印决策表。四个桶全展示 (gemini-weekly 带 reset 倒计时, 它是决策桶),
     # 但只有 DECISION_BUCKET 参与开关 —— 其余三列纯观测, 用于事后判断
