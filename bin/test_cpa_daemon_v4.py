@@ -21,11 +21,11 @@ class QuotaDecisionTests(unittest.TestCase):
         )
         self.assertEqual(action, "keep")
 
-    def test_five_percent_weekly_bucket_is_disabled(self):
+    def test_nonzero_weekly_bucket_is_not_disabled(self):
         action, _ = daemon.decide(
             {"disabled": False}, {"gemini-weekly": {"frac": 0.05}}, None
         )
-        self.assertEqual(action, "disable")
+        self.assertEqual(action, "keep")
 
     def test_hysteresis_does_not_reopen_account_below_ten_percent(self):
         action, _ = daemon.decide(
@@ -62,10 +62,10 @@ class QuotaDecisionTests(unittest.TestCase):
                 )
                 self.assertEqual(action, "keep")
 
-    def test_exhausted_weekly_disables_even_with_five_hour_capacity(self):
+    def test_true_zero_weekly_disables_even_with_five_hour_capacity(self):
         action, _ = daemon.decide(
             {"disabled": False},
-            {"gemini-weekly": {"frac": 0.02}, "gemini-5h": {"frac": 0.98}},
+            {"gemini-weekly": {"frac": 0.0}, "gemini-5h": {"frac": 0.98}},
             None,
         )
         self.assertEqual(action, "disable")
@@ -79,7 +79,7 @@ class QuotaDecisionTests(unittest.TestCase):
         self.assertEqual(action, "disable")
         self.assertEqual(reason, "gemini-5h=0.0%")
 
-    def test_five_hour_shutdown_uses_hysteresis(self):
+    def test_nonzero_five_hour_bucket_uses_no_exhaustion_shutdown(self):
         action, _ = daemon.decide(
             {"disabled": False},
             {"gemini-weekly": {"frac": 0.41}, "gemini-5h": {"frac": 0.03}},

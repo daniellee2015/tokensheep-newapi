@@ -2,9 +2,9 @@
 
 > **产出日期**：2026-09-21
 > **最后更新**：2026-09-22
-> **文档版本**：1.3
-> **生产机制版本**：`AG-RF v3`
-> **状态**：`AG-RF v3` 已在 VPS22/VPS196 生效；本文是当前权威基线
+> **文档版本**：1.4
+> **生产机制版本**：`AG-RF v4`
+> **状态**：`AG-RF v4` 已在代码与 daemon 部署目标中生效；本文是当前权威基线
 > **交付目的**：记录 tokensheep new-api + CPA 的最终处理机制，供以后在 100b fork 上重新实现。
 > **适用链路**：客户端 -> new-api（VPS22）-> CPA/CLIProxyAPI（VPS196）-> Google Antigravity。
 > **安全约束**：本文不记录管理密钥、API key、OAuth token、账号邮箱或用户请求正文。
@@ -20,6 +20,7 @@
 | `AG-RF v1` | 2026-09-21 | `b20ef2400` | CPA 每渠道最多 3 个 credential；初版 12/87/88 fallback；88 仍包含与 87 重叠的 source model | 历史版本，禁止作为回滚目标 |
 | `AG-RF v2` | 2026-09-22 | `b6722a7a2` | CPA 降为每渠道 1 个 credential；Pro 统一由 87 映射到 3.8；99、100、102 禁用 | 已被 v3 取代 |
 | `AG-RF v3` | 2026-09-22 | `f4c558f57` | 保留 v2；88 收窄为仅处理 3.8 -> 3.7，消除与 87 的 source overlap | **当前生产版本** |
+| `AG-RF v4` | 2026-09-22 | `03cd1cbda` | 保留 v3；daemon 只在 weekly 或 5h 桶为 0 时自动关闭，非零额度不再因预留阈值关闭 | **当前版本** |
 
 版本号描述的是 new-api 渠道配置、CPA 重试配置和 daemon 控制规则组成的整套机制，不等同于某一个二进制版本。数据库渠道配置不包含在容器镜像中；恢复或迁移时必须同时恢复本节的机制版本和下方组件版本，不能只回滚镜像。
 
@@ -31,7 +32,7 @@
 | tokensheep new-api digest | `sha256:58534a924bc0c6762da50a9e025788a71e54257faef77a39dca7dcdab80ea9ec` |
 | CPA | `ghcr.io/daniellee2015/cli-proxy-api:feat-plugin-quota-slot`，代码基线 `1d57a590` |
 | CPA digest | `sha256:b1c0b7c57ef2a78433de5f2f3aadff1d9ac815fa7c334c37e8c9582ee4885894` |
-| daemon | `cpa-daemon-v4.py`，SHA-256 `81cf00b21618db143ce0170acda81e194e61969de97eb37541b83aaeb25cc509` |
+| daemon | `cpa-daemon-v4.py`，SHA-256 `a96f3553e1b506391532e75f31f7de832580d7b72bd05e8de7aa28ccd044b323` |
 
 ### v3 不变量
 
@@ -40,7 +41,7 @@
 3. 99、100、102 必须保持 disabled；90、91 也必须保持 disabled。
 4. 87 与 88 的 source model 集合必须互斥。
 5. CPA 必须保持 `request-retry=0`、`max-retry-credentials=1`。
-6. daemon 必须尊重 manual disabled，只有 daemon 自己自动关闭的账号才允许自动恢复。
+6. daemon 必须尊重 manual disabled，只有 daemon 自己自动关闭的账号才允许自动恢复；自动关闭只针对真实耗尽的桶。
 7. 同一 Google project 下的不同 credential 不视为独立故障域；generic 429 不得通过增加 fallback 层数处理。
 8. 渠道 97 的 `gemini-3.1-flash-image` 只属于独立 `image` 分组，不参与 `gemini-lowprice`、`gemini-sale`、`gemini-stable` 的重试链；跨互斥分组的同名模型不算同一请求内的重复 fallback。
 
@@ -58,7 +59,7 @@
 2. 单账号或单模型短暂拥塞时，CPA 会记录模型/账号冷却；`AG-RF v3` 的单次渠道调用只选择一个 credential，后续请求再由池调度选择其他可用账号。
 3. CPA 已经尝试过仍失败时，new-api 才会切到低优先级的模型映射渠道。
 4. 同一个 new-api 渠道 ID 在一个请求内不会重复命中。
-5. 周桶或 5 小时桶不足的账号由 daemon 提前关闭，恢复到安全水位后再开启。
+5. 周桶或 5 小时桶真正耗尽的账号由 daemon 关闭，恢复到安全水位后再开启；只要桶仍大于 0%，不因预留阈值关闭。
 6. daemon 不会自动打开管理员手动关闭的账号。
 7. 重试有明确上限，避免高并发时把一个客户端请求放大成无界的上游请求风暴。
 
@@ -430,9 +431,9 @@ https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary
 当前默认及生产目标值：
 
 ```text
-CPA_WEEKLY_EXHAUSTED=0.05
+CPA_WEEKLY_EXHAUSTED=0.0
 CPA_WEEKLY_HEALTHY=0.10
-CPA_FIVE_HOUR_EXHAUSTED=0.02
+CPA_FIVE_HOUR_EXHAUSTED=0.0
 CPA_FIVE_HOUR_HEALTHY=0.10
 CPA_MAX_ACTIVE=40
 CPA_MAX_ENABLE_CYCLE=5
@@ -443,15 +444,15 @@ CPA_CYCLE_SEC=1800
 
 | 当前状态 | quota 条件 | 动作 |
 |---|---|---|
-| enabled | weekly `<=5%` | disable，并记入 daemon 自动关闭状态 |
-| enabled | weekly `>5%`，5h 有效且 `<=2%` | disable，并记入 daemon 自动关闭状态 |
+| enabled | weekly `==0%` | disable，并记入 daemon 自动关闭状态 |
+| enabled | weekly `>0%`，5h 有效且 `==0%` | disable，并记入 daemon 自动关闭状态 |
 | enabled | weekly/5h 不触发关闭 | keep |
 | disabled，且是 daemon 关闭 | weekly `>=10%` 且 5h `>=10%` | 允许 enable |
 | disabled，且是 daemon 关闭 | weekly `<10%`、5h `<10%`，或 5h 缺失/非法 | keep，等待恢复 |
 | disabled，且不是 daemon 关闭 | 任意健康 quota | keep，视为管理员手动关闭 |
 | 任意 | quota 读取失败或桶数据非法 | keep，不因读取失败改变状态 |
 
-`(5%,10%)` weekly 灰区和 `(2%,10%)` 5h 恢复区构成滞回；边界 5%/2% 触发关闭，10% 才允许恢复。这可以防止账号在临界值附近每 30 分钟反复开关。
+`(0%,10%)` weekly 灰区和 `(0%,10%)` 5h 恢复区构成滞回；只有真实的 0% 触发关闭，10% 才允许恢复。这避免把仍可请求的低额度账号提前赶出池，也避免账号在 reset 前后反复开关。
 
 ### 5.3 手动关闭优先
 
@@ -651,8 +652,8 @@ CPA 属于另一个仓库，100b 的 new-api 基线也会继续演进。即使�
 
 ### 9.3 daemon 单元测试
 
-- [ ] weekly `5%` 关闭，`>5%` 不因 weekly 关闭。
-- [ ] 5h `2%` 关闭。
+- [ ] weekly `0%` 关闭，任意非零 weekly 不因 weekly 关闭。
+- [ ] 5h `0%` 关闭，任意非零 5h 不因 5h 关闭。
 - [ ] weekly/5h 都达到 `10%` 才恢复。
 - [ ] 手动 disabled 即使 100% 也不恢复。
 - [ ] quota unreadable 保持当前状态。
@@ -794,7 +795,7 @@ GitHub Actions run: 35609197255 (success)
 - fallback 请求在短 429/503 后存在约 1 秒以上的分散等待，不再集中在几百毫秒内扫完多个账号。
 - 404/容量 503 不产生多 credential 扫描。
 - `PROHIBITED_CONTENT` 400 没有后续 channel 尝试。
-- weekly `<=5%` 或 5h `<=2%` 的 enabled 账号在下一 daemon 周期被关闭。
+- weekly 或 5h 为 `0%` 的 enabled 账号在下一 daemon 周期被关闭；非零额度账号保持 enabled。
 - 手动 disabled 账号即使额度恢复也不会出现 `ENABLE`。
 - channel 90、91、99、100、102 不出现在 `use_channel`。
 
