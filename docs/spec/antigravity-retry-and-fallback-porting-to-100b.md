@@ -1,10 +1,50 @@
 # Antigravity 重试、号池与模型降级：面向 100b 的移植规格
 
 > **产出日期**：2026-09-21
-> **状态**：按当前代码、生产配置与自然流量验证结果归档
+> **最后更新**：2026-09-22
+> **文档版本**：1.3
+> **生产机制版本**：`AG-RF v3`
+> **状态**：`AG-RF v3` 已在 VPS22/VPS196 生效；本文是当前权威基线
 > **交付目的**：记录 tokensheep new-api + CPA 的最终处理机制，供以后在 100b fork 上重新实现。
 > **适用链路**：客户端 -> new-api（VPS22）-> CPA/CLIProxyAPI（VPS196）-> Google Antigravity。
 > **安全约束**：本文不记录管理密钥、API key、OAuth token、账号邮箱或用户请求正文。
+
+---
+
+## 版本基线
+
+### 机制版本历史
+
+| 机制版本 | 日期 | 文档提交 | 生产语义 | 状态 |
+|---|---|---|---|---|
+| `AG-RF v1` | 2026-09-21 | `b20ef2400` | CPA 每渠道最多 3 个 credential；初版 12/87/88 fallback；88 仍包含与 87 重叠的 source model | 历史版本，禁止作为回滚目标 |
+| `AG-RF v2` | 2026-09-22 | `b6722a7a2` | CPA 降为每渠道 1 个 credential；Pro 统一由 87 映射到 3.8；99、100、102 禁用 | 已被 v3 取代 |
+| `AG-RF v3` | 2026-09-22 | `f4c558f57` | 保留 v2；88 收窄为仅处理 3.8 -> 3.7，消除与 87 的 source overlap | **当前生产版本** |
+
+版本号描述的是 new-api 渠道配置、CPA 重试配置和 daemon 控制规则组成的整套机制，不等同于某一个二进制版本。数据库渠道配置不包含在容器镜像中；恢复或迁移时必须同时恢复本节的机制版本和下方组件版本，不能只回滚镜像。
+
+### v3 组件版本
+
+| 组件 | 当前生产版本 |
+|---|---|
+| tokensheep new-api | `ghcr.io/daniellee2015/tokensheep-newapi:20260921-92e211b` |
+| tokensheep new-api digest | `sha256:58534a924bc0c6762da50a9e025788a71e54257faef77a39dca7dcdab80ea9ec` |
+| CPA | `ghcr.io/daniellee2015/cli-proxy-api:feat-plugin-quota-slot`，代码基线 `1d57a590` |
+| CPA digest | `sha256:b1c0b7c57ef2a78433de5f2f3aadff1d9ac815fa7c334c37e8c9582ee4885894` |
+| daemon | `cpa-daemon-v4.py`，SHA-256 `81cf00b21618db143ce0170acda81e194e61969de97eb37541b83aaeb25cc509` |
+
+### v3 不变量
+
+1. 3/3.6/3.7/Pro 请求只能走 `12 -> 87`，最多两个不同 channel ID。
+2. 3.8 请求只能走 `12 -> 88`，最多两个不同 channel ID。
+3. 99、100、102 必须保持 disabled；90、91 也必须保持 disabled。
+4. 87 与 88 的 source model 集合必须互斥。
+5. CPA 必须保持 `request-retry=0`、`max-retry-credentials=1`。
+6. daemon 必须尊重 manual disabled，只有 daemon 自己自动关闭的账号才允许自动恢复。
+7. 同一 Google project 下的不同 credential 不视为独立故障域；generic 429 不得通过增加 fallback 层数处理。
+8. 渠道 97 的 `gemini-3.1-flash-image` 只属于独立 `image` 分组，不参与 `gemini-lowprice`、`gemini-sale`、`gemini-stable` 的重试链；跨互斥分组的同名模型不算同一请求内的重复 fallback。
+
+出现与以上任一条冲突的配置时，不能继续标记为 `AG-RF v3`，必须修正或升版并记录差异。
 
 ---
 
@@ -15,7 +55,7 @@
 可以保证的是：
 
 1. 请求错误不会误伤整个账号池。
-2. 单账号或单模型短暂拥塞时，CPA 会有界换号，并在换号之间退避。
+2. 单账号或单模型短暂拥塞时，CPA 会记录模型/账号冷却；`AG-RF v3` 的单次渠道调用只选择一个 credential，后续请求再由池调度选择其他可用账号。
 3. CPA 已经尝试过仍失败时，new-api 才会切到低优先级的模型映射渠道。
 4. 同一个 new-api 渠道 ID 在一个请求内不会重复命中。
 5. 周桶或 5 小时桶不足的账号由 daemon 提前关闭，恢复到安全水位后再开启。
@@ -41,7 +81,7 @@ new-api 渠道 87 或 88：模型映射，priority=-1
     v
 CPA：映射模型，每次渠道调用最多选择 1 个 credential
     |
-    | 普通 429：1-2s、2-4s、4-8s 封顶的 equal-jitter 退避
+    | 普通 429：当前调用直接结束；多 credential equal-jitter 代码在 v3 配置下不触发
     | 5h/weekly：按桶类型设置模型级或账号级冷却
     v
 Google Antigravity
@@ -49,7 +89,7 @@ Google Antigravity
 
 这里的两层职责必须保持分离：
 
-- **CPA 是第一层**：管理账号池、额度桶、账号/模型冷却和换号节奏。
+- **CPA 是第一层**：管理账号池、额度桶、账号/模型冷却和后续请求的账号选择。
 - **new-api 是第二层**：管理不同渠道 ID、模型映射、优先级和最终 fallback。
 - **daemon 是池外控制面**：通过真实 quota 接口决定账号是否应该进入 CPA 可选号池。
 
@@ -77,9 +117,9 @@ Antigravity 至少存在以下几类 429：
 
 | 类型 | 典型信号 | 正确动作 |
 |---|---|---|
-| 5 小时滑动桶 | `RATE_LIMIT_EXCEEDED`，通常带短 `retryDelay` | 当前账号 + 模型短冷却，允许有界换号 |
+| 5 小时滑动桶 | `RATE_LIMIT_EXCEEDED`，通常带短 `retryDelay` | 当前账号 + 模型短冷却；当前调用不选第二个 credential |
 | 周桶硬墙 | `QUOTA_EXHAUSTED`，或 `Individual quota reached ... Resets in ...` | 整个 credential 冷却到真实 reset，不做徒劳短重试 |
-| 普通无结构 429 | `Resource has been exhausted (e.g. check quota).`，无可靠桶信息 | 视为短暂拥塞，1 秒基础退避后换号；模型至少冷却 10 秒 |
+| 普通无结构 429 | `Resource has been exhausted (e.g. check quota).`，无可靠桶信息 | 视为短暂拥塞，模型至少冷却 10 秒；后续请求再由池调度换号 |
 | 模型容量错误 | 有时返回 429，有时返回 503，并包含模型暂不可用语义 | 不污染整个账号；由 new-api 进入模型映射 fallback |
 
 把所有 429 都解释成“账号没有周额度”会误关健康账号；把所有 429 都解释成“立刻换号”又会制造扫池风暴。分类是这套机制能工作的前提。
@@ -106,9 +146,9 @@ Antigravity 至少存在以下几类 429：
 | 400：`PROHIBITED_CONTENT`/SAFETY | 请求级错误 | 原样结束，不重试 | 否 | 否 |
 | 400：其他明确 invalid request | 请求级错误 | 原样结束，不重试 | 否 | 否 |
 | 404：`requested model or endpoint is unavailable` | 标为 request/model scoped，不扫账号池、不冷却账号 | 若生产 retry 状态码策略允许，选择下一个未使用的低优先级渠道 | 否 | 是 |
-| 429：结构化 5h 短限流 | 按 `RetryInfo` 分类，冷却当前账号 + 模型并有界换号 | CPA 最终仍失败且携带短 `Retry-After` 时，等待后切渠道 | 是 | 最终失败后是 |
+| 429：结构化 5h 短限流 | 按 `RetryInfo` 分类并冷却当前账号 + 模型；v3 不在同一渠道调用内换号 | CPA 最终仍失败且携带短 `Retry-After` 时，等待后切渠道 | 后续请求是 | 最终失败后是 |
 | 429：weekly hard wall | 整个 credential 冷却到 reset | CPA 池仍无可用账号时才切映射渠道 | 是，但不可再次选择该 credential | 是 |
-| 429：普通无结构 exhausted | 设置 `RetryAfter=1s` 和 `CredentialFailoverDelay=1s`，有界换号 | 保留 `Retry-After`，等待 `[1s,2s)` 后切渠道 | 是 | 最终失败后是 |
+| 429：普通无结构 exhausted | 设置 `RetryAfter=1s` 和短冷却；`CredentialFailoverDelay` 代码保留，但 v3 上限为 1，不在当前渠道调用内换号 | 保留 `Retry-After`，等待 `[1s,2s)` 后切渠道 | 后续请求是 | 最终失败后是 |
 | 503：`MODEL_CAPACITY_EXHAUSTED` | request/model scoped，不扫账号池、不冷却账号 | 无响应头时合成 1 秒 delay，等待 `[1s,2s)` 后切映射渠道 | 否 | 是 |
 | 503：`No capacity available for model` | 同上 | 同上 | 否 | 是 |
 | 503：`temporarily unavailable` + `Retry in 1s` | request/model scoped | 无响应头时合成 1 秒 delay，再切映射渠道 | 否 | 是 |
@@ -170,7 +210,7 @@ antigravity:
 
 不要把 `request-retry` 理解成“所有重试的总次数”。它控制额外 credential round，不控制 executor 内部的 base URL 尝试，也不控制 new-api 的渠道 fallback。
 
-### 3.2 普通 429 的换号节奏
+### 3.2 普通 429 的冷却与可选换号节奏
 
 CPA commit `1d57a590` 为普通无结构 429 增加了两个信号：
 
@@ -300,6 +340,9 @@ VPS22 PostgreSQL 当前配置基线：
 | 88 | `own-cpa-gemini-fallback-38-to-37` | 1（启用） | -1 | 3.8 映射到 3.7 |
 | 90 | `own-cpa-gemini-fallback-38-to-37` | 2（禁用） | -1 | 与 88 重复，保持禁用 |
 | 91 | `own-cpa-gemini-fallback-to-31-lite` | 2（禁用） | -3 | 更深层 3.1-lite 降级，当前不启用 |
+| 97 | `own-cpa-image-gemini-AD9x` | 1（启用） | 0 | 独立 `image` 分组；不属于文本 Gemini fallback 链 |
+| 99 | `own-cpa-gemini-fallback-31-pro-to-agent` | 2（禁用） | -1 | 与主渠道真实 Pro 路径重复，保持禁用 |
+| 100 | `own-cpa-gemini-fallback-31-pro-to-38-high` | 2（禁用） | -2 | 与 87 的 Pro -> 3.8 映射重复，保持禁用 |
 | 102 | `own-cpa-gemini-pro-fallback-to-37` | 2（禁用） | -2 | 失败实验：共享 project 限流时继续打 3.7 只会放大请求 |
 
 迁移时 ID 会变化，不能把 12/87/88 当作业务常量。必须按名称、上游目标、模型能力、映射和 priority 重新核对。
@@ -440,7 +483,7 @@ disable 不限数量，因为关闭确定耗尽账号是止血动作。enable �
 两者解决不同时间尺度的问题：
 
 - daemon 每 30 分钟读取真实桶，负责池成员资格和长期恢复。
-- CPA 在请求发生时立即处理 429，负责秒级到 reset 时刻的冷却和换号。
+- CPA 在请求发生时立即处理 429，负责秒级到 reset 时刻的冷却；后续请求再避开已冷却账号。
 
 daemon 无法阻止两个扫描周期之间突然发生的 429；CPA 也不应该长期替代 quota 控制面。两者必须同时保留。
 
@@ -485,7 +528,7 @@ cpa-sidecar-sync.service: disabled/inactive
 - 主模型容量不足时，大量请求同时涌入同一个 fallback 模型。
 - 长任务占住连接和账号并发，RPM 看起来不高但 in-flight 很高。
 
-当前 equal-jitter 退避用来打散同步换号，10 秒短冷却阻止新请求立刻回到同一账号，credential 上限和唯一 channel ID 则给放大设置硬边界。
+equal-jitter 退避代码用于未来显式允许多 credential 的场景；`AG-RF v3` 生产上限为 1，因此当前主要由 10 秒短冷却阻止新请求立刻回到同一账号，并由 credential 上限和唯一 channel ID 给放大设置硬边界。
 
 它们不能凭空创造容量。若所有 active 账号的 5h/weekly 都不足，或者 3.7 与 3.8 同时无容量，最终仍会返回 429/503。此时正确动作是降低并发、等待 reset、增加独立健康容量或调整 `MAX_ACTIVE`，而不是继续增加重试层数。
 
@@ -655,8 +698,8 @@ go build -o /tmp/cli-proxy-api-retry-check ./cmd/server
 - [ ] 再更新 blue。
 - [ ] blue 端口 3001 健康检查为 200。
 - [ ] 负载入口 3000 为 200。
-- [ ] 两实例查询到的 channel 90 都为 disabled。
-- [ ] abilities 缓存中 channel 90 全部 `enabled=false`。
+- [ ] 两实例查询到的 channel 90、91、99、100、102 都为 disabled。
+- [ ] abilities 缓存中 channel 90、91、99、100、102 全部 `enabled=false`。
 - [ ] 主渠道和两个 fallback 的 priority、model mapping、能力列表一致。
 
 当前已验证镜像：
@@ -707,7 +750,7 @@ GitHub Actions run: 35609197255 (success)
 
 - [ ] 主渠道仍可用。
 - [ ] 同一个请求的 `use_channel` 列表没有重复 ID。
-- [ ] 90/91 未因回滚被重新启用。
+- [ ] 90、91、99、100、102 未因回滚被重新启用。
 - [ ] 手动 disabled 账号保持关闭。
 - [ ] daemon 自动关闭集合仍存在。
 - [ ] 蓝绿实例版本一致。
@@ -753,7 +796,7 @@ GitHub Actions run: 35609197255 (success)
 - `PROHIBITED_CONTENT` 400 没有后续 channel 尝试。
 - weekly `<=5%` 或 5h `<=2%` 的 enabled 账号在下一 daemon 周期被关闭。
 - 手动 disabled 账号即使额度恢复也不会出现 `ENABLE`。
-- channel 90 不出现在 `use_channel`。
+- channel 90、91、99、100、102 不出现在 `use_channel`。
 
 ### 12.4 异常判据
 
@@ -769,7 +812,7 @@ GitHub Actions run: 35609197255 (success)
 
 ---
 
-## 13. 当前验证结果
+## 13. 分版本验证结果
 
 代码验证：
 
@@ -780,7 +823,9 @@ GitHub Actions run: 35609197255 (success)
 - CPA 本地 server build 通过。
 - CPA 全量测试存在一个未修改基线也会失败的 `internal/home: TestEnsureClientsWaitsForPreviousTargetClose`，与本次改动无关。
 
-部署后自然流量观察：
+### 13.1 早期部署成功窗口
+
+下列数据是早期修复部署后的一个历史观察窗口，不代表 2026-09-22 的实时容量：
 
 - 一个完整观察窗口中，CPA 共 404 次模型 POST，全部返回 200。
 - 普通 `Resource has been exhausted` 429 为 0。
@@ -790,7 +835,22 @@ GitHub Actions run: 35609197255 (success)
 - 剩余 400 为真实 `PROHIBITED_CONTENT`。
 - 剩余 503 来自其他 GPT 渠道的无可用渠道、余额不足或真实 concurrency limit，不属于本机制。
 
-这些结果证明修复消除了当时观测到的重试放大与转换错误，不证明上游永远不会再次返回 429/503。后续仍应按第 12 节持续观察。
+这些结果证明修复消除了当时观测到的重试放大与转换错误，不证明上游永远不会再次返回 429/503。
+
+### 13.2 AG-RF v3 生产核查
+
+2026-09-22 通过数据库、蓝绿实例配置和自然流量日志完成只读核查，未发送人工模型请求：
+
+- new-api 蓝绿实例使用同一镜像 digest。
+- CPA 蓝绿实例使用同一镜像 digest，且都加载 `request-retry=0`、`max-retry-credentials=1`。
+- 99、100、102 为 disabled；90、91 继续 disabled。
+- 88 只声明两个 3.8 source model，与 87 的 source model 集合互斥。
+- Pro 自然流量只出现 `12 -> 87`，没有再次出现 `12 -> 99 -> 87 -> 100` 或 `12 -> 87 -> 102`。
+- 核查时 CPA 有 95 个 Antigravity auth，其中 16 个 enabled；16 个 enabled credential 全部属于 `aicode-consumers` project。
+- 同一日志样本中有 120 次 generic `RESOURCE_EXHAUSTED` 和 12 次带 `QUOTA_EXHAUSTED`/reset 的结构化 429；这说明 v3 已消除重复路由，但不能消除共享 project 限流和真实桶耗尽。
+- daemon v4 为 active；最近一轮 `disable=2`、`enable=0`，分别关闭 weekly 或 5h 低于阈值的账号，没有打开 manual disabled 账号。
+
+因此，v3 的验收标准是“每层有界且不重复”，不是“生产永远没有 429”。后续仍应按第 12 节持续观察；若需要隔离 project 级 429，必须增加独立健康 project 或实现 project 级 admission/排队，不能扩展 fallback 链。
 
 ---
 
@@ -816,4 +876,4 @@ GitHub Actions run: 35609197255 (success)
 - `docs/spec/concurrency-porting-to-100b.md`
 - `docs/spec/subscription-porting-to-100b.md`
 
-较早事故文档中的阈值和生产配置只代表当时状态。发生冲突时，以本文的 2026-09-21 基线和当前代码为准；迁移实施时，再以目标仓库和目标生产环境的实测配置为准。
+较早事故文档中的阈值和生产配置只代表当时状态。发生冲突时，以本文的 `AG-RF v3`、对应组件 digest 和当前代码为准；迁移实施时，再以目标仓库和目标生产环境的实测配置为准。`AG-RF v1`、`AG-RF v2` 只用于事故追溯，不得直接恢复到生产。
