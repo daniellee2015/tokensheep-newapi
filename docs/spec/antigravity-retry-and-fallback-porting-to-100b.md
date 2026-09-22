@@ -32,7 +32,7 @@
 | tokensheep new-api digest | `sha256:58534a924bc0c6762da50a9e025788a71e54257faef77a39dca7dcdab80ea9ec` |
 | CPA | `ghcr.io/daniellee2015/cli-proxy-api:feat-plugin-quota-slot`，代码基线 `1d57a590` |
 | CPA digest | `sha256:b1c0b7c57ef2a78433de5f2f3aadff1d9ac815fa7c334c37e8c9582ee4885894` |
-| daemon | `cpa-daemon-v4.py`，SHA-256 `a96f3553e1b506391532e75f31f7de832580d7b72bd05e8de7aa28ccd044b323` |
+| daemon | `cpa-daemon-v4.py`，SHA-256 `68f8dcf89a1f3bf346958b13f20374776c433534049d114b5c0d179f21e54679` |
 
 ### v4 不变量
 
@@ -59,7 +59,7 @@
 2. 单账号或单模型短暂拥塞时，CPA 会记录模型/账号冷却；`AG-RF v3` 的单次渠道调用只选择一个 credential，后续请求再由池调度选择其他可用账号。
 3. CPA 已经尝试过仍失败时，new-api 才会切到低优先级的模型映射渠道。
 4. 同一个 new-api 渠道 ID 在一个请求内不会重复命中。
-5. 周桶或 5 小时桶真正耗尽的账号由 daemon 关闭，恢复到安全水位后再开启；只要桶仍大于 0%，不因预留阈值关闭。
+5. 周桶或 5 小时桶真正耗尽的账号由 daemon 关闭，两个桶恢复到非零后再开启；只要桶仍大于 0%，不因预留阈值关闭。
 6. daemon 不会自动打开管理员手动关闭的账号。
 7. 重试有明确上限，避免高并发时把一个客户端请求放大成无界的上游请求风暴。
 
@@ -432,9 +432,9 @@ https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary
 
 ```text
 CPA_WEEKLY_EXHAUSTED=0.0
-CPA_WEEKLY_HEALTHY=0.10
+CPA_WEEKLY_HEALTHY=0.10  # 兼容旧配置，不再作为恢复门槛
 CPA_FIVE_HOUR_EXHAUSTED=0.0
-CPA_FIVE_HOUR_HEALTHY=0.10
+CPA_FIVE_HOUR_HEALTHY=0.10  # 兼容旧配置，不再作为恢复门槛
 CPA_MAX_ACTIVE=40
 CPA_MAX_ENABLE_CYCLE=5
 CPA_CYCLE_SEC=1800
@@ -447,12 +447,12 @@ CPA_CYCLE_SEC=1800
 | enabled | weekly `==0%` | disable，并记入 daemon 自动关闭状态 |
 | enabled | weekly `>0%`，5h 有效且 `==0%` | disable，并记入 daemon 自动关闭状态 |
 | enabled | weekly/5h 不触发关闭 | keep |
-| disabled，且是 daemon 关闭 | weekly `>=10%` 且 5h `>=10%` | 允许 enable |
-| disabled，且是 daemon 关闭 | weekly `<10%`、5h `<10%`，或 5h 缺失/非法 | keep，等待恢复 |
+| disabled，且是 daemon 关闭 | weekly `>0%` 且 5h `>0%` | 允许 enable（受每轮上限限制） |
+| disabled，且是 daemon 关闭 | weekly `==0%`、5h `==0%`，或 5h 缺失/非法 | keep，等待恢复 |
 | disabled，且不是 daemon 关闭 | 任意健康 quota | keep，视为管理员手动关闭 |
 | 任意 | quota 读取失败或桶数据非法 | keep，不因读取失败改变状态 |
 
-`(0%,10%)` weekly 灰区和 `(0%,10%)` 5h 恢复区构成滞回；只有真实的 0% 触发关闭，10% 才允许恢复。这避免把仍可请求的低额度账号提前赶出池，也避免账号在 reset 前后反复开关。
+关闭和恢复现在使用同一个真实耗尽边界：只有 0% 触发关闭，两个桶都重新大于 0% 才恢复。恢复仍受每轮最多 5 个和 `MAX_ACTIVE` 限制，避免一次性把整池打回上游。
 
 ### 5.3 手动关闭优先
 
@@ -654,7 +654,7 @@ CPA 属于另一个仓库，100b 的 new-api 基线也会继续演进。即使�
 
 - [ ] weekly `0%` 关闭，任意非零 weekly 不因 weekly 关闭。
 - [ ] 5h `0%` 关闭，任意非零 5h 不因 5h 关闭。
-- [ ] weekly/5h 都达到 `10%` 才恢复。
+- [ ] weekly/5h 都大于 `0%` 才恢复，且受每轮开启上限限制。
 - [ ] 手动 disabled 即使 100% 也不恢复。
 - [ ] quota unreadable 保持当前状态。
 - [ ] refresh failure 需连续 3 轮才隔离。
@@ -795,7 +795,7 @@ GitHub Actions run: 35609197255 (success)
 - fallback 请求在短 429/503 后存在约 1 秒以上的分散等待，不再集中在几百毫秒内扫完多个账号。
 - 404/容量 503 不产生多 credential 扫描。
 - `PROHIBITED_CONTENT` 400 没有后续 channel 尝试。
-- weekly 或 5h 为 `0%` 的 enabled 账号在下一 daemon 周期被关闭；非零额度账号保持 enabled。
+- weekly 或 5h 为 `0%` 的 enabled 账号在下一 daemon 周期被关闭；非零额度的 daemon 自动关闭账号按批次恢复。
 - 手动 disabled 账号即使额度恢复也不会出现 `ENABLE`。
 - channel 90、91、99、100、102 不出现在 `use_channel`。
 

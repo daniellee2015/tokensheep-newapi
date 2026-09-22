@@ -29,8 +29,7 @@
 决策规则:
     gemini_weekly <= WEEKLY_EXHAUSTED_THRESHOLD  → 必须 disable
     gemini_5h <= FIVE_HOUR_EXHAUSTED_THRESHOLD   → 暂时 disable
-    gemini_weekly >= WEEKLY_HEALTHY_THRESHOLD 且 gemini_5h >= FIVE_HOUR_HEALTHY
-                                                → 仅自动恢复 daemon 自己关闭的账号
+    gemini_weekly > 0 且 gemini_5h > 0                    → 仅自动恢复 daemon 自己关闭的账号
     中间区间                                       → 保持现状 (不动)
     quota 查询失败或数据无效                      → 保持当前状态
 
@@ -38,9 +37,10 @@
     disabled。daemon 只会把自己因 quota 耗尽而关闭的账号写入持久化状态文件,
     并在额度恢复后重新开启它们。
 
-gemini-5h 使用关闭/恢复滞回:
+gemini-5h 使用真实耗尽边界:
   - 5h 桶真正耗尽时主动关号, 避免 CPA 在并发下继续把请求分配给必然 429 的账号。
-  - 桶恢复到 FIVE_HOUR_HEALTHY 后才重新开号, 避免在临界值附近反复开关。
+  - 5h 桶恢复到任意非零值后才重新开号; 关闭条件已经是 0, 不再用 10% 预留值
+    把仍能请求的账号长期卡在 disabled。
 为什么 3p 两个桶只记录不判开关:
   - 3p-weekly / 3p-5h: 走 CPA 的流量只有 Gemini (new-api 那条通道
     own-cpa-multi-gemini-mapped-* 的 models 全是 gemini-*), Claude 侧由
@@ -145,7 +145,9 @@ if not 0 <= FIVE_HOUR_EXHAUSTED < FIVE_HOUR_HEALTHY <= 1:
         "expected 0 <= CPA_FIVE_HOUR_EXHAUSTED < CPA_FIVE_HOUR_HEALTHY <= 1"
     )
 
-# Weekly and five-hour exhaustion control shutdown; both gate recovery.
+# Weekly and five-hour exhaustion control shutdown; recovery uses the same
+# nonzero boundary so accounts previously disabled by the old reserve policy
+# can return to the pool once they still have usable quota.
 DECISION_BUCKET = "gemini-weekly"
 FIVE_HOUR_BUCKET = "gemini-5h"
 # 日志表里展示的桶顺序 (Google 目前返回这四个)
@@ -490,7 +492,7 @@ def decide(auth, buckets, quota_err, auto_disabled=False):
     if not disabled and valid_five_hour and five_hour <= FIVE_HOUR_EXHAUSTED:
         return "disable", f"{FIVE_HOUR_BUCKET}={quota_fraction_pct(five_hour)}"
 
-    if gw >= WEEKLY_HEALTHY:
+    if gw > WEEKLY_EXHAUSTED:
         if disabled:
             if not auto_disabled:
                 return "keep", f"{DECISION_BUCKET}={quota_fraction_pct(gw)} (manual off)"
@@ -498,7 +500,7 @@ def decide(auth, buckets, quota_err, auto_disabled=False):
                 return "keep", f"no-{FIVE_HOUR_BUCKET}-bucket"
             if not valid_five_hour:
                 return "keep", f"invalid-{FIVE_HOUR_BUCKET}-fraction"
-            if five_hour < FIVE_HOUR_HEALTHY:
+            if five_hour <= FIVE_HOUR_EXHAUSTED:
                 return "keep", f"{FIVE_HOUR_BUCKET}={quota_fraction_pct(five_hour)} (not ready)"
             return "enable", (
                 f"{DECISION_BUCKET}={quota_fraction_pct(gw)}, "
@@ -514,8 +516,13 @@ def run_cycle(apply_changes):
     global CPA_URL
     CPA_URL = _resolve_cpa_url()
     LOG.info(
-        "quota target=%s endpoint=%s thresholds=weekly %.3f/%.3f five-hour %.3f",
-        CPA_URL, QUOTA_URL, WEEKLY_EXHAUSTED, WEEKLY_HEALTHY, FIVE_HOUR_HEALTHY,
+        "quota target=%s endpoint=%s thresholds=weekly exhausted %.3f recovery>%.3f; five-hour exhausted %.3f recovery>%.3f",
+        CPA_URL,
+        QUOTA_URL,
+        WEEKLY_EXHAUSTED,
+        WEEKLY_EXHAUSTED,
+        FIVE_HOUR_EXHAUSTED,
+        FIVE_HOUR_EXHAUSTED,
     )
     auths = list_antigravity_auths()
     quota_disabled = load_quota_disabled()

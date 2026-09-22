@@ -31,11 +31,14 @@ class QuotaDecisionTests(unittest.TestCase):
         )
         self.assertEqual(action, "keep")
 
-    def test_hysteresis_does_not_reopen_account_below_ten_percent(self):
+    def test_auto_disabled_account_with_nonzero_weekly_stays_or_recovers(self):
         action, _ = daemon.decide(
-            {"disabled": True}, {"gemini-weekly": {"frac": 0.05}}, None
+            {"disabled": True},
+            {"gemini-weekly": {"frac": 0.05}, "gemini-5h": {"frac": 0.05}},
+            None,
+            auto_disabled=True,
         )
-        self.assertEqual(action, "keep")
+        self.assertEqual(action, "enable")
 
     def test_manually_disabled_healthy_account_stays_disabled(self):
         action, _ = daemon.decide(
@@ -43,7 +46,7 @@ class QuotaDecisionTests(unittest.TestCase):
         )
         self.assertEqual(action, "keep")
 
-    def test_daemon_disabled_account_rejoins_at_ten_percent(self):
+    def test_daemon_disabled_account_rejoins_with_nonzero_buckets(self):
         action, _ = daemon.decide(
             {"disabled": True},
             {"gemini-weekly": {"frac": 0.10}, "gemini-5h": {"frac": 0.10}},
@@ -56,7 +59,7 @@ class QuotaDecisionTests(unittest.TestCase):
         blocked_buckets = (
             {"gemini-weekly": {"frac": 1.0}},
             {"gemini-weekly": {"frac": 1.0}, "gemini-5h": {"frac": 0.0}},
-            {"gemini-weekly": {"frac": 1.0}, "gemini-5h": {"frac": 0.09}},
+            {"gemini-weekly": {"frac": 0.0}, "gemini-5h": {"frac": 0.09}},
             {"gemini-weekly": {"frac": 1.0}, "gemini-5h": {"frac": "1"}},
         )
         for buckets in blocked_buckets:
