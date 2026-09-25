@@ -152,3 +152,29 @@ Actions, pull the resulting immutable digest, update blue and green one at a
 time, and verify version/digest plus health before retiring the previous image.
 The daemon is a standalone tested Python file and may be copied atomically with
 its previous version retained for rollback.
+
+## Deployment outcome
+
+The fixes were deployed on September 26 without compiling on VPS196 and without
+issuing synthetic model requests.
+
+- GitHub Actions run `36161671163` built commit `9597d0d1`; the amd64, arm64,
+  and multi-architecture manifest jobs all completed successfully.
+- The published multi-architecture image digest is
+  `sha256:42b573b23bdb1538fc93d15c2279fa98a98a781b9be82ebc7ed78b2bca78f253`.
+- Green was replaced and verified first. Blue continued serving until green
+  returned HTTP 200, then blue was replaced. The public endpoint returned HTTP
+  200 during the blue replacement.
+- Both containers reported commit `9597d0d`, used the same image digest, loaded
+  all 99 auth entries, and returned HTTP 200 with zero container restarts.
+- The bind-mounted management page was replaced from the published image. Its
+  SHA-256 is
+  `e8feb21f522a12461cda061a6f30d1ca0575ffdb83c01803c318f8175f7fdd12`.
+  The prior `6eab7ded...` page is retained as
+  `management.html.backup-20260926-pre-9597d0d1`.
+- The deployed daemon SHA-256 is
+  `f64a40219af172332cc4b7e09ba150e2f708228b70ca7016107334b0c5e0dc95`.
+  Its first fixed cycle disabled exactly eight active validation-required
+  credentials and left ordinary unreadable quota results unchanged.
+- After that cycle the pool contained 94 Antigravity auth files: 13 enabled and
+  81 disabled. Forty filenames were in daemon-managed `quota-disabled.json`.
