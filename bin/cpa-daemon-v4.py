@@ -181,6 +181,10 @@ QUARANTINE_ENABLED = os.getenv("CPA_QUARANTINE", "1") not in ("0", "false", "Fal
 # api-call 在 refresh token 失效时返回的 quota_err 形状: wrapper 里没有
 # status_code 字段, fetch_quota 会保留这个明确的刷新失败标记。
 DEAD_QUOTA_ERR_PREFIX = "auth-refresh-failed"
+VALIDATION_REQUIRED_QUOTA_ERRORS = (
+    "validation_required",
+    "verify your account to continue",
+)
 
 LOG = logging.getLogger("cpa-daemon-v4")
 
@@ -505,6 +509,11 @@ def decide(auth, buckets, quota_err, auto_disabled=False, exhaustion_streaks=Non
     exhaustion_streaks = exhaustion_streaks or {}
 
     if quota_err:
+        normalized_quota_err = str(quota_err).strip().lower()
+        if any(marker in normalized_quota_err for marker in VALIDATION_REQUIRED_QUOTA_ERRORS):
+            if disabled:
+                return "keep", "validation-required (already off)"
+            return "disable", "validation-required"
         # Quota API is itself rate-limited and can fail transiently.  Never
         # turn an enabled account off merely because a read failed; doing so
         # caused accounts with healthy quota to disappear from the pool.

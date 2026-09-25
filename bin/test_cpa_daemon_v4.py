@@ -129,6 +129,25 @@ class QuotaDecisionTests(unittest.TestCase):
                 action, _ = daemon.decide({"disabled": disabled}, {}, error)
                 self.assertEqual(action, "keep")
 
+    def test_validation_required_disables_enabled_account_for_later_recovery(self):
+        action, reason = daemon.decide(
+            {"disabled": False},
+            {},
+            "http403:Verify your account to continue.",
+        )
+        self.assertEqual(action, "disable")
+        self.assertIn("validation-required", reason)
+
+    def test_validation_required_keeps_disabled_account_off(self):
+        action, reason = daemon.decide(
+            {"disabled": True},
+            {},
+            "http403:Verify your account to continue.",
+            auto_disabled=True,
+        )
+        self.assertEqual(action, "keep")
+        self.assertIn("already off", reason)
+
     def test_missing_wrapper_status_does_not_mean_dead_credentials(self):
         self.assertFalse(daemon.looks_dead("httpNone:"))
         self.assertTrue(daemon.looks_dead("auth-refresh-failed"))
