@@ -878,6 +878,7 @@ GitHub Actions run: 35609197255 (success)
 - `docs/incidents/20260829-antigravity-429-classification.md`
 - `docs/incidents/20260829-retry-amplification-abtest.md`
 - `docs/incidents/20260830-cpa-consolidated-state.md`
+- `docs/incidents/20260925-cpa-validation-403-and-stale-webui.md`
 - `docs/spec/concurrency-porting-to-100b.md`
 - `docs/spec/subscription-porting-to-100b.md`
 
