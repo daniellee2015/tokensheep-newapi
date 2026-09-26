@@ -8,12 +8,65 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestWriteClassifiedRequestErrorKeepsOnlyGatewayRequestID(t *testing.T) {
+	tests := []struct {
+		name   string
+		format types.RelayFormat
+		stream bool
+	}{
+		{"OpenAI JSON", types.RelayFormatOpenAI, false},
+		{"Gemini JSON", types.RelayFormatGemini, false},
+		{"Claude JSON", types.RelayFormatClaude, false},
+		{"OpenAI SSE", types.RelayFormatOpenAI, true},
+		{"Claude SSE", types.RelayFormatClaude, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+			if tt.stream {
+				helper.SetEventStreamHeaders(c)
+				c.Writer.WriteHeader(http.StatusOK)
+				_, err := c.Writer.Write([]byte(": started\n\n"))
+				require.NoError(t, err)
+			}
+			raw := types.WithOpenAIError(types.OpenAIError{
+				Message: "The input token count exceeds the maximum number of tokens allowed 1048576. https://internal.example sk-private-secret (request id: inner-id) (request id: outer-id)",
+				Type:    "provider_private_type", Code: "provider_private_code", Param: "private-field", Metadata: []byte(`{"node":"private"}`),
+			}, http.StatusBadRequest)
+			public := service.PublicUpstreamError(raw)
+			require.NotNil(t, public)
+			// Use the same request-ID formatting and writer as Relay's error exit.
+			public.SetMessage(common.MessageWithRequestId(public.MaskSensitiveError(), "gateway-request-id"))
+			writeRelayError(c, nil, tt.format, public)
+			body := recorder.Body.String()
+			assert.Contains(t, body, "Input exceeds the model context limit. Shorten the conversation or reduce the input.")
+			assert.Equal(t, 1, strings.Count(body, "gateway-request-id"))
+			assert.Equal(t, 1, strings.Count(body, "(request id:"))
+			for _, private := range []string{"inner-id", "outer-id", "internal.example", "sk-private-secret", "provider_private", "private-field", "1048576", "metadata"} {
+				assert.NotContains(t, body, private)
+			}
+			if tt.stream {
+				assert.Equal(t, http.StatusOK, recorder.Code)
+				assert.Contains(t, recorder.Header().Get("Content-Type"), "text/event-stream")
+			} else {
+				assert.Equal(t, http.StatusBadRequest, recorder.Code)
+				assert.Contains(t, recorder.Header().Get("Content-Type"), "application/json")
+			}
+		})
+	}
+}
 
 func TestWriteRelayErrorUsesClaudeSSEAfterStreamStarted(t *testing.T) {
 	recorder := httptest.NewRecorder()

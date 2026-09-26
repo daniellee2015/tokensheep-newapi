@@ -204,14 +204,15 @@ const (
 )
 
 // PublicUpstreamError replaces every upstream-controlled field with a value
-// defined by this gateway. Retry, channel health and operator diagnostics must
-// use the original error before calling this function.
+// defined by this gateway. Known request failures select a fixed, actionable
+// message; no provider text is interpolated. Retry, channel health and operator
+// diagnostics must use the original error before calling this function.
 func PublicUpstreamError(upstreamErr *types.NewAPIError) *types.NewAPIError {
 	if upstreamErr == nil {
 		return nil
 	}
 
-	statusCode, message, code := publicUpstreamErrorPolicy(upstreamErr.StatusCode)
+	statusCode, message, code := publicUpstreamErrorPolicy(upstreamErr.StatusCode, upstreamErr.Error())
 	publicErr := types.NewOpenAIError(errors.New(message), code, statusCode, types.ErrOptionWithSkipRetry())
 	publicErr.SetRetryAfter(upstreamErr.RetryAfter())
 	return publicErr
@@ -223,7 +224,7 @@ func PublicUpstreamTaskError(upstreamErr *taskdto.TaskError) *taskdto.TaskError 
 		return nil
 	}
 
-	statusCode, message, code := publicUpstreamErrorPolicy(upstreamErr.StatusCode)
+	statusCode, message, code := publicUpstreamErrorPolicy(upstreamErr.StatusCode, upstreamErr.Message)
 	return &taskdto.TaskError{
 		Code:       string(code),
 		Message:    message,
@@ -250,7 +251,7 @@ func EmbeddedUpstreamError(responseBody []byte) *types.NewAPIError {
 	return types.NewOpenAIError(errors.New(message), types.ErrorCodeBadResponse, http.StatusInternalServerError)
 }
 
-func publicUpstreamErrorPolicy(statusCode int) (int, string, types.ErrorCode) {
+func publicUpstreamErrorPolicy(statusCode int, rawMessage string) (int, string, types.ErrorCode) {
 	switch statusCode {
 	case http.StatusBadRequest,
 		http.StatusNotFound,
@@ -260,7 +261,7 @@ func publicUpstreamErrorPolicy(statusCode int) (int, string, types.ErrorCode) {
 		http.StatusRequestEntityTooLarge,
 		http.StatusUnsupportedMediaType,
 		http.StatusUnprocessableEntity:
-		return http.StatusBadRequest, publicInvalidRequestMessage, types.ErrorCodeInvalidRequest
+		return http.StatusBadRequest, publicRequestErrorMessage(statusCode, rawMessage), types.ErrorCodeInvalidRequest
 	case http.StatusTooManyRequests:
 		return http.StatusTooManyRequests, publicRateLimitMessage, types.ErrorCodeRateLimitExceeded
 	default:
