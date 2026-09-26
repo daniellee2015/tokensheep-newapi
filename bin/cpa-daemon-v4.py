@@ -29,14 +29,15 @@
 决策规则:
     gemini_weekly <= WEEKLY_EXHAUSTED_THRESHOLD  → 必须 disable
     gemini_5h <= FIVE_HOUR_EXHAUSTED_THRESHOLD   → 暂时 disable
-    gemini_weekly >= 5% 且 gemini_5h >= 5%              → 仅自动恢复 daemon 自己关闭的账号
+    gemini_weekly >= 5% 且 gemini_5h >= 5%              → 自动恢复所有已关闭账号
     非零但低于 5%                                      → 保持关闭，作为备用额度
     中间区间                                             → 保持现状 (不动)
     quota 查询失败或数据无效                      → 保持当前状态
 
-    management UI 手动关闭的账号不属于 daemon 管理状态, 无论剩余额度多少都保持
-    disabled。daemon 只会把自己因 quota 耗尽而关闭的账号写入持久化状态文件,
-    并在额度恢复后重新开启它们。
+    disabled 状态不再被当作永久人工封锁。只要 quota 可读、没有 validation-required，
+    且 weekly/5h 两个桶都达到恢复线，daemon 就会重新开启账号。这样可修复旧版 daemon、
+    人工止血或跨系统状态不同步留下的健康 disabled 账号。额度不足、缺桶、验证失败或
+    凭据失效的账号仍保持关闭。
 
 gemini-5h 使用真实耗尽边界:
   - 5h 桶真正耗尽时主动关号, 避免 CPA 在并发下继续把请求分配给必然 429 的账号。
@@ -558,8 +559,6 @@ def decide(auth, buckets, quota_err, auto_disabled=False, exhaustion_streaks=Non
 
     if gw > WEEKLY_EXHAUSTED:
         if disabled:
-            if not auto_disabled:
-                return "keep", f"{DECISION_BUCKET}={quota_fraction_pct(gw)} (manual off)"
             if five_hour is None:
                 return "keep", f"no-{FIVE_HOUR_BUCKET}-bucket"
             if not valid_five_hour:

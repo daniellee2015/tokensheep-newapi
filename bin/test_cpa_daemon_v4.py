@@ -40,11 +40,13 @@ class QuotaDecisionTests(unittest.TestCase):
         )
         self.assertEqual(action, "keep")
 
-    def test_manually_disabled_healthy_account_stays_disabled(self):
+    def test_healthy_disabled_account_rejoins_even_without_old_daemon_marker(self):
         action, _ = daemon.decide(
-            {"disabled": True}, {"gemini-weekly": {"frac": 0.10}}, None
+            {"disabled": True},
+            {"gemini-weekly": {"frac": 0.10}, "gemini-5h": {"frac": 0.10}},
+            None,
         )
-        self.assertEqual(action, "keep")
+        self.assertEqual(action, "enable")
 
     def test_daemon_disabled_account_rejoins_with_nonzero_buckets(self):
         action, _ = daemon.decide(
