@@ -23,7 +23,6 @@ import { toast } from 'sonner'
 import {
   copyChannel,
   deleteChannel,
-  testChannel,
   updateChannel,
   updateChannelStatus,
   batchUpdateChannelStatus,
@@ -34,11 +33,10 @@ import {
   deleteDisabledChannels,
   fixChannelAbilities,
   editTagChannels,
-  testAllChannels,
   updateAllChannelsBalance,
 } from '../api'
 import { CHANNEL_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
-import type { ChannelTestResponse, CopyChannelParams } from '../types'
+import type { CopyChannelParams } from '../types'
 
 // ============================================================================
 // Query Keys
@@ -56,60 +54,6 @@ export const channelsQueryKeys = {
   // sharing it let whichever drawer opened first decide what the other one
   // showed.
   groups: () => [...channelsQueryKeys.all, 'groups'] as const,
-}
-
-function getChannelTestResponseTime(
-  response: ChannelTestResponse
-): number | undefined {
-  const responseTime = response.data?.response_time
-  if (typeof responseTime === 'number' && Number.isFinite(responseTime)) {
-    return responseTime
-  }
-
-  if (
-    typeof response.time === 'number' &&
-    Number.isFinite(response.time) &&
-    response.time > 0
-  ) {
-    return Math.round(response.time * 1000)
-  }
-
-  return undefined
-}
-
-function formatChannelTestDuration(responseTime?: number): string | undefined {
-  if (responseTime === undefined) return undefined
-
-  if (responseTime >= 1000) {
-    return `${(responseTime / 1000).toFixed(2)} s`
-  }
-
-  return `${Math.max(1, Math.round(responseTime))} ms`
-}
-
-function getChannelTestLabel(options?: {
-  channelName?: string
-  testModel?: string
-}): string {
-  const channelName = options?.channelName?.trim()
-  const testModel = options?.testModel?.trim()
-
-  if (channelName && testModel) {
-    return i18next.t('Channel {{name}} model {{model}}', {
-      name: channelName,
-      model: testModel,
-    })
-  }
-
-  if (channelName) {
-    return i18next.t('Channel {{name}}', { name: channelName })
-  }
-
-  if (testModel) {
-    return i18next.t('Model {{model}}', { model: testModel })
-  }
-
-  return i18next.t('Channel')
 }
 
 // ============================================================================
@@ -264,80 +208,6 @@ export async function handleUpdateTagField(
     }
   } catch {
     toast.error(i18next.t(ERROR_MESSAGES.UPDATE_FAILED))
-  }
-}
-
-/**
- * Test channel connectivity
- */
-export async function handleTestChannel(
-  id: number,
-  options?: {
-    channelName?: string
-    testModel?: string
-    endpointType?: string
-    stream?: boolean
-    silent?: boolean
-  },
-  onTestComplete?: (
-    success: boolean,
-    responseTime?: number,
-    error?: string,
-    errorCode?: string
-  ) => void
-): Promise<void> {
-  const payload =
-    options && (options.testModel || options.endpointType || options.stream)
-      ? {
-          ...(options.testModel ? { model: options.testModel } : {}),
-          ...(options.endpointType
-            ? { endpoint_type: options.endpointType }
-            : {}),
-          ...(options.stream ? { stream: true } : {}),
-        }
-      : undefined
-
-  try {
-    const response = await testChannel(id, payload)
-    const responseTime = getChannelTestResponseTime(response)
-    const duration = formatChannelTestDuration(responseTime)
-    const target = getChannelTestLabel(options)
-    if (response.success) {
-      if (!options?.silent) {
-        toast.success(
-          i18next.t('{{target}} test succeeded', { target }),
-          duration
-            ? {
-                description: i18next.t('Response time: {{duration}}', {
-                  duration,
-                }),
-              }
-            : undefined
-        )
-      }
-      onTestComplete?.(true, responseTime)
-    } else {
-      const errorMsg = response.message || i18next.t(ERROR_MESSAGES.TEST_FAILED)
-      if (!options?.silent) {
-        toast.error(i18next.t('{{target}} test failed', { target }), {
-          description: response.error_code
-            ? `${errorMsg} (${response.error_code})`
-            : errorMsg,
-        })
-      }
-      onTestComplete?.(false, responseTime, errorMsg, response.error_code)
-    }
-  } catch (_error: unknown) {
-    const err = _error as { response?: { data?: { message?: string } } }
-    const errorMsg =
-      err?.response?.data?.message || i18next.t(ERROR_MESSAGES.TEST_FAILED)
-    const target = getChannelTestLabel(options)
-    if (!options?.silent) {
-      toast.error(i18next.t('{{target}} test failed', { target }), {
-        description: errorMsg,
-      })
-    }
-    onTestComplete?.(false, undefined, errorMsg)
   }
 }
 
@@ -623,33 +493,6 @@ export async function handleFixAbilities(
     }
   } catch {
     toast.error(i18next.t('Failed to repair channel consistency'))
-  }
-}
-
-/**
- * Test all enabled channels
- */
-export async function handleTestAllChannels(
-  queryClient?: QueryClient,
-  onSuccess?: () => void
-): Promise<void> {
-  try {
-    const response = await testAllChannels()
-    if (response.success) {
-      toast.success(
-        i18next.t(
-          'Testing all enabled channels started. Please refresh to see results.'
-        )
-      )
-      queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
-      onSuccess?.()
-    } else {
-      toast.error(
-        response.message || i18next.t('Failed to start testing all channels')
-      )
-    }
-  } catch {
-    toast.error(i18next.t('Failed to test all channels'))
   }
 }
 

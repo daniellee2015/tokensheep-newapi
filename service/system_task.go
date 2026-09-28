@@ -221,7 +221,7 @@ func EnqueueSystemTask(taskType string, payload any) (*model.SystemTask, bool, e
 
 // runSystemTaskClaimPass tries to claim one pending task per registered type
 // and dispatches each claimed task in its own goroutine so a long-running
-// handler (e.g. channel test) never blocks another type (e.g. log cleanup).
+// handler never blocks another type (e.g. log cleanup).
 func runSystemTaskClaimPass(runnerID string) {
 	handlers := registeredSystemTaskHandlers()
 	taskTypes := make([]string, 0, len(handlers))
@@ -460,8 +460,8 @@ func systemTaskLockUntil() int64 {
 }
 
 // SystemTaskProgress is the state shape used by handlers that report percentage
-// progress (channel test, model update). The frontend reads the progress field
-// (0-100) to render a per-task progress indicator.
+// progress. The frontend reads the progress field (0-100) to render a per-task
+// progress indicator.
 type SystemTaskProgress struct {
 	Total     int `json:"total"`
 	Processed int `json:"processed"`

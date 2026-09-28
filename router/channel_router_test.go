@@ -2,6 +2,7 @@ package router
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 
@@ -35,6 +36,19 @@ func TestChannelStatusRoutesRegisterWithoutConflict(t *testing.T) {
 	require.NotPanics(t, func() {
 		registerChannelRoutes(api)
 	})
+}
+
+func TestRetiredChannelProbeEndpointIsUnavailable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	registerChannelRoutes(engine.Group("/api"))
+
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/channel/test/12", nil))
+
+	// Removing the route must make it unreachable, rather than retaining a
+	// probe handler that only rejects this request at the authentication layer.
+	assert.Equal(t, http.StatusNotFound, recorder.Code)
 }
 
 func assertChannelRoutePermission(t *testing.T, method string, path string, permission authz.Permission, handler any) {

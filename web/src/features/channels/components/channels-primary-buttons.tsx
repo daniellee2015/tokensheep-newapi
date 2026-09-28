@@ -23,7 +23,6 @@ import {
   Settings2,
   Trash2,
   Tags,
-  TestTube,
   DollarSign,
   ListChecks,
   SortAsc,
@@ -61,7 +60,6 @@ import { useAuthStore } from '@/stores/auth-store'
 import {
   handleDeleteAllDisabled,
   handleFixAbilities,
-  handleTestAllChannels,
   handleUpdateAllBalances,
 } from '../lib'
 import { useChannels } from './channels-provider'
@@ -206,17 +204,6 @@ export function ChannelsPrimaryButtons() {
             </DropdownMenuCheckboxItem>
 
             <DropdownMenuSeparator className='sm:hidden' />
-
-            <DropdownMenuItem
-              onClick={() => {
-                handleTestAllChannels(queryClient)
-              }}
-            >
-              {t('Test All Channels')}
-              <DropdownMenuShortcut>
-                <TestTube className='h-4 w-4' />
-              </DropdownMenuShortcut>
-            </DropdownMenuItem>
 
             <DropdownMenuItem
               onClick={() => {
