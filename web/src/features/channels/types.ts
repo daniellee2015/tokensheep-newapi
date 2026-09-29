@@ -182,6 +182,17 @@ export interface ChannelOpsResponse {
   }
 }
 
+export interface ChannelTestResponse {
+  success: boolean
+  message?: string
+  error_code?: string
+  time?: number
+  data?: {
+    response_time?: number
+    error?: string
+  }
+}
+
 export interface ChannelBalanceResponse {
   success: boolean
   message?: string
@@ -280,6 +291,10 @@ export interface SearchChannelsParams {
   sort_order?: ChannelSortOrder
   p?: number
   page_size?: number
+}
+
+export interface ChannelTestParams {
+  test_model?: string
 }
 
 export interface CopyChannelParams {
