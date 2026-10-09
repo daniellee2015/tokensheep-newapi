@@ -99,7 +99,7 @@ func ApplyThinkingConfig(geminiRequest *dto.GeminiChatRequest, info convmeta.Met
 				clampedBudget := clampThinkingBudget(modelName, budgetTokens)
 				geminiRequest.GenerationConfig.ThinkingConfig = &dto.GeminiThinkingConfig{
 					ThinkingBudget:  kitutil.GetPointer(clampedBudget),
-					IncludeThoughts: true,
+					IncludeThoughts: kitutil.GetPointer(true),
 				}
 			}
 		}
@@ -118,11 +118,11 @@ func ApplyThinkingConfig(geminiRequest *dto.GeminiChatRequest, info convmeta.Met
 
 		if isUnsupported {
 			geminiRequest.GenerationConfig.ThinkingConfig = &dto.GeminiThinkingConfig{
-				IncludeThoughts: true,
+				IncludeThoughts: kitutil.GetPointer(true),
 			}
 		} else {
 			geminiRequest.GenerationConfig.ThinkingConfig = &dto.GeminiThinkingConfig{
-				IncludeThoughts: true,
+				IncludeThoughts: kitutil.GetPointer(true),
 			}
 			if geminiRequest.GenerationConfig.MaxOutputTokens != nil && *geminiRequest.GenerationConfig.MaxOutputTokens > 0 {
 				budgetTokens := opts.Gemini.ThinkingAdapterBudgetTokensPercentage * float64(*geminiRequest.GenerationConfig.MaxOutputTokens)
@@ -140,7 +140,7 @@ func ApplyThinkingConfig(geminiRequest *dto.GeminiChatRequest, info convmeta.Met
 		}
 	} else if _, level, ok := reasoning.TrimEffortSuffix(modelName); ok && level != "" {
 		geminiRequest.GenerationConfig.ThinkingConfig = &dto.GeminiThinkingConfig{
-			IncludeThoughts: true,
+			IncludeThoughts: kitutil.GetPointer(true),
 			ThinkingLevel:   level,
 		}
 		info.SetReasoningEffort(level)

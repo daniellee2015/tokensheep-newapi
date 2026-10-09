@@ -76,7 +76,15 @@ func OpenAIChatRequestToGeminiGenerateContent(c context.Context, textRequest dto
 						case float64:
 							budgetInt := int(v)
 							tempThinkingConfig.ThinkingBudget = kitutil.GetPointer(budgetInt)
-							tempThinkingConfig.IncludeThoughts = budgetInt > 0
+							// Only derive IncludeThoughts from a positive budget; a
+							// zero or negative budget already disables thinking at
+							// the budget layer, so leaving IncludeThoughts
+							// unspecified preserves the pre-pointer wire behaviour
+							// (previously this branch assigned false, but
+							// bool+omitempty dropped it before serialization).
+							if budgetInt > 0 {
+								tempThinkingConfig.IncludeThoughts = kitutil.GetPointer(true)
+							}
 							hasThinkingConfig = true
 						default:
 							return nil, errors.New("extra_body.google.thinking_config.thinking_budget must be an integer")
@@ -85,7 +93,7 @@ func OpenAIChatRequestToGeminiGenerateContent(c context.Context, textRequest dto
 
 					if includeThoughts, exists := thinkingConfig["include_thoughts"]; exists {
 						if v, ok := includeThoughts.(bool); ok {
-							tempThinkingConfig.IncludeThoughts = v
+							tempThinkingConfig.IncludeThoughts = kitutil.GetPointer(v)
 							hasThinkingConfig = true
 						} else {
 							return nil, errors.New("extra_body.google.thinking_config.include_thoughts must be a boolean")
@@ -107,7 +115,9 @@ func OpenAIChatRequestToGeminiGenerateContent(c context.Context, textRequest dto
 							if tempThinkingConfig.ThinkingBudget != nil {
 								geminiRequest.GenerationConfig.ThinkingConfig.ThinkingBudget = tempThinkingConfig.ThinkingBudget
 							}
-							geminiRequest.GenerationConfig.ThinkingConfig.IncludeThoughts = tempThinkingConfig.IncludeThoughts
+							if tempThinkingConfig.IncludeThoughts != nil {
+								geminiRequest.GenerationConfig.ThinkingConfig.IncludeThoughts = tempThinkingConfig.IncludeThoughts
+							}
 							if tempThinkingConfig.ThinkingLevel != "" {
 								geminiRequest.GenerationConfig.ThinkingConfig.ThinkingLevel = tempThinkingConfig.ThinkingLevel
 							}
