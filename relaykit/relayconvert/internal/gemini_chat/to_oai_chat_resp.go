@@ -95,6 +95,7 @@ func ResponseGeminiChat2OpenAI(id string, created int64, response *dto.GeminiCha
 		}
 		if len(candidate.Content.Parts) > 0 {
 			var content strings.Builder
+			var reasoning strings.Builder
 			var inlineGrow int
 			for _, part := range candidate.Content.Parts {
 				if part.InlineData != nil {
@@ -104,25 +105,32 @@ func ResponseGeminiChat2OpenAI(id string, created int64, response *dto.GeminiCha
 			if inlineGrow > 0 {
 				content.Grow(inlineGrow)
 			}
-			appended := 0
-			writeSep := func() {
-				if appended > 0 {
+			contentAppended := 0
+			writeContentSep := func() {
+				if contentAppended > 0 {
 					content.WriteByte('\n')
 				}
-				appended++
+				contentAppended++
+			}
+			reasoningAppended := 0
+			writeReasoningSep := func() {
+				if reasoningAppended > 0 {
+					reasoning.WriteByte('\n')
+				}
+				reasoningAppended++
 			}
 			var toolCalls []dto.ToolCallResponse
 			for _, part := range candidate.Content.Parts {
 				if part.InlineData != nil {
 					if strings.HasPrefix(part.InlineData.MimeType, "image") {
-						writeSep()
+						writeContentSep()
 						content.WriteString("![image](data:")
 						content.WriteString(part.InlineData.MimeType)
 						content.WriteString(";base64,")
 						content.WriteString(part.InlineData.Data)
 						content.WriteByte(')')
 					} else {
-						writeSep()
+						writeContentSep()
 						content.WriteString("[media](data:")
 						content.WriteString(part.InlineData.MimeType)
 						content.WriteString(";base64,")
@@ -135,22 +143,26 @@ func ResponseGeminiChat2OpenAI(id string, created int64, response *dto.GeminiCha
 						toolCalls = append(toolCalls, *call)
 					}
 				} else if part.Thought {
-					choice.Message.ReasoningContent = &part.Text
+					// Accumulate every thought part; previously this branch
+					// overwrote ReasoningContent on each pass, so multiple
+					// thought parts collapsed to the last one.
+					writeReasoningSep()
+					reasoning.WriteString(part.Text)
 				} else {
 					if part.ExecutableCode != nil {
-						writeSep()
+						writeContentSep()
 						content.WriteString("```")
 						content.WriteString(part.ExecutableCode.Language)
 						content.WriteByte('\n')
 						content.WriteString(part.ExecutableCode.Code)
 						content.WriteString("\n```")
 					} else if part.CodeExecutionResult != nil {
-						writeSep()
+						writeContentSep()
 						content.WriteString("```output\n")
 						content.WriteString(part.CodeExecutionResult.Output)
 						content.WriteString("\n```")
 					} else if part.Text != "\n" {
-						writeSep()
+						writeContentSep()
 						content.WriteString(part.Text)
 					}
 				}
@@ -160,6 +172,10 @@ func ResponseGeminiChat2OpenAI(id string, created int64, response *dto.GeminiCha
 				isToolCall = true
 			}
 			choice.Message.SetStringContent(content.String())
+			if reasoningAppended > 0 {
+				reasoningStr := reasoning.String()
+				choice.Message.ReasoningContent = &reasoningStr
+			}
 		}
 		if candidate.FinishReason != nil {
 			switch *candidate.FinishReason {
@@ -195,6 +211,7 @@ func StreamResponseGeminiChat2OpenAI(geminiResponse *dto.GeminiChatResponse) (*d
 			Delta: dto.ChatCompletionsStreamResponseChoiceDelta{},
 		}
 		var content strings.Builder
+		var reasoning strings.Builder
 		var inlineGrow int
 		for _, part := range candidate.Content.Parts {
 			if part.InlineData != nil {
@@ -204,15 +221,21 @@ func StreamResponseGeminiChat2OpenAI(geminiResponse *dto.GeminiChatResponse) (*d
 		if inlineGrow > 0 {
 			content.Grow(inlineGrow)
 		}
-		appended := 0
-		writeSep := func() {
-			if appended > 0 {
+		contentAppended := 0
+		writeContentSep := func() {
+			if contentAppended > 0 {
 				content.WriteByte('\n')
 			}
-			appended++
+			contentAppended++
+		}
+		reasoningAppended := 0
+		writeReasoningSep := func() {
+			if reasoningAppended > 0 {
+				reasoning.WriteByte('\n')
+			}
+			reasoningAppended++
 		}
 		isTools := false
-		isThought := false
 		if candidate.FinishReason != nil {
 			switch *candidate.FinishReason {
 			case "STOP":
@@ -228,7 +251,7 @@ func StreamResponseGeminiChat2OpenAI(geminiResponse *dto.GeminiChatResponse) (*d
 		for _, part := range candidate.Content.Parts {
 			if part.InlineData != nil {
 				if strings.HasPrefix(part.InlineData.MimeType, "image") {
-					writeSep()
+					writeContentSep()
 					content.WriteString("![image](data:")
 					content.WriteString(part.InlineData.MimeType)
 					content.WriteString(";base64,")
@@ -242,32 +265,38 @@ func StreamResponseGeminiChat2OpenAI(geminiResponse *dto.GeminiChatResponse) (*d
 					choice.Delta.ToolCalls = append(choice.Delta.ToolCalls, *call)
 				}
 			} else if part.Thought {
-				isThought = true
-				writeSep()
-				content.WriteString(part.Text)
+				// Thought parts route to reasoning only, never to content.
+				// Previously thought and text shared one builder and the
+				// isThought flag flipped the whole buffer into reasoning,
+				// which erased the user-visible answer whenever both part
+				// kinds landed in the same frame.
+				writeReasoningSep()
+				reasoning.WriteString(part.Text)
 			} else {
 				if part.ExecutableCode != nil {
-					writeSep()
+					writeContentSep()
 					content.WriteString("```")
 					content.WriteString(part.ExecutableCode.Language)
 					content.WriteByte('\n')
 					content.WriteString(part.ExecutableCode.Code)
 					content.WriteString("\n```\n")
 				} else if part.CodeExecutionResult != nil {
-					writeSep()
+					writeContentSep()
 					content.WriteString("```output\n")
 					content.WriteString(part.CodeExecutionResult.Output)
 					content.WriteString("\n```\n")
 				} else if part.Text != "\n" {
-					writeSep()
+					writeContentSep()
 					content.WriteString(part.Text)
 				}
 			}
 		}
-		if isThought {
-			choice.Delta.SetReasoningContent(content.String())
-		} else {
-			choice.Delta.SetContentString(content.String())
+		// Always emit a content field (possibly empty) so downstream OpenAI
+		// clients see a consistent delta shape; reasoning is only emitted
+		// when a thought part was actually seen.
+		choice.Delta.SetContentString(content.String())
+		if reasoningAppended > 0 {
+			choice.Delta.SetReasoningContent(reasoning.String())
 		}
 		if isTools {
 			choice.FinishReason = &types.FinishReasonToolCalls

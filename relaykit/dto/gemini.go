@@ -161,8 +161,12 @@ func (r *GeminiChatRequest) SetTools(tools []GeminiChatTool) {
 }
 
 type GeminiThinkingConfig struct {
-	IncludeThoughts bool `json:"includeThoughts,omitempty"`
-	ThinkingBudget  *int `json:"thinkingBudget,omitempty"`
+	// IncludeThoughts is tri-state: nil = unspecified (let upstream decide),
+	// *false = explicitly disabled, *true = explicitly enabled. Using *bool
+	// with omitempty is required so a client-supplied `false` reaches upstream
+	// instead of being dropped as a zero value.
+	IncludeThoughts *bool `json:"includeThoughts,omitempty"`
+	ThinkingBudget  *int  `json:"thinkingBudget,omitempty"`
 	// TODO Conflict with thinkingbudget.
 	ThinkingLevel string `json:"thinkingLevel,omitempty"`
 }
@@ -184,7 +188,7 @@ func (c *GeminiThinkingConfig) UnmarshalJSON(data []byte) error {
 	*c = GeminiThinkingConfig(aux.Alias)
 
 	if aux.IncludeThoughtsSnake != nil {
-		c.IncludeThoughts = *aux.IncludeThoughtsSnake
+		c.IncludeThoughts = aux.IncludeThoughtsSnake
 	}
 
 	if aux.ThinkingBudgetSnake != nil {
