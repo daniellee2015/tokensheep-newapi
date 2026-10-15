@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQueryClient, useIsFetching } from '@tanstack/react-query'
+import { useQueryClient, useIsFetching, useQuery } from '@tanstack/react-query'
 import { useNavigate, getRouteApi } from '@tanstack/react-router'
 import type { Table } from '@tanstack/react-table'
 import { Eye, EyeOff } from 'lucide-react'
@@ -37,6 +37,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { getGroups } from '@/features/channels/api'
+import { INTERFACE_LANGUAGE_OPTIONS } from '@/i18n/languages'
+import { getUserGroups } from '@/lib/api'
+import { formatGroupName } from '@/lib/group-i18n'
 
 import { LOG_TYPE_ALL_VALUE, LOG_TYPE_FILTERS } from '../constants'
 import { buildSearchParams } from '../lib/filter'
@@ -112,14 +116,25 @@ interface CommonLogsFilterBarProps<TData> {
 export function CommonLogsFilterBar<TData>(
   props: CommonLogsFilterBarProps<TData>
 ) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const searchParams = route.useSearch()
   const { isAdminView: isAdmin } = useLogsViewScope()
   const { sensitiveVisible, setSensitiveVisible } = useUsageLogsContext()
   const fetchingLogs = useIsFetching({ queryKey: ['logs'] })
-
+  const { data: groupKeys = [], isPending: groupsPending } = useQuery({
+    queryKey: ['log-filter-group-keys', isAdmin],
+    queryFn: async () => {
+      if (isAdmin) {
+        const result = await getGroups()
+        return result.data ?? []
+      }
+      const result = await getUserGroups()
+      return Object.keys(result.data ?? {})
+    },
+    staleTime: 60_000,
+  })
   const searchState = useMemo<CommonLogDraft>(() => {
     const { start, end } = getDefaultTimeRange()
     const sourceValues = {
@@ -186,7 +201,19 @@ export function CommonLogsFilterBar<TData>(
   )
 
   const handleApply = useCallback(() => {
-    const filterParams = buildSearchParams(filters, 'common')
+    if (filters.group && groupsPending) return
+    const input = filters.group?.trim()
+    let group = input
+    // The API matches raw keys. Resolve display names only when the match is unique.
+    if (input && !groupKeys.includes(input)) {
+      const matches = groupKeys.filter((key) =>
+        INTERFACE_LANGUAGE_OPTIONS.some(
+          ({ code }) => formatGroupName(key, i18n.getFixedT(code)) === input
+        )
+      )
+      if (matches.length === 1) group = matches[0]
+    }
+    const filterParams = buildSearchParams({ ...filters, group }, 'common')
     navigate({
       to: '/usage-logs/$section',
       params: { section: 'common' },
@@ -198,7 +225,7 @@ export function CommonLogsFilterBar<TData>(
     })
     queryClient.invalidateQueries({ queryKey: ['logs'] })
     queryClient.invalidateQueries({ queryKey: ['usage-logs-stats'] })
-  }, [filters, logType, navigate, queryClient])
+  }, [filters, groupKeys, groupsPending, i18n, logType, navigate, queryClient])
 
   const handleReset = useCallback(() => {
     const { start, end } = getDefaultTimeRange()
@@ -442,7 +469,7 @@ export function CommonLogsFilterBar<TData>(
       advancedFilterCount={expandedFilterCount}
       hasActiveFilters={hasAdditionalFilters}
       onSearch={handleApply}
-      searchLoading={fetchingLogs > 0}
+      searchLoading={fetchingLogs > 0 || (!!filters.group && groupsPending)}
       onReset={handleReset}
     />
   )
