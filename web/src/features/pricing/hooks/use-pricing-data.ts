@@ -22,7 +22,7 @@ import { useMemo } from 'react'
 import { useStatus } from '@/hooks/use-status'
 
 import { getPricing } from '../api'
-import { getPricingModelKey } from '../lib/model-helpers'
+import { getPricingModelKey, groupPricingModels } from '../lib/model-helpers'
 
 export function usePricingData() {
   const { status } = useStatus()
@@ -48,19 +48,21 @@ export function usePricingData() {
 
     const vendorMap = new Map(data.vendors.map((v) => [v.id, v]))
 
-    return data.data.map((model) => {
-      const vendor = model.vendor_id
-        ? vendorMap.get(model.vendor_id)
-        : undefined
-      return {
-        ...model,
-        key: getPricingModelKey(model),
-        vendor_name: vendor?.name,
-        vendor_icon: vendor?.icon,
-        vendor_description: vendor?.description,
-        group_ratio: data.group_ratio,
-      }
-    })
+    return groupPricingModels(
+      data.data.map((model) => {
+        const vendor = model.vendor_id
+          ? vendorMap.get(model.vendor_id)
+          : undefined
+        return {
+          ...model,
+          key: getPricingModelKey(model),
+          vendor_name: vendor?.name,
+          vendor_icon: vendor?.icon,
+          vendor_description: vendor?.description,
+          group_ratio: data.group_ratio,
+        }
+      })
+    )
   }, [data])
 
   return {

@@ -38,7 +38,6 @@ import { StaticDataTable } from '@/components/data-table'
 import { sideDrawerContentClassName } from '@/components/drawer-layout'
 import { GroupBadge } from '@/components/group-badge'
 import { PublicLayout } from '@/components/layout'
-import { formatGroupName } from '@/lib/group-i18n'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -56,6 +55,7 @@ import {
   formatUptimePct,
   getSuccessRateTextClass,
 } from '@/features/performance-metrics/lib/format'
+import { formatGroupName } from '@/lib/group-i18n'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
 
@@ -68,7 +68,12 @@ import {
   isDynamicPricingModel,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
-import { getAvailableGroups, isTokenBasedModel } from '../lib/model-helpers'
+import {
+  getAvailableGroups,
+  getConfiguredGroupRatio,
+  getModelPricingVariants,
+  isTokenBasedModel,
+} from '../lib/model-helpers'
 import { formatFixedPrice, formatGroupPrice } from '../lib/price'
 import type {
   ModelCapability,
@@ -80,6 +85,7 @@ import { DynamicPricingBreakdown } from './dynamic-pricing-breakdown'
 import { ModelBillingModeBadge } from './model-billing-mode-badge'
 import { ModelDetailsApi } from './model-details-api'
 import { ModelDetailsPerformance } from './model-details-performance'
+import { ModelPriceSummary } from './model-price-summary'
 
 // ----------------------------------------------------------------------------
 // Local UI helpers
@@ -915,6 +921,65 @@ function GroupPricingSection(props: {
   const thClass =
     'text-muted-foreground py-2 text-[10px] font-medium tracking-wider uppercase'
 
+  const variants = getModelPricingVariants(props.model)
+  if (variants.length > 1) {
+    const rows = variants.flatMap((model) =>
+      getAvailableGroups(model, props.usableGroup).map((group) => ({
+        model,
+        group,
+      }))
+    )
+    return (
+      <section>
+        <SectionTitle>{t('Pricing by Group')}</SectionTitle>
+        <AutoGroupChain model={props.model} autoGroups={props.autoGroups} />
+        <StaticDataTable
+          tableClassName='text-sm'
+          data={rows}
+          getRowKey={(row) => `${row.group}-${row.model.quota_type}`}
+          columns={[
+            {
+              id: 'group',
+              header: t('Group'),
+              className: thClass,
+              cell: (row) => <GroupBadge group={row.group} size='sm' />,
+            },
+            {
+              id: 'type',
+              header: t('Type'),
+              className: thClass,
+              cell: (row) => <ModelBillingModeBadge model={row.model} />,
+            },
+            {
+              id: 'ratio',
+              header: t('Ratio'),
+              className: thClass,
+              cellClassName: 'font-mono text-muted-foreground',
+              cell: (row) =>
+                `${getConfiguredGroupRatio(props.groupRatio, row.group)}x`,
+            },
+            {
+              id: 'price',
+              header: t('Price'),
+              className: thClass,
+              cellClassName: 'py-3',
+              cell: (row) => (
+                <ModelPriceSummary
+                  model={{ ...row.model, group_ratio: props.groupRatio }}
+                  selectedGroup={row.group}
+                  tokenUnit={props.tokenUnit}
+                  showRechargePrice={showRechargePrice}
+                  priceRate={props.priceRate}
+                  usdExchangeRate={props.usdExchangeRate}
+                />
+              ),
+            },
+          ]}
+        />
+      </section>
+    )
+  }
+
   if (isDynamicPricingModel(props.model)) {
     const dynamicTiers = getDynamicPricingTiers(props.model)
 
@@ -1146,6 +1211,7 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
   const { t } = useTranslation()
   const showRechargePrice = props.showRechargePrice ?? false
 
+  const hasMultiplePrices = getModelPricingVariants(props.model).length > 1
   const isDynamic =
     props.model.billing_mode === 'tiered_expr' &&
     Boolean(props.model.billing_expr)
@@ -1176,14 +1242,16 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
 
           <section className='bg-card/60 space-y-5 rounded-xl border p-4 shadow-sm'>
             <SectionTitle>{t('Pricing')}</SectionTitle>
-            <PriceSection
-              model={props.model}
-              priceRate={props.priceRate}
-              usdExchangeRate={props.usdExchangeRate}
-              tokenUnit={props.tokenUnit}
-              showRechargePrice={showRechargePrice}
-            />
-            {isDynamic && (
+            {!hasMultiplePrices && (
+              <PriceSection
+                model={props.model}
+                priceRate={props.priceRate}
+                usdExchangeRate={props.usdExchangeRate}
+                tokenUnit={props.tokenUnit}
+                showRechargePrice={showRechargePrice}
+              />
+            )}
+            {isDynamic && !hasMultiplePrices && (
               <DynamicPricingBreakdown billingExpr={props.model.billing_expr} />
             )}
             <GroupPricingSection

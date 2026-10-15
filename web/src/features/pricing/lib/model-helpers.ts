@@ -108,11 +108,35 @@ export function isTokenBasedModel(model: PricingModel): boolean {
   return model.quota_type === QUOTA_TYPE_VALUES.TOKEN
 }
 
-/** Stable identity for a pricing row without changing the public model name. */
+/** One public model can have different billing schedules in different groups. */
+export function getModelPricingVariants(model: PricingModel): PricingModel[] {
+  return model.pricing_variants ?? [model]
+}
+
+export function groupPricingModels(rows: PricingModel[]): PricingModel[] {
+  const byName = new Map<string, PricingModel[]>()
+  for (const row of rows.flatMap(getModelPricingVariants)) {
+    const variants = byName.get(row.model_name)
+    if (variants) variants.push(row)
+    else byName.set(row.model_name, [row])
+  }
+  return Array.from(byName.values(), (variants) => {
+    variants.sort((a, b) => a.quota_type - b.quota_type)
+    if (variants.length === 1) return variants[0]
+    return {
+      ...variants[0],
+      pricing_variants: variants,
+      enable_groups: [...new Set(variants.flatMap((row) => row.enable_groups))],
+      supported_endpoint_types: [
+        ...new Set(
+          variants.flatMap((row) => row.supported_endpoint_types ?? [])
+        ),
+      ],
+    }
+  })
+}
+
+/** Model selection is independent of the billing schedule and active filters. */
 export function getPricingModelKey(model: PricingModel): string {
-  return JSON.stringify([
-    model.model_name,
-    model.quota_type,
-    [...(model.enable_groups ?? [])].sort(),
-  ])
+  return model.model_name
 }
