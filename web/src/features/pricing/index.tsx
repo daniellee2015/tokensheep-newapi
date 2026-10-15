@@ -35,10 +35,11 @@ import {
 import { EXCLUDED_GROUPS, VIEW_MODES } from './constants'
 import { useFilters } from './hooks/use-filters'
 import { usePricingData } from './hooks/use-pricing-data'
+import { getPricingModelKey } from './lib/model-helpers'
 
 export function Pricing() {
   const { t } = useTranslation()
-  const [selectedModelName, setSelectedModelName] = useState<string | null>(
+  const [selectedPricingKey, setSelectedPricingKey] = useState<string | null>(
     null
   )
 
@@ -83,18 +84,18 @@ export function Pricing() {
     clearSearch,
   } = useFilters(models || [])
 
-  const handleModelClick = useCallback((modelName: string) => {
-    setSelectedModelName(modelName)
+  const handleModelClick = useCallback((pricingKey: string) => {
+    setSelectedPricingKey(pricingKey)
   }, [])
 
   const selectedModel = useMemo(
     () =>
-      selectedModelName
+      selectedPricingKey
         ? (models || []).find(
-            (model) => model.model_name === selectedModelName
+            (model) => getPricingModelKey(model) === selectedPricingKey
           ) || null
         : null,
-    [models, selectedModelName]
+    [models, selectedPricingKey]
   )
 
   const availableGroups = useMemo(
@@ -264,7 +265,7 @@ export function Pricing() {
             <ModelDetailsDrawer
               open={Boolean(selectedModel)}
               onOpenChange={(open) => {
-                if (!open) setSelectedModelName(null)
+                if (!open) setSelectedPricingKey(null)
               }}
               model={selectedModel}
               groupRatio={groupRatio || {}}

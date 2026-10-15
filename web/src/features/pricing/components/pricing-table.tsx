@@ -28,6 +28,7 @@ import {
 } from '@/components/data-table'
 
 import { DEFAULT_PRICING_PAGE_SIZE, DEFAULT_TOKEN_UNIT } from '../constants'
+import { getPricingModelKey } from '../lib/model-helpers'
 import type { PricingModel, TokenUnit } from '../types'
 import { usePricingColumns } from './pricing-columns'
 
@@ -39,7 +40,7 @@ export interface PricingTableProps {
   tokenUnit?: TokenUnit
   showRechargePrice?: boolean
   selectedGroup?: string
-  onModelClick?: (modelName: string) => void
+  onModelClick?: (pricingKey: string) => void
 }
 
 export function PricingTable(props: PricingTableProps) {
@@ -82,7 +83,7 @@ export function PricingTable(props: PricingTableProps) {
 
   const handleRowClick = useCallback(
     (model: PricingModel) => {
-      onModelClick?.(model.model_name)
+      onModelClick?.(getPricingModelKey(model))
     },
     [onModelClick]
   )

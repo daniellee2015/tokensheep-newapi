@@ -118,11 +118,11 @@ func refreshTieredBillingGroup(relayInfo *relaycommon.RelayInfo) (*billingexpr.B
 	return snap, nil
 }
 
-// PrepareTieredBillingForSelectedGroup refreshes routing-dependent billing
+// PrepareBillingForSelectedGroup refreshes routing-dependent billing
 // state before an upstream attempt. An existing session reserves any higher
 // estimate before sending. If the initial group was free and skipped
 // pre-consume, switching to a paid group creates the session at that point.
-func PrepareTieredBillingForSelectedGroup(c *gin.Context, relayInfo *relaycommon.RelayInfo) *types.NewAPIError {
+func PrepareBillingForSelectedGroup(c *gin.Context, relayInfo *relaycommon.RelayInfo) *types.NewAPIError {
 	snap, err := refreshTieredBillingGroup(relayInfo)
 	if err != nil {
 		return types.NewErrorWithStatusCode(
@@ -132,13 +132,17 @@ func PrepareTieredBillingForSelectedGroup(c *gin.Context, relayInfo *relaycommon
 			types.ErrOptionWithSkipRetry(),
 		)
 	}
-	if snap == nil {
-		return nil
+	quota := relayInfo.PriceData.QuotaToPreConsume
+	if snap != nil {
+		quota = snap.EstimatedQuotaAfterGroup
 	}
-	if snap.GroupRatio == 0 {
+	if quota == 0 {
 		// Paid-to-free keeps FreeModel as-is: FreeModel means "pre-consume was
 		// skipped", which is not true once a session exists, and settlement
 		// already yields 0 for a zero group ratio.
+		if relayInfo.Billing != nil {
+			relayInfo.PriceData.FreeModel = false
+		}
 		return nil
 	}
 
@@ -147,9 +151,9 @@ func PrepareTieredBillingForSelectedGroup(c *gin.Context, relayInfo *relaycommon
 	relayInfo.PriceData.FreeModel = false
 
 	if relayInfo.Billing == nil {
-		return PreConsumeBilling(c, snap.EstimatedQuotaAfterGroup, relayInfo)
+		return PreConsumeBilling(c, quota, relayInfo)
 	}
-	if err := relayInfo.Billing.Reserve(snap.EstimatedQuotaAfterGroup); err != nil {
+	if err := relayInfo.Billing.Reserve(quota); err != nil {
 		return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 	}
 	relayInfo.FinalPreConsumedQuota = relayInfo.Billing.GetPreConsumedQuota()

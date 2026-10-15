@@ -160,6 +160,8 @@ type RelayInfo struct {
 	// Auto-group retries refresh its group-dependent fields before each attempt
 	// and again before settlement. Non-nil only when billing mode is "tiered_expr".
 	TieredBillingSnapshot *billingexpr.BillingSnapshot
+	// Preserve the frozen expression while a retry uses a group per-call price.
+	TieredBillingFallback *billingexpr.BillingSnapshot
 	BillingRequestInput   *billingexpr.RequestInput
 
 	Request dto.Request

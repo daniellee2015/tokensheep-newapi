@@ -74,11 +74,16 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
 
 	groupRatioInfo := HandleGroupRatio(c, info)
+	groupPrice, hasGroupPrice := billing_setting.GetGroupModelPrice(info.UsingGroup, info.OriginModelName)
+	if hasGroupPrice {
+		modelPrice, usePrice = groupPrice, true
+	}
 
 	// Check if this model uses tiered_expr billing
-	if billing_setting.GetBillingMode(info.OriginModelName) == billing_setting.BillingModeTieredExpr {
+	if !hasGroupPrice && billing_setting.GetBillingMode(info.OriginModelName) == billing_setting.BillingModeTieredExpr {
 		return modelPriceHelperTiered(c, info, promptTokens, meta, groupRatioInfo)
 	}
+	info.TieredBillingSnapshot = nil
 
 	var preConsumedQuota int
 	var modelRatio float64
@@ -188,6 +193,9 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hostt
 	groupRatioInfo := HandleGroupRatio(c, info)
 
 	modelPrice, success := ratio_setting.GetModelPrice(info.OriginModelName, true)
+	if groupPrice, ok := billing_setting.GetGroupModelPrice(info.UsingGroup, info.OriginModelName); ok {
+		modelPrice, success = groupPrice, true
+	}
 	usePrice := success
 	var modelRatio float64
 
@@ -252,7 +260,12 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (hostt
 	return priceData, nil
 }
 
-func HasModelBillingConfig(modelName string) bool {
+func HasModelBillingConfig(modelName string, groups ...string) bool {
+	for _, group := range groups {
+		if _, ok := billing_setting.GetGroupModelPrice(group, modelName); ok {
+			return true
+		}
+	}
 	if _, ok := ratio_setting.GetModelPrice(modelName, false); ok {
 		return true
 	}
@@ -264,6 +277,34 @@ func HasModelBillingConfig(modelName string) bool {
 	}
 	expr, ok := billing_setting.GetBillingExpr(modelName)
 	return ok && strings.TrimSpace(expr) != ""
+}
+
+// RefreshModelPriceForGroup switches billing modes after routing chooses a new
+// group. An active expression remains frozen when both groups use it.
+func RefreshModelPriceForGroup(c *gin.Context, info *relaycommon.RelayInfo, previousGroup string, promptTokens int, meta *types.TokenCountMeta) error {
+	if previousGroup == info.UsingGroup {
+		return nil
+	}
+	_, hasGroupPrice := billing_setting.GetGroupModelPrice(info.UsingGroup, info.OriginModelName)
+	if !hasGroupPrice && info.TieredBillingFallback != nil {
+		info.TieredBillingSnapshot = info.TieredBillingFallback
+		info.PriceData = hosttypes.PriceData{GroupRatioInfo: info.PriceData.GroupRatioInfo}
+		return nil
+	}
+	if info.TieredBillingSnapshot != nil {
+		if hasGroupPrice {
+			info.TieredBillingFallback = info.TieredBillingSnapshot
+		} else {
+			return nil
+		}
+	}
+	if !hasGroupPrice {
+		if _, hadGroupPrice := billing_setting.GetGroupModelPrice(previousGroup, info.OriginModelName); !hadGroupPrice {
+			return nil
+		}
+	}
+	_, err := ModelPriceHelper(c, info, promptTokens, meta)
+	return err
 }
 
 func modelPriceHelperTiered(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta, groupRatioInfo hosttypes.GroupRatioInfo) (hosttypes.PriceData, error) {

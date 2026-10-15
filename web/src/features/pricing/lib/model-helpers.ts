@@ -107,3 +107,12 @@ export function replaceModelInPath(path: string, modelName: string): string {
 export function isTokenBasedModel(model: PricingModel): boolean {
   return model.quota_type === QUOTA_TYPE_VALUES.TOKEN
 }
+
+/** Stable identity for a pricing row without changing the public model name. */
+export function getPricingModelKey(model: PricingModel): string {
+  return JSON.stringify([
+    model.model_name,
+    model.quota_type,
+    [...(model.enable_groups ?? [])].sort(),
+  ])
+}

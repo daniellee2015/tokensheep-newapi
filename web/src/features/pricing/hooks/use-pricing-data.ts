@@ -22,6 +22,7 @@ import { useMemo } from 'react'
 import { useStatus } from '@/hooks/use-status'
 
 import { getPricing } from '../api'
+import { getPricingModelKey } from '../lib/model-helpers'
 
 export function usePricingData() {
   const { status } = useStatus()
@@ -53,7 +54,7 @@ export function usePricingData() {
         : undefined
       return {
         ...model,
-        key: model.model_name,
+        key: getPricingModelKey(model),
         vendor_name: vendor?.name,
         vendor_icon: vendor?.icon,
         vendor_description: vendor?.description,

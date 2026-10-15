@@ -206,6 +206,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	relayInfo.LastError = nil
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+		previousGroup := relayInfo.UsingGroup
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
@@ -215,7 +216,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 		addUsedChannel(c, channel.Id)
 		retryParam.ExcludeChannel(channel.Id)
-		if billingErr := service.PrepareTieredBillingForSelectedGroup(c, relayInfo); billingErr != nil {
+		if err := helper.RefreshModelPriceForGroup(c, relayInfo, previousGroup, tokens, meta); err != nil {
+			newAPIError = types.NewErrorWithStatusCode(err, types.ErrorCodeModelPriceError, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+			break
+		}
+		if billingErr := service.PrepareBillingForSelectedGroup(c, relayInfo); billingErr != nil {
 			newAPIError = billingErr
 			break
 		}
