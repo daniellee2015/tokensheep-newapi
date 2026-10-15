@@ -200,34 +200,40 @@ export function CommonLogsFilterBar<TData>(
     [searchState]
   )
 
-  const handleApply = useCallback(() => {
-    if (filters.group && groupsPending) return
-    const input = filters.group?.trim()
-    let group = input
-    // The API matches raw keys. Resolve display names only when the match is unique.
-    if (input && !groupKeys.includes(input)) {
-      const matches = groupKeys.filter((key) =>
-        INTERFACE_LANGUAGE_OPTIONS.some(
-          ({ code }) => formatGroupName(key, i18n.getFixedT(code)) === input
+  const handleApply = useCallback(
+    async (nextFilters: CommonLogFilters) => {
+      if (nextFilters.group && groupsPending) return
+      const input = nextFilters.group?.trim()
+      let group = input
+      // The API matches raw keys. Resolve display names only when the match is unique.
+      if (input && !groupKeys.includes(input)) {
+        const matches = groupKeys.filter((key) =>
+          INTERFACE_LANGUAGE_OPTIONS.some(
+            ({ code }) => formatGroupName(key, i18n.getFixedT(code)) === input
+          )
         )
+        if (matches.length === 1) group = matches[0]
+      }
+      const filterParams = buildSearchParams(
+        { ...nextFilters, group },
+        'common'
       )
-      if (matches.length === 1) group = matches[0]
-    }
-    const filterParams = buildSearchParams({ ...filters, group }, 'common')
-    navigate({
-      to: '/usage-logs/$section',
-      params: { section: 'common' },
-      search: {
-        ...filterParams,
-        type: [logType],
-        page: 1,
-      },
-    })
-    queryClient.invalidateQueries({ queryKey: ['logs'] })
-    queryClient.invalidateQueries({ queryKey: ['usage-logs-stats'] })
-  }, [filters, groupKeys, groupsPending, i18n, logType, navigate, queryClient])
+      await navigate({
+        to: '/usage-logs/$section',
+        params: { section: 'common' },
+        search: {
+          ...filterParams,
+          type: [logType],
+          page: 1,
+        },
+      })
+      queryClient.invalidateQueries({ queryKey: ['logs'] })
+      queryClient.invalidateQueries({ queryKey: ['usage-logs-stats'] })
+    },
+    [groupKeys, groupsPending, i18n, logType, navigate, queryClient]
+  )
 
-  const handleReset = useCallback(() => {
+  const handleReset = useCallback(async () => {
     const { start, end } = getDefaultTimeRange()
     const resetFilters: CommonLogFilters = { startTime: start, endTime: end }
     const resetSearch = {
@@ -241,7 +247,7 @@ export function CommonLogsFilterBar<TData>(
       logType: LOG_TYPE_ALL_VALUE,
     })
 
-    navigate({
+    await navigate({
       to: '/usage-logs/$section',
       params: { section: 'common' },
       search: {
@@ -255,9 +261,9 @@ export function CommonLogsFilterBar<TData>(
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter') handleApply()
+      if (e.key === 'Enter') void handleApply(filters)
     },
-    [handleApply]
+    [filters, handleApply]
   )
 
   const hasExpandedFilters =
@@ -268,8 +274,6 @@ export function CommonLogsFilterBar<TData>(
     !!filters.upstreamRequestId
 
   const hasTypeFilter = logType !== LOG_TYPE_ALL_VALUE
-  const hasAdditionalFilters =
-    !!filters.model || !!filters.group || hasTypeFilter || hasExpandedFilters
 
   const expandedFilterCount = [
     filters.token,
@@ -324,8 +328,9 @@ export function CommonLogsFilterBar<TData>(
         start={filters.startTime}
         end={filters.endTime}
         onChange={({ start, end }) => {
-          handleChange('startTime', start)
-          handleChange('endTime', end)
+          const nextFilters = { ...filters, startTime: start, endTime: end }
+          setDraft({ ...activeDraft, filters: nextFilters })
+          void handleApply(nextFilters)
         }}
       />
     </LogsFilterField>
@@ -467,8 +472,7 @@ export function CommonLogsFilterBar<TData>(
       }
       hasAdvancedActiveFilters={hasExpandedFilters}
       advancedFilterCount={expandedFilterCount}
-      hasActiveFilters={hasAdditionalFilters}
-      onSearch={handleApply}
+      onSearch={() => void handleApply(filters)}
       searchLoading={fetchingLogs > 0 || (!!filters.group && groupsPending)}
       onReset={handleReset}
     />

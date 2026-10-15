@@ -31,6 +31,8 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // Transform browser ESM packages so real log-table tests can load their icons.
+    server: { deps: { inline: [/@lobehub\//] } },
     setupFiles: ['./src/test-setup.ts'],
     clearMocks: true,
     restoreMocks: true,
