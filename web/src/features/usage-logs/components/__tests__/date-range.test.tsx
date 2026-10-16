@@ -51,6 +51,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
   vi.useRealTimers()
 })
 test.each([
@@ -114,4 +115,24 @@ test('Today uses calendar boundaries on a daylight-saving transition date', asyn
   expect(screen.getByRole('status')).toHaveTextContent(
     `${new Date(2026, 2, 8).getTime() / 1000} / ${new Date(2026, 2, 8, 23, 59, 59).getTime() / 1000}`
   )
+})
+
+test('Today label and date inputs stay local when browser hour getters report UTC', async () => {
+  vi.spyOn(Date.prototype, 'getHours').mockImplementation(
+    Date.prototype.getUTCHours
+  )
+  vi.spyOn(Date.prototype, 'getDate').mockImplementation(
+    Date.prototype.getUTCDate
+  )
+  vi.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(0)
+  const user = userEvent.setup()
+  render(<Picker />)
+  await user.click(screen.getByRole('button', { name: 'Date Range' }))
+  await user.click(screen.getByRole('button', { name: 'Today' }))
+  const trigger = screen.getByRole('button', {
+    name: '2026-10-16 00:00 ~ 2026-10-16 23:59',
+  })
+  await user.click(trigger)
+  expect(screen.getByDisplayValue('2026-10-16T00:00')).toBeVisible()
+  expect(screen.getByDisplayValue('2026-10-16T23:59')).toBeVisible()
 })

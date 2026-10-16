@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import dayjs from '@/lib/dayjs'
+import { getLocalDateTimeParts } from '@/lib/local-date'
 
 export const LOG_TIME_PRESETS = ['today', '7d', 'week', '30d', 'month'] as const
 export type LogTimePreset = (typeof LOG_TIME_PRESETS)[number]
@@ -25,26 +25,27 @@ export function getPresetTimeRange(preset: LogTimePreset): {
   start: Date
   end: Date
 } {
-  const now = dayjs()
-  let start = now.startOf('day')
-  let end = now.endOf('day')
+  const now = getLocalDateTimeParts(new Date())
+  const month = now.month - 1
+  let start = new Date(now.year, month, now.day)
+  let nextDay = new Date(now.year, month, now.day + 1)
   switch (preset) {
     case '7d':
-      start = now.subtract(6, 'day').startOf('day')
+      start = new Date(now.year, month, now.day - 6)
       break
     case '30d':
-      start = now.subtract(29, 'day').startOf('day')
+      start = new Date(now.year, month, now.day - 29)
       break
     case 'week':
-      start = now.startOf('week')
-      end = now.endOf('week')
+      start = new Date(now.year, month, now.day - now.weekday)
+      nextDay = new Date(now.year, month, now.day - now.weekday + 7)
       break
     case 'month':
-      start = now.startOf('month')
-      end = now.endOf('month')
+      start = new Date(now.year, month, 1)
+      nextDay = new Date(now.year, month + 1, 1)
       break
   }
-  return { start: start.toDate(), end: end.toDate() }
+  return { start, end: new Date(nextDay.getTime() - 1) }
 }
 
 // Relative selections are resolved when used; explicit historical URLs stay fixed.
