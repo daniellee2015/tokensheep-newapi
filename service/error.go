@@ -203,16 +203,29 @@ const (
 	publicServiceUnavailableMessage = "Service temporarily unavailable"
 )
 
-// PublicUpstreamError replaces every upstream-controlled field with a value
-// defined by this gateway. Known request failures select a fixed, actionable
-// message; no provider text is interpolated. Retry, channel health and operator
-// diagnostics must use the original error before calling this function.
+// PublicUpstreamError rebuilds the public envelope. Request error messages
+// preserve provider guidance after filtering operational details; other status
+// classes use gateway messages. Retry and diagnostics use the original error.
 func PublicUpstreamError(upstreamErr *types.NewAPIError) *types.NewAPIError {
 	if upstreamErr == nil {
 		return nil
 	}
 
-	statusCode, message, code := publicUpstreamErrorPolicy(upstreamErr.StatusCode, upstreamErr.Error())
+	// Error() may append provider metadata for diagnostics. Only the actual
+	// message may be preserved in a public request error.
+	rawMessage := upstreamErr.Error()
+	switch relayError := upstreamErr.RelayError.(type) {
+	case types.OpenAIError:
+		rawMessage = relayError.Message
+		if len(relayError.Metadata) > 0 {
+			// WithOpenAIError appends OpenRouter metadata to the diagnostic
+			// message. Remove that exact suffix, not arbitrary user text.
+			rawMessage = strings.TrimSuffix(rawMessage, " ("+string(relayError.Metadata)+")")
+		}
+	case types.ClaudeError:
+		rawMessage = relayError.Message
+	}
+	statusCode, message, code := publicUpstreamErrorPolicy(upstreamErr.StatusCode, rawMessage)
 	publicErr := types.NewOpenAIError(errors.New(message), code, statusCode, types.ErrOptionWithSkipRetry())
 	publicErr.SetRetryAfter(upstreamErr.RetryAfter())
 	return publicErr

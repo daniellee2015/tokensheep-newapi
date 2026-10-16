@@ -47,7 +47,6 @@ var errorMaskSetting = ErrorMaskSetting{
 		// --- Provider / routing vocabulary ---
 		{Pattern: `unknown provider for model (\S+)`, Replace: "Model $1 is not available", IsRegex: true},
 		{Pattern: `流式 API 请求失败:\s*(\d+)[^\n]*`, Replace: "Request failed with status $1", IsRegex: true},
-		{Pattern: `该会话已被网络安全策略屏蔽[^/]*(/[^(]*)?`, Replace: "Request rejected", IsRegex: true},
 
 		// --- Catch-all vocabulary, last so it only touches leftovers ---
 		{Pattern: `凭据`, Replace: "service"},

@@ -105,7 +105,7 @@ func TestPublicUpstreamErrorUsesOnlyGatewayControlledFields(t *testing.T) {
 		publicMessage  string
 		publicCode     types.ErrorCode
 	}{
-		{name: "bad request", upstreamStatus: http.StatusBadRequest, publicStatus: http.StatusBadRequest, publicMessage: "Invalid request", publicCode: types.ErrorCodeInvalidRequest},
+		{name: "bad request", upstreamStatus: http.StatusBadRequest, publicStatus: http.StatusBadRequest, publicMessage: publicServiceUnavailableMessage, publicCode: types.ErrorCodeInvalidRequest},
 		{name: "upstream authentication", upstreamStatus: http.StatusUnauthorized, publicStatus: http.StatusServiceUnavailable, publicMessage: "Service temporarily unavailable", publicCode: types.ErrorCodeServiceUnavailable},
 		{name: "rate limit", upstreamStatus: http.StatusTooManyRequests, publicStatus: http.StatusTooManyRequests, publicMessage: "Rate limit exceeded. Retry later.", publicCode: types.ErrorCodeRateLimitExceeded},
 		{name: "bad gateway", upstreamStatus: http.StatusBadGateway, publicStatus: http.StatusServiceUnavailable, publicMessage: "Service temporarily unavailable", publicCode: types.ErrorCodeServiceUnavailable},

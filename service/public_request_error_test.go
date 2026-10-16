@@ -15,59 +15,93 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPublicRequestErrorsExplainKnownFailuresWithoutLeakingProviderData(t *testing.T) {
-	tests := []struct {
-		name, raw, want string
-		status          int
-	}{
-		{"missing content", "* GenerateContentRequest.contents: contents is not specified", "Request content is missing or became empty during processing. Check the endpoint and message content; if the input is valid, contact support with this request ID.", 400},
-		{"context limit", "The input token count exceeds the maximum number of tokens allowed 1048576.", "Input exceeds the model context limit. Shorten the conversation or reduce the input.", 400},
-		{"model turn", "Requests ending with a model turn are not supported.", "The conversation ends with an assistant message that this operation does not support. Check the message sequence; if it is valid, contact support with this request ID.", 400},
-		{"safety rejection", "request blocked by Gemini API: PROHIBITED_CONTENT", "The request was rejected by content safety checks. Review the submitted content.", 400},
-		{"remote image", "Antigravity rejects fileData.fileUri pointing to https://private.example/user-image.jpeg: the upstream does not fetch third-party URLs", "Remote file URLs are not supported for this request. Send the file using a supported upload or inline format.", 400},
-		{"unsupported content", "basispoints supports text and HTTPS input_image content only (path=input[104].content[1]; type=unknown)", "The request contains an unsupported content type. Check the text, image, and file formats accepted by this operation.", 400},
-		{"unknown invalid argument", "private invalid argument on node-49", "Invalid request", 400},
-		{"unavailable resource", "private model abc was not found", "The requested model or endpoint is unavailable. Check the model and endpoint; if both are correct, contact support with this request ID.", 404},
-		{"unsupported operation", "private route only accepts PATCH", "The request method or operation is not supported. Check the API endpoint and HTTP method.", 405},
-		{"conflict", "private account busy", "The request conflicts with the current resource state. Refresh the resource state before trying again.", 409},
-		{"expired resource", "private resource expired", "The requested resource has expired or is no longer available. Create a new resource or update the request.", 410},
-		{"large body", "private proxy body limit 12345", "The request body is too large. Reduce the size of messages or attachments.", 413},
-		{"media type", "private media handler rejected input", "The request media type is not supported. Check Content-Type and the file format.", 415},
-		{"invalid parameters", "private validation failed", "The request parameters could not be accepted. Check required fields, value types, and supported ranges.", 422},
-		{"capacity stays private", "contents is not specified; account pool empty", "Service temporarily unavailable", 503},
-		{"rate limit stays private", "PROHIBITED_CONTENT; account pool empty", "Rate limit exceeded. Retry later.", 429},
+func TestPublicRequestErrorsPreserveProviderGuidance(t *testing.T) {
+	tests := []struct{ name, message string }{
+		{"Gemini safety", "request blocked by Gemini API: PROHIBITED_CONTENT"},
+		{"security policy", "该会话已被网络安全策略屏蔽，请开启新会话 / This session is blocked by cyber-security policy"},
+		{"safety explanation", "Your request was rejected due to content_policy_violation. Please revise the submitted content."},
+		{"Gemini context 128K", "The input token count exceeds the maximum number of tokens allowed 131072."},
+		{"Gemini context 1M", "The input token count exceeds the maximum number of tokens allowed (1048576)."},
+		{"OpenAI context", "This model's maximum context length is 16385 tokens. However, your messages resulted in 17000 tokens."},
+		{"unsupported field", `Invalid JSON payload received. Unknown name "requests" at 'request': Cannot find field.`},
+		{"function name", "Invalid function name. Must start with a letter or an underscore, with a maximum length of 128."},
+		{"tool sequence", "Please ensure that function call turn comes immediately after a user turn or after a function response turn."},
+		{"missing tool response id", "Invalid function call history: missing the function response ID"},
+		{"unknown validation", "Request contains an invalid argument."},
+		{"model turn", "Requests ending with a model turn are not supported."},
+		{"missing content", "contents is not specified"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rawMessage := tt.raw + "; secret=sk-private-secret; https://internal.example/node-49 (request id: upstream-private-id)"
+			rawMessage := tt.message + " (request id: inner-id) (request-id: outer-id)"
 			body, err := common.Marshal(map[string]any{"error": types.OpenAIError{
 				Message: rawMessage, Type: "provider_private_type", Code: "provider_private_code",
-				Param: "private_parameter", Metadata: []byte(`{"node":"private"}`),
+				Param: "private_parameter", Metadata: []byte(`{"secret":"private"}`),
 			}})
 			require.NoError(t, err)
 			raw := RelayErrorHandler(context.Background(), &http.Response{
-				StatusCode: tt.status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(string(body))),
+				StatusCode: http.StatusBadRequest, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(string(body))),
 			}, false)
 			require.NotNil(t, raw)
-			originalError := raw.Error()
+			originalDiagnostic := raw.Error()
 			public := PublicUpstreamError(raw)
 			require.NotNil(t, public)
-			assert.Equal(t, tt.want, public.Error())
-			assert.Equal(t, tt.want, public.ToOpenAIError().Message)
-			assert.Equal(t, tt.want, public.ToClaudeError().Message)
+			assert.Equal(t, tt.message, public.Error())
+			assert.Equal(t, tt.message, public.ToOpenAIError().Message)
+			assert.Equal(t, tt.message, public.ToClaudeError().Message)
+			assert.Equal(t, "status_code=400, "+tt.message, public.MaskSensitiveErrorWithStatusCode(), "user log must preserve the same explanation")
+			assert.Equal(t, http.StatusBadRequest, public.StatusCode)
+			assert.Equal(t, types.ErrorCodeInvalidRequest, public.GetErrorCode())
 			assert.Empty(t, public.ToOpenAIError().Param)
 			assert.Empty(t, public.ToOpenAIError().Metadata)
 			assert.Empty(t, public.Metadata)
-			assert.Equal(t, originalError, raw.Error(), "retry policy and admin diagnostics need the original error")
-			assert.Equal(t, tt.status, raw.StatusCode)
-			if tt.status != 429 && tt.status != 503 {
-				assert.Equal(t, http.StatusBadRequest, public.StatusCode)
-				assert.Equal(t, types.ErrorCodeInvalidRequest, public.GetErrorCode())
-				assert.Equal(t, "invalid_request", public.ToOpenAIError().Type)
-			}
-			task := PublicUpstreamTaskError(&taskdto.TaskError{StatusCode: tt.status, Message: rawMessage, Error: errors.New(rawMessage), Code: "private_code"})
-			assert.Equal(t, tt.want, task.Message)
-			assert.EqualError(t, task.Error, tt.want)
+			assert.Equal(t, originalDiagnostic, raw.Error(), "admin diagnostics must retain the original")
+			task := PublicUpstreamTaskError(&taskdto.TaskError{StatusCode: 400, Message: rawMessage, Error: errors.New(rawMessage), Code: "private_code"})
+			assert.Equal(t, tt.message, task.Message)
+			assert.EqualError(t, task.Error, tt.message)
 		})
+	}
+}
+
+func TestPublicRequestErrorsStillHideOperationalDetails(t *testing.T) {
+	tests := []struct{ name, raw string }{
+		{"account pool", "All available accounts exhausted at https://internal.example"},
+		{"group", "No available channel for model gemini-4 under group private-group (distributor)"},
+		{"balance", "用户额度不足, 剩余额度: ＄0.034248, 需要预扣费额度: ＄0.054788"},
+		{"price", "Model price is $0.123 per token"},
+		{"English quota", "Insufficient quota for account 53"},
+		{"routing", "unknown provider for model gemini-4-argon-high"},
+		{"model unavailable", "This model is not available."},
+		{"mixed safety and pool", "PROHIBITED_CONTENT; account pool empty: 0/247"},
+		{"mixed context and price", "context_length_exceeded; upstream price: 0.123"},
+		{"credential", "Invalid argument; secret=sk-private-secret"},
+		{"JSON credential", `Invalid argument; {"secret":"private"}`},
+		{"node", "private invalid argument on node-49"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw := types.NewOpenAIError(errors.New(tt.raw), types.ErrorCodeInvalidRequest, http.StatusBadRequest)
+			public := PublicUpstreamError(raw)
+			require.NotNil(t, public)
+			assert.Equal(t, publicServiceUnavailableMessage, public.Error())
+			assert.Equal(t, http.StatusBadRequest, public.StatusCode)
+			assert.Equal(t, tt.raw, raw.Error())
+		})
+	}
+}
+
+func TestPublicRequestMessagesKeepOtherStatusPolicies(t *testing.T) {
+	tests := []struct {
+		status  int
+		message string
+	}{
+		{429, publicRateLimitMessage}, {503, publicServiceUnavailableMessage},
+	}
+	for _, tt := range tests {
+		raw := types.NewOpenAIError(errors.New("PROHIBITED_CONTENT; account pool empty"), types.ErrorCodeInvalidRequest, tt.status)
+		public := PublicUpstreamError(raw)
+		require.NotNil(t, public)
+		assert.Equal(t, tt.status, public.StatusCode)
+		assert.Equal(t, tt.message, public.Error())
 	}
 }

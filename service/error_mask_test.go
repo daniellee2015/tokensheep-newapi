@@ -69,7 +69,7 @@ func TestApplyGlobalErrorMask_RealUpstreamLeaks(t *testing.T) {
 		{
 			name:     "security policy block",
 			input:    "该会话已被网络安全策略屏蔽，请开启新会话 / This session is blocked by cyber-security policy",
-			expected: "Request rejected",
+			expected: "该会话已被网络安全策略屏蔽，请开启新会话 / This session is blocked by cyber-security policy",
 		},
 	}
 

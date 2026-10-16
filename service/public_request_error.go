@@ -2,13 +2,22 @@ package service
 
 import (
 	"net/http"
-	"strings"
+	"regexp"
+
+	"github.com/QuantumNous/new-api/common"
 )
 
-// publicRequestErrorMessage classifies request failures into gateway-owned
-// guidance. Only fixed strings leave this boundary: never include provider
-// names, field values, URLs, token limits, metadata, or upstream request IDs.
-// HTTP status and protocol error types remain compatible with the public policy.
+// Operational details are private even when a provider reports them as a 400.
+// Request validation, safety explanations and context limits remain public.
+var privateRequestErrorPattern = regexp.MustCompile(`(?i)` +
+	`\b(?:quota|balance|credits?|billing|pricing|price|cost|credentials?)\b|` +
+	`\b(?:account[ _-]?pool|accounts? exhausted|no available accounts?|all available accounts?|unknown provider|no available channel|distributor)\b|` +
+	`\b(?:group|channel|node|account)[ _:#=-]+[\w-]+|` +
+	`\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|secret|authorization)["']?\s*[:=]|\bbearer\s+\S+|\bsk-[\w-]+|` +
+	`this model is not available|额度|余额|预扣|计费|价格|费用|成本|账号|账户|帐号|凭据|号池|分组|渠道|节点|并发|[$＄€¥￥]`)
+
+// publicRequestErrorMessage preserves actionable provider messages while
+// hiding operational details. Protocol envelopes and status policy stay local.
 func publicRequestErrorMessage(statusCode int, rawMessage string) string {
 	switch statusCode {
 	case http.StatusNotFound:
@@ -25,29 +34,12 @@ func publicRequestErrorMessage(statusCode int, rawMessage string) string {
 		return "The request media type is not supported. Check Content-Type and the file format."
 	}
 
-	message := strings.ToLower(rawMessage)
-	switch {
-	case strings.Contains(message, "input token count exceeds"),
-		strings.Contains(message, "maximum context length"),
-		strings.Contains(message, "context_length_exceeded"):
-		return "Input exceeds the model context limit. Shorten the conversation or reduce the input."
-	case strings.Contains(message, "prohibited_content"),
-		strings.Contains(message, "content_policy_violation"):
-		return "The request was rejected by content safety checks. Review the submitted content."
-	case strings.Contains(message, "requests ending with a model turn are not supported"):
-		return "The conversation ends with an assistant message that this operation does not support. Check the message sequence; if it is valid, contact support with this request ID."
-	case strings.Contains(message, "contents is not specified"),
-		strings.Contains(message, "messages must not be empty"),
-		strings.Contains(message, "field messages is required"):
-		return "Request content is missing or became empty during processing. Check the endpoint and message content; if the input is valid, contact support with this request ID."
-	case strings.Contains(message, "filedata.fileuri") && strings.Contains(message, "does not fetch third-party urls"):
-		return "Remote file URLs are not supported for this request. Send the file using a supported upload or inline format."
-	case strings.Contains(message, "supports text and https input_image content only"),
-		strings.Contains(message, "unsupported content type"):
-		return "The request contains an unsupported content type. Check the text, image, and file formats accepted by this operation."
-	case statusCode == http.StatusUnprocessableEntity:
-		return "The request parameters could not be accepted. Check required fields, value types, and supported ranges."
-	default:
+	message := common.StripNestedRequestIDs(rawMessage)
+	if privateRequestErrorPattern.MatchString(message) {
+		return publicServiceUnavailableMessage
+	}
+	if message == "" {
 		return publicInvalidRequestMessage
 	}
+	return common.MaskSensitiveInfo(message)
 }

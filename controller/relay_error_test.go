@@ -18,8 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestWriteClassifiedRequestErrorKeepsOnlyGatewayRequestID(t *testing.T) {
-	tests := []struct {
+func TestWriteRequestErrorPreservesGuidanceAndGatewayRequestID(t *testing.T) {
+	formats := []struct {
 		name   string
 		format types.RelayFormat
 		stream bool
@@ -28,43 +28,50 @@ func TestWriteClassifiedRequestErrorKeepsOnlyGatewayRequestID(t *testing.T) {
 		{"Gemini JSON", types.RelayFormatGemini, false},
 		{"Claude JSON", types.RelayFormatClaude, false},
 		{"OpenAI SSE", types.RelayFormatOpenAI, true},
+		{"Gemini SSE", types.RelayFormatGemini, true},
 		{"Claude SSE", types.RelayFormatClaude, true},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			recorder := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(recorder)
-			c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-			if tt.stream {
-				helper.SetEventStreamHeaders(c)
-				c.Writer.WriteHeader(http.StatusOK)
-				_, err := c.Writer.Write([]byte(": started\n\n"))
-				require.NoError(t, err)
-			}
-			raw := types.WithOpenAIError(types.OpenAIError{
-				Message: "The input token count exceeds the maximum number of tokens allowed 1048576. https://internal.example sk-private-secret (request id: inner-id) (request id: outer-id)",
-				Type:    "provider_private_type", Code: "provider_private_code", Param: "private-field", Metadata: []byte(`{"node":"private"}`),
-			}, http.StatusBadRequest)
-			public := service.PublicUpstreamError(raw)
-			require.NotNil(t, public)
-			// Use the same request-ID formatting and writer as Relay's error exit.
-			public.SetMessage(common.MessageWithRequestId(public.MaskSensitiveError(), "gateway-request-id"))
-			writeRelayError(c, nil, tt.format, public)
-			body := recorder.Body.String()
-			assert.Contains(t, body, "Input exceeds the model context limit. Shorten the conversation or reduce the input.")
-			assert.Equal(t, 1, strings.Count(body, "gateway-request-id"))
-			assert.Equal(t, 1, strings.Count(body, "(request id:"))
-			for _, private := range []string{"inner-id", "outer-id", "internal.example", "sk-private-secret", "provider_private", "private-field", "1048576", "metadata"} {
-				assert.NotContains(t, body, private)
-			}
-			if tt.stream {
-				assert.Equal(t, http.StatusOK, recorder.Code)
-				assert.Contains(t, recorder.Header().Get("Content-Type"), "text/event-stream")
-			} else {
-				assert.Equal(t, http.StatusBadRequest, recorder.Code)
-				assert.Contains(t, recorder.Header().Get("Content-Type"), "application/json")
-			}
-		})
+	messages := []struct{ name, message string }{
+		{"context", "The input token count exceeds the maximum number of tokens allowed 131072."},
+		{"safety", "request blocked by Gemini API: PROHIBITED_CONTENT"},
+	}
+	for _, format := range formats {
+		for _, message := range messages {
+			t.Run(format.name+"/"+message.name, func(t *testing.T) {
+				recorder := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(recorder)
+				c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+				if format.stream {
+					helper.SetEventStreamHeaders(c)
+					c.Writer.WriteHeader(http.StatusOK)
+					_, err := c.Writer.Write([]byte(": started\n\n"))
+					require.NoError(t, err)
+				}
+				raw := types.WithOpenAIError(types.OpenAIError{
+					Message: message.message + " (request id: inner-id) (request id: outer-id)",
+					Type:    "provider_private_type", Code: "provider_private_code", Param: "private-field",
+					Metadata: []byte(`{"secret":"sk-private-secret","url":"https://internal.example"}`),
+				}, http.StatusBadRequest)
+				public := service.PublicUpstreamError(raw)
+				require.NotNil(t, public)
+				public.SetMessage(common.MessageWithRequestId(common.StripNestedRequestIDs(public.Error()), "gateway-request-id"))
+				writeRelayError(c, nil, format.format, public)
+				body := recorder.Body.String()
+				assert.Contains(t, body, message.message)
+				assert.Equal(t, 1, strings.Count(body, "gateway-request-id"))
+				assert.Equal(t, 1, strings.Count(body, "(request id:"))
+				for _, private := range []string{"inner-id", "outer-id", "internal.example", "sk-private-secret", "provider_private", "private-field", "metadata"} {
+					assert.NotContains(t, body, private)
+				}
+				if format.stream {
+					assert.Equal(t, http.StatusOK, recorder.Code)
+					assert.Contains(t, recorder.Header().Get("Content-Type"), "text/event-stream")
+				} else {
+					assert.Equal(t, http.StatusBadRequest, recorder.Code)
+					assert.Contains(t, recorder.Header().Get("Content-Type"), "application/json")
+				}
+			})
+		}
 	}
 }
 
