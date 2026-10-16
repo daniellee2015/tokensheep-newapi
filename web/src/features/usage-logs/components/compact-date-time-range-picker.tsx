@@ -30,10 +30,15 @@ import {
 import dayjs from '@/lib/dayjs'
 import { cn } from '@/lib/utils'
 
+import { getPresetTimeRange, type LogTimePreset } from '../lib/time-range'
+
 interface CompactDateTimeRangePickerProps {
   start?: Date
   end?: Date
-  onChange: (range: { start?: Date; end?: Date }) => void
+  onChange: (
+    range: { start?: Date; end?: Date },
+    preset?: LogTimePreset
+  ) => void
   className?: string
 }
 
@@ -85,34 +90,11 @@ export function CompactDateTimeRangePicker({
     setOpen(false)
   }
 
-  const applyPreset = (kind: 'today' | '7d' | 'week' | '30d' | 'month') => {
-    const now = dayjs()
-    const presets = {
-      today: {
-        start: now.startOf('day').toDate(),
-        end: now.endOf('day').toDate(),
-      },
-      '7d': {
-        start: now.subtract(6, 'day').startOf('day').toDate(),
-        end: now.endOf('day').toDate(),
-      },
-      week: {
-        start: now.startOf('week').toDate(),
-        end: now.endOf('week').toDate(),
-      },
-      '30d': {
-        start: now.subtract(29, 'day').startOf('day').toDate(),
-        end: now.endOf('day').toDate(),
-      },
-      month: {
-        start: now.startOf('month').toDate(),
-        end: now.endOf('month').toDate(),
-      },
-    }
-    const range = presets[kind]
+  const applyPreset = (kind: LogTimePreset) => {
+    const range = getPresetTimeRange(kind)
     setDraftStart(toInputValue(range.start))
     setDraftEnd(toInputValue(range.end))
-    onChange(range)
+    onChange(range, kind)
     setOpen(false)
   }
 

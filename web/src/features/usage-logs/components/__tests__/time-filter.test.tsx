@@ -151,8 +151,7 @@ test('Today after midnight immediately replaces yesterday with current logs and 
   await user.click(screen.getByRole('button', { name: 'Today' }))
   await waitFor(() =>
     expect(router.state.location.search).toMatchObject({
-      startTime: todayStart,
-      endTime: todayEnd,
+      timeRange: 'today',
       page: 1,
     })
   )
@@ -171,7 +170,7 @@ test('Reset after midnight clears old filters and fetches the current day withou
   await user.click(screen.getByRole('button', { name: 'Reset' }))
   await screen.findByText('today-request')
   expect(router.state.location.search).toMatchObject({
-    startTime: todayStart,
+    timeRange: 'today',
     page: 1,
   })
   expect(router.state.location.search.model).toBeUndefined()
@@ -191,8 +190,7 @@ test('Reset remains available when only the date was filtered and uses the new d
   await user.click(screen.getByRole('button', { name: 'Reset' }))
   await screen.findByText('today-request')
   expect(router.state.location.search).toMatchObject({
-    startTime: todayStart,
-    endTime: todayEnd,
+    timeRange: 'today',
   })
 })
 
@@ -234,8 +232,7 @@ test.each(['drawing', 'task'])(
     await user.click(screen.getByRole('button', { name: 'Today' }))
     await waitFor(() =>
       expect(router.state.location.search).toMatchObject({
-        startTime: todayStart,
-        endTime: todayEnd,
+        timeRange: 'today',
       })
     )
     const path = category === 'drawing' ? '/api/mj/self' : '/api/task/self'
@@ -250,5 +247,114 @@ test.each(['drawing', 'task'])(
       )
     )
     expect(screen.getByRole('button', { name: 'Reset' })).toBeEnabled()
+  }
+)
+
+test.each(['Today', 'Reset'])(
+  '%s continues to mean the current local day after reloading its URL on the next day',
+  async (action) => {
+    const user = userEvent.setup()
+    const router = await renderLogs(
+      '/usage-logs/common?page=1&type=%5B%220%22%5D&startTime=1792108800000&endTime=1792195199999'
+    )
+    if (action === 'Today') {
+      await user.click(screen.getByRole('button', { name: / ~ / }))
+    }
+    await user.click(screen.getByRole('button', { name: action }))
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', {
+          name: '2026-10-16 00:00 ~ 2026-10-16 23:59',
+        })
+      ).toBeVisible()
+    )
+    const savedUrl = router.state.location.href
+    cleanup()
+    clients.splice(0).forEach((client) => client.clear())
+    vi.setSystemTime(new Date(2026, 9, 17, 0, 30))
+    await renderLogs(savedUrl)
+    expect(
+      screen.getByRole('button', {
+        name: '2026-10-17 00:00 ~ 2026-10-17 23:59',
+      })
+    ).toBeVisible()
+    for (const prefix of ['/api/log/self?', '/api/log/self/stat?']) {
+      expect(
+        vi
+          .mocked(api.get)
+          .mock.calls.some(
+            ([url]) =>
+              url.startsWith(prefix) &&
+              url.includes(
+                `start_timestamp=${new Date(2026, 9, 17).getTime() / 1000}`
+              )
+          )
+      ).toBe(true)
+    }
+  }
+)
+
+test('a manually selected historical range remains fixed after reloading', async () => {
+  const user = userEvent.setup()
+  const router = await renderLogs(`/usage-logs/common?timeRange=today`)
+  await user.click(screen.getByRole('button', { name: /2026-10-16 00:00/ }))
+  fireEvent.change(screen.getByDisplayValue('2026-10-16T00:00'), {
+    target: { value: '2026-10-15T09:30' },
+  })
+  fireEvent.change(screen.getByDisplayValue('2026-10-16T23:59'), {
+    target: { value: '2026-10-15T10:45' },
+  })
+  await user.click(screen.getByRole('button', { name: 'Confirm' }))
+  await waitFor(() =>
+    expect(router.state.location.search).toMatchObject({
+      startTime: new Date(2026, 9, 15, 9, 30).getTime(),
+      endTime: new Date(2026, 9, 15, 10, 45).getTime(),
+    })
+  )
+  expect(router.state.location.search.timeRange).toBeUndefined()
+  const savedUrl = router.state.location.href
+  cleanup()
+  clients.splice(0).forEach((client) => client.clear())
+  vi.setSystemTime(new Date(2026, 9, 17, 12))
+  await renderLogs(savedUrl)
+  expect(
+    screen.getByRole('button', { name: '2026-10-15 09:30 ~ 2026-10-15 10:45' })
+  ).toBeVisible()
+})
+
+test.each(['drawing', 'task'])(
+  '%s reload resolves Today again without persisting yesterday timestamps',
+  async (category) => {
+    const user = userEvent.setup()
+    const router = await renderLogs(`/usage-logs/${category}?${yesterdayQuery}`)
+    await user.click(screen.getByRole('button', { name: 'Reset' }))
+    await waitFor(() =>
+      expect(router.state.location.search.timeRange).toBe('today')
+    )
+    expect(router.state.location.search.startTime).toBeUndefined()
+    expect(router.state.location.search.endTime).toBeUndefined()
+    const savedUrl = router.state.location.href
+    cleanup()
+    clients.splice(0).forEach((client) => client.clear())
+    vi.setSystemTime(new Date(2026, 9, 17, 12))
+    await renderLogs(savedUrl)
+    expect(
+      screen.getByRole('button', {
+        name: '2026-10-17 00:00 ~ 2026-10-17 23:59',
+      })
+    ).toBeVisible()
+    const prefix = category === 'drawing' ? '/api/mj/self?' : '/api/task/self?'
+    const divisor = category === 'drawing' ? 1 : 1000
+    expect(
+      vi
+        .mocked(api.get)
+        .mock.calls.some(
+          ([url]) =>
+            url.startsWith(prefix) &&
+            url.includes(
+              `start_timestamp=${new Date(2026, 9, 17).getTime() / divisor}`
+            )
+        )
+    ).toBe(true)
   }
 )

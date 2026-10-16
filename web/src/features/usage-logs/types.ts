@@ -22,6 +22,7 @@ For commercial licensing, please contact support@quantumnous.com
 import type { RequestRuleTrace } from '@/features/pricing/lib/billing-expr'
 
 import type { UsageLog } from './data/schema'
+import type { LogTimePreset } from './lib/time-range'
 // ============================================================================
 // Log Category Types
 // ============================================================================
@@ -39,6 +40,7 @@ export type LogCategory = 'common' | 'drawing' | 'task'
  * Common filters (shared across all log types)
  */
 export interface CommonFilters {
+  timeRange?: LogTimePreset
   startTime?: Date
   endTime?: Date
   channel?: string

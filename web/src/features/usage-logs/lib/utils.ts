@@ -16,9 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-/**
- * Utility functions for usage logs feature
- */
 import {
   getAllLogs,
   getUserLogs,
@@ -39,6 +36,7 @@ import type {
   GetMidjourneyLogsParams,
   GetTaskLogsParams,
 } from '../types'
+import { getPresetTimeRange, resolveLogTimeRange } from './time-range'
 
 // ============================================================================
 // Type Checkers & Utilities
@@ -76,13 +74,7 @@ export function isPerCallBilling(modelPrice?: number): boolean {
  * Get the full current local day, including requests made after opening the page.
  */
 export function getDefaultTimeRange(): { start: Date; end: Date } {
-  const now = new Date()
-  const start = new Date(now)
-  start.setHours(0, 0, 0, 0)
-  const end = new Date(now)
-  end.setHours(23, 59, 59, 999)
-
-  return { start, end }
+  return getPresetTimeRange('today')
 }
 
 /**
@@ -102,23 +94,14 @@ function buildTimeRangeParams(
   searchParams: Record<string, unknown>,
   useMilliseconds: boolean
 ): { start_timestamp?: number; end_timestamp?: number } {
-  const hasTimeParams = searchParams.startTime ?? searchParams.endTime
-  const defaultTimeRange = !hasTimeParams ? getDefaultTimeRange() : null
-
-  const convertTimestamp = (timestamp: number) =>
-    useMilliseconds ? timestamp : timestampToSeconds(timestamp)
-
-  const getTimestamp = (paramTime?: unknown, defaultTime?: Date) => {
-    const time = (paramTime as number) || defaultTime?.getTime()
-    return time ? convertTimestamp(time) : undefined
+  const range = resolveLogTimeRange(searchParams)
+  const convertTimestamp = (date?: Date) => {
+    if (!date) return undefined
+    return useMilliseconds ? date.getTime() : timestampToSeconds(date.getTime())
   }
-
   return {
-    start_timestamp: getTimestamp(
-      searchParams.startTime,
-      defaultTimeRange?.start
-    ),
-    end_timestamp: getTimestamp(searchParams.endTime, defaultTimeRange?.end),
+    start_timestamp: convertTimestamp(range.startTime),
+    end_timestamp: convertTimestamp(range.endTime),
   }
 }
 

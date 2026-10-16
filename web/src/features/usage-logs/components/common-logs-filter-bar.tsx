@@ -44,7 +44,7 @@ import { formatGroupName } from '@/lib/group-i18n'
 
 import { LOG_TYPE_ALL_VALUE, LOG_TYPE_FILTERS } from '../constants'
 import { buildSearchParams } from '../lib/filter'
-import { getDefaultTimeRange } from '../lib/utils'
+import { resolveLogTimeRange } from '../lib/time-range'
 import type { CommonLogFilters } from '../types'
 import { CommonLogsStats } from './common-logs-stats'
 import { CompactDateTimeRangePicker } from './compact-date-time-range-picker'
@@ -82,6 +82,7 @@ function getLogTypeValue(value: unknown): LogTypeValue {
 }
 
 function buildSearchSourceKey(values: {
+  timeRange?: unknown
   startTime?: unknown
   endTime?: unknown
   channel?: unknown
@@ -94,6 +95,7 @@ function buildSearchSourceKey(values: {
   type?: unknown
 }) {
   return [
+    values.timeRange,
     values.startTime,
     values.endTime,
     values.channel,
@@ -135,11 +137,15 @@ export function CommonLogsFilterBar<TData>(
     },
     staleTime: 60_000,
   })
+  const time = resolveLogTimeRange(searchParams)
+  const startTimestamp = time.startTime?.getTime()
+  const endTimestamp = time.endTime?.getTime()
+  const timeRange = time.timeRange
   const searchState = useMemo<CommonLogDraft>(() => {
-    const { start, end } = getDefaultTimeRange()
     const sourceValues = {
-      startTime: searchParams.startTime,
-      endTime: searchParams.endTime,
+      timeRange,
+      startTime: startTimestamp,
+      endTime: endTimestamp,
       channel: searchParams.channel,
       model: searchParams.model,
       token: searchParams.token,
@@ -150,10 +156,9 @@ export function CommonLogsFilterBar<TData>(
       type: searchParams.type,
     }
     const filters: CommonLogFilters = {
-      startTime: searchParams.startTime
-        ? new Date(searchParams.startTime)
-        : start,
-      endTime: searchParams.endTime ? new Date(searchParams.endTime) : end,
+      timeRange,
+      startTime: startTimestamp == null ? undefined : new Date(startTimestamp),
+      endTime: endTimestamp == null ? undefined : new Date(endTimestamp),
       channel: searchParams.channel || undefined,
       model: searchParams.model || undefined,
       token: searchParams.token || undefined,
@@ -168,8 +173,9 @@ export function CommonLogsFilterBar<TData>(
       logType: getLogTypeValue(searchParams.type),
     }
   }, [
-    searchParams.startTime,
-    searchParams.endTime,
+    timeRange,
+    startTimestamp,
+    endTimestamp,
     searchParams.channel,
     searchParams.model,
     searchParams.token,
@@ -234,15 +240,17 @@ export function CommonLogsFilterBar<TData>(
   )
 
   const handleReset = useCallback(async () => {
-    const { start, end } = getDefaultTimeRange()
-    const resetFilters: CommonLogFilters = { startTime: start, endTime: end }
+    const resetFilters: CommonLogFilters = resolveLogTimeRange({})
     const resetSearch = {
       type: [LOG_TYPE_ALL_VALUE],
-      startTime: start.getTime(),
-      endTime: end.getTime(),
+      ...buildSearchParams(resetFilters, 'common'),
     }
     setDraft({
-      sourceKey: buildSearchSourceKey(resetSearch),
+      sourceKey: buildSearchSourceKey({
+        ...resetSearch,
+        startTime: resetFilters.startTime?.getTime(),
+        endTime: resetFilters.endTime?.getTime(),
+      }),
       filters: resetFilters,
       logType: LOG_TYPE_ALL_VALUE,
     })
@@ -327,8 +335,13 @@ export function CommonLogsFilterBar<TData>(
       <CompactDateTimeRangePicker
         start={filters.startTime}
         end={filters.endTime}
-        onChange={({ start, end }) => {
-          const nextFilters = { ...filters, startTime: start, endTime: end }
+        onChange={({ start, end }, timeRange) => {
+          const nextFilters = {
+            ...filters,
+            startTime: start,
+            endTime: end,
+            timeRange,
+          }
           setDraft({ ...activeDraft, filters: nextFilters })
           void handleApply(nextFilters)
         }}

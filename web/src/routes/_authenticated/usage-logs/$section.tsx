@@ -20,6 +20,7 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 import z from 'zod'
 
 import { UsageLogs } from '@/features/usage-logs'
+import { LOG_TIME_PRESETS } from '@/features/usage-logs/lib/time-range'
 import {
   isUsageLogsSectionId,
   USAGE_LOGS_DEFAULT_SECTION,
@@ -45,6 +46,7 @@ const usageLogsSearchSchema = z.object({
   username: z.string().optional().catch(''),
   requestId: z.string().optional().catch(''),
   upstreamRequestId: z.string().optional().catch(''),
+  timeRange: z.enum(LOG_TIME_PRESETS).optional().catch(undefined),
   startTime: z.number().optional(),
   endTime: z.number().optional(),
 })
