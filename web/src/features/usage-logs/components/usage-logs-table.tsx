@@ -18,7 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
-import { type ColumnDef } from '@tanstack/react-table'
+import type { ColumnDef } from '@tanstack/react-table'
+import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -29,6 +30,9 @@ import {
 } from '@/components/data-table'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
+import { api } from '@/lib/api'
+import dayjs from '@/lib/dayjs'
+import { formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import {
@@ -64,7 +68,8 @@ function getColumnVisibilityStorageKey(
 }
 
 function deserializeLogTypeFilter(value: unknown): unknown[] {
-  const values = Array.isArray(value) ? value : value ? [value] : []
+  if (!value) return []
+  const values = Array.isArray(value) ? value : [value]
   return values.filter((item) => String(item) !== LOG_TYPE_ALL_VALUE)
 }
 
@@ -153,6 +158,55 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   })
 
   const logs = data?.items || []
+  const firstTimestamp = Number(data?.items?.[0]?.created_at)
+  // Temporary 20261016-v2 probe: compare the actual log renderer with browser APIs.
+  const clockReported = useRef(false)
+  useEffect(() => {
+    if (
+      !isAdmin ||
+      logCategory !== 'common' ||
+      clockReported.current ||
+      !Number.isFinite(firstTimestamp)
+    ) {
+      return
+    }
+    clockReported.current = true
+    const now = new Date()
+    const timestamp = firstTimestamp
+    const sample = new Date(timestamp * 1000)
+    const report = {
+      probe: '20261016-v2',
+      epoch: now.getTime(),
+      zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      offset: now.getTimezoneOffset(),
+      localNow: now.toString(),
+      firstCreatedAt: timestamp,
+      rendered: formatTimestampToDate(timestamp),
+      native: sample.toString(),
+      intl: new Intl.DateTimeFormat('sv-SE', {
+        dateStyle: 'short',
+        timeStyle: 'medium',
+      }).format(sample),
+      todayEpoch: dayjs().startOf('day').valueOf(),
+      todayDisplay: dayjs().startOf('day').format('YYYY-MM-DD HH:mm:ss'),
+      dayjsUtc: dayjs(sample).format('Z'),
+      startTime: searchParams.startTime,
+      endTime: searchParams.endTime,
+      timeRange: searchParams.timeRange,
+      dateNative: Date.toString().includes('[native code]'),
+      getterNative: Date.prototype.getHours
+        .toString()
+        .includes('[native code]'),
+    }
+    void api
+      .get(
+        `/api/status?log_time_probe_v2=${encodeURIComponent(JSON.stringify(report))}`,
+        {
+          skipErrorHandler: true,
+        }
+      )
+      .catch(() => undefined)
+  }, [isAdmin, logCategory, firstTimestamp, searchParams])
   const columns = useColumnsByCategory(logCategory, isAdmin)
   const isLoadingData = isLoading || (isFetching && !data)
 
