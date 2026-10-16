@@ -19,7 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
-import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -30,9 +29,6 @@ import {
 } from '@/components/data-table'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
-import { api } from '@/lib/api'
-import { formatTimestampToDate } from '@/lib/format'
-import { formatLocalDateTime } from '@/lib/local-date'
 import { cn } from '@/lib/utils'
 
 import {
@@ -42,7 +38,6 @@ import {
 } from '../constants'
 import { useColumnsByCategory } from '../lib/columns'
 import { parseLogOther } from '../lib/format'
-import { getPresetTimeRange } from '../lib/time-range'
 import { fetchLogsByCategory } from '../lib/utils'
 import type { LogCategory } from '../types'
 import { CommonLogsFilterBar } from './common-logs-filter-bar'
@@ -159,56 +154,6 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   })
 
   const logs = data?.items || []
-  const firstTimestamp = Number(data?.items?.[0]?.created_at)
-  // Temporary 20261016-v3 probe: verify the device-time fix in the affected browser.
-  const clockReported = useRef(false)
-  useEffect(() => {
-    if (
-      !isAdmin ||
-      logCategory !== 'common' ||
-      clockReported.current ||
-      !Number.isFinite(firstTimestamp)
-    ) {
-      return
-    }
-    clockReported.current = true
-    const now = new Date()
-    const timestamp = firstTimestamp
-    const sample = new Date(timestamp * 1000)
-    const report = {
-      probe: '20261016-v3',
-      epoch: now.getTime(),
-      zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      offset: now.getTimezoneOffset(),
-      localNow: now.toString(),
-      firstCreatedAt: timestamp,
-      rendered: formatTimestampToDate(timestamp),
-      native: sample.toString(),
-      intl: new Intl.DateTimeFormat('sv-SE', {
-        dateStyle: 'short',
-        timeStyle: 'medium',
-      }).format(sample),
-      todayEpoch: getPresetTimeRange('today').start.getTime(),
-      todayDisplay: formatLocalDateTime(getPresetTimeRange('today').start),
-      startTime: searchParams.startTime,
-      endTime: searchParams.endTime,
-      timeRange: searchParams.timeRange,
-      dateNative: Date.toString().includes('[native code]'),
-      getterNative: Date.prototype.getHours
-        .toString()
-        .includes('[native code]'),
-      dateFunction: Date.toString().slice(0, 400),
-      hoursFunction: Date.prototype.getHours.toString().slice(0, 400),
-    }
-    void api
-      .get(
-        `/api/status?log_time_probe_v3=${encodeURIComponent(JSON.stringify(report))}`,
-        {
-          skipErrorHandler: true,
-        }
-      )
-      .catch(() => undefined)
-  }, [isAdmin, logCategory, firstTimestamp, searchParams])
   const columns = useColumnsByCategory(logCategory, isAdmin)
   const isLoadingData = isLoading || (isFetching && !data)
 
