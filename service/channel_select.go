@@ -2,22 +2,25 @@ package service
 
 import (
 	"errors"
+	"slices"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 )
 
 type RetryParam struct {
-	Ctx                *gin.Context
-	TokenGroup         string
-	ModelName          string
-	RequestPath        string
-	Retry              *int
-	excludedChannelIDs map[int]struct{}
-	resetNextTry       bool
+	Ctx                 *gin.Context
+	TokenGroup          string
+	ModelName           string
+	RequestPath         string
+	Retry               *int
+	IndependentFallback *operation_setting.IndependentChannelFallback
+	excludedChannelIDs  map[int]struct{}
+	resetNextTry        bool
 }
 
 func (p *RetryParam) GetRetry() int {
@@ -100,6 +103,31 @@ func (p *RetryParam) excludedChannels() []int {
 //	Retry=3: GroupB, priority1 (startRetryIndex=2, priorityRetry=1)
 //	         分组B, 优先级1
 func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, error) {
+	if param.IndependentFallback != nil {
+		// Pin the already-authorized concrete group. Do not reset this request's
+		// attempt budget or cross into another auto group during reserve retry.
+		policy := param.IndependentFallback
+		for _, allowed := range [][]int{policy.PrimaryChannelIDs, {policy.ReserveChannelID}} {
+			excluded := param.excludedChannels()
+			for {
+				channel, err := model.GetRandomSatisfiedChannel(param.TokenGroup, param.ModelName, 0, param.RequestPath, excluded...)
+				if err != nil {
+					return nil, param.TokenGroup, err
+				}
+				if channel == nil {
+					break
+				}
+				if slices.Contains(allowed, channel.Id) {
+					return channel, param.TokenGroup, nil
+				}
+				// Filtering is not an upstream attempt. The existing selector
+				// still enforces enabled state, model, group and endpoint access.
+				excluded = append(excluded, channel.Id)
+			}
+		}
+		return nil, param.TokenGroup, nil
+	}
+
 	var channel *model.Channel
 	var err error
 	selectGroup := param.TokenGroup

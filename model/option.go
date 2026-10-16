@@ -221,6 +221,9 @@ func SyncOptions(frequency int) {
 }
 
 func validateOptionValue(key string, value string) error {
+	if key == operation_setting.IndependentChannelFallbackOption {
+		return operation_setting.ValidateIndependentChannelFallback(value)
+	}
 	if key == operation_setting.ToolPriceOptionKey {
 		return operation_setting.ValidateToolPricesJSON(value)
 	}
