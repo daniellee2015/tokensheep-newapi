@@ -358,3 +358,45 @@ test.each(['drawing', 'task'])(
     ).toBe(true)
   }
 )
+
+test('the full log table keeps a multi-group URL in both list and statistics queries, then updates both when one group is removed', async () => {
+  const user = userEvent.setup()
+  const selected = ['gemini-ultra', 'gemini-ultra-per-call']
+  const router = await renderLogs(
+    `/usage-logs/common?groups=${encodeURIComponent(JSON.stringify(selected))}`
+  )
+  for (const path of ['/api/log/self?', '/api/log/self/stat?']) {
+    const calls = vi.mocked(api.get).mock.calls.map(([url]) => String(url))
+    expect(
+      calls.some(
+        (url) =>
+          url.startsWith(path) &&
+          new URL(url, 'https://example.test').searchParams
+            .getAll('groups')
+            .join(',') === selected.join(',')
+      )
+    ).toBe(true)
+  }
+  await user.click(
+    screen.getByRole('button', { name: 'Remove gemini-ultra-per-call' })
+  )
+  await user.click(screen.getByRole('button', { name: 'Search' }))
+  await waitFor(() =>
+    expect(router.state.location.search.group).toBe('gemini-ultra')
+  )
+  expect(router.state.location.search.groups).toBeUndefined()
+  for (const path of ['/api/log/self?', '/api/log/self/stat?']) {
+    await waitFor(() => {
+      const calls = vi.mocked(api.get).mock.calls.map(([url]) => String(url))
+      expect(
+        calls.some(
+          (url) =>
+            url.startsWith(path) &&
+            new URL(url, 'https://example.test').searchParams.get('group') ===
+              'gemini-ultra' &&
+            !new URL(url, 'https://example.test').searchParams.has('groups')
+        )
+      ).toBe(true)
+    })
+  }
+})

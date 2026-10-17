@@ -44,10 +44,12 @@ import { formatGroupName } from '@/lib/group-i18n'
 
 import { LOG_TYPE_ALL_VALUE, LOG_TYPE_FILTERS } from '../constants'
 import { buildSearchParams } from '../lib/filter'
+import { normalizeGroupQuery, resolveLogGroupKeys } from '../lib/group-filter'
 import { resolveLogTimeRange } from '../lib/time-range'
 import type { CommonLogFilters } from '../types'
 import { CommonLogsStats } from './common-logs-stats'
 import { CompactDateTimeRangePicker } from './compact-date-time-range-picker'
+import { LogGroupFilter } from './log-group-filter'
 import {
   LogsFilterField,
   LogsFilterInput,
@@ -66,6 +68,7 @@ type CommonLogDraft = {
   sourceKey: string
   filters: CommonLogFilters
   logType: LogTypeValue
+  groupQuery: string
 }
 
 function isLogTypeValue(value: string): value is LogTypeValue {
@@ -89,6 +92,7 @@ function buildSearchSourceKey(values: {
   model?: unknown
   token?: unknown
   group?: unknown
+  groups?: unknown
   username?: unknown
   requestId?: unknown
   upstreamRequestId?: unknown
@@ -102,6 +106,7 @@ function buildSearchSourceKey(values: {
     values.model,
     values.token,
     values.group,
+    JSON.stringify(values.groups),
     values.username,
     values.requestId,
     values.upstreamRequestId,
@@ -150,6 +155,7 @@ export function CommonLogsFilterBar<TData>(
       model: searchParams.model,
       token: searchParams.token,
       group: searchParams.group,
+      groups: searchParams.groups,
       username: searchParams.username,
       requestId: searchParams.requestId,
       upstreamRequestId: searchParams.upstreamRequestId,
@@ -163,6 +169,7 @@ export function CommonLogsFilterBar<TData>(
       model: searchParams.model || undefined,
       token: searchParams.token || undefined,
       group: searchParams.group || undefined,
+      groups: searchParams.groups,
       username: searchParams.username || undefined,
       requestId: searchParams.requestId || undefined,
       upstreamRequestId: searchParams.upstreamRequestId || undefined,
@@ -171,6 +178,7 @@ export function CommonLogsFilterBar<TData>(
       sourceKey: buildSearchSourceKey(sourceValues),
       filters,
       logType: getLogTypeValue(searchParams.type),
+      groupQuery: '',
     }
   }, [
     timeRange,
@@ -180,6 +188,7 @@ export function CommonLogsFilterBar<TData>(
     searchParams.model,
     searchParams.token,
     searchParams.group,
+    searchParams.groups,
     searchParams.username,
     searchParams.requestId,
     searchParams.upstreamRequestId,
@@ -190,6 +199,31 @@ export function CommonLogsFilterBar<TData>(
     draft.sourceKey === searchState.sourceKey ? draft : searchState
   const filters = activeDraft.filters
   const logType = activeDraft.logType
+  const selectedGroups =
+    filters.groups ?? (filters.group ? [filters.group] : [])
+  const groupOptions = useMemo(() => {
+    const keys = [
+      ...new Set([
+        ...groupKeys,
+        ...(searchParams.groups ?? []),
+        ...(searchParams.group ? [searchParams.group] : []),
+      ]),
+    ]
+    return keys.map((key) => ({
+      value: key,
+      label: formatGroupName(key, t),
+      aliases: [
+        ...new Set(
+          [
+            key,
+            ...INTERFACE_LANGUAGE_OPTIONS.map(({ code }) =>
+              formatGroupName(key, i18n.getFixedT(code))
+            ),
+          ].map(normalizeGroupQuery)
+        ),
+      ],
+    }))
+  }, [groupKeys, searchParams.groups, searchParams.group, i18n, t])
 
   const handleChange = useCallback(
     (field: keyof CommonLogFilters, value: Date | string | undefined) => {
@@ -200,6 +234,7 @@ export function CommonLogsFilterBar<TData>(
           sourceKey: searchState.sourceKey,
           filters: { ...base.filters, [field]: value },
           logType: base.logType,
+          groupQuery: base.groupQuery,
         }
       })
     },
@@ -208,20 +243,20 @@ export function CommonLogsFilterBar<TData>(
 
   const handleApply = useCallback(
     async (nextFilters: CommonLogFilters) => {
-      if (nextFilters.group && groupsPending) return
-      const input = nextFilters.group?.trim()
-      let group = input
-      // The API matches raw keys. Resolve display names only when the match is unique.
-      if (input && !groupKeys.includes(input)) {
-        const matches = groupKeys.filter((key) =>
-          INTERFACE_LANGUAGE_OPTIONS.some(
-            ({ code }) => formatGroupName(key, i18n.getFixedT(code)) === input
-          )
-        )
-        if (matches.length === 1) group = matches[0]
-      }
+      if (activeDraft.groupQuery && groupsPending) return
+      const groups = [
+        ...new Set([
+          ...(nextFilters.groups ??
+            (nextFilters.group ? [nextFilters.group] : [])),
+          ...resolveLogGroupKeys(activeDraft.groupQuery, groupOptions),
+        ]),
+      ]
       const filterParams = buildSearchParams(
-        { ...nextFilters, group },
+        {
+          ...nextFilters,
+          group: groups.length === 1 ? groups[0] : undefined,
+          groups: groups.length > 1 ? groups : undefined,
+        },
         'common'
       )
       await navigate({
@@ -236,7 +271,14 @@ export function CommonLogsFilterBar<TData>(
       queryClient.invalidateQueries({ queryKey: ['logs'] })
       queryClient.invalidateQueries({ queryKey: ['usage-logs-stats'] })
     },
-    [groupKeys, groupsPending, i18n, logType, navigate, queryClient]
+    [
+      activeDraft.groupQuery,
+      groupOptions,
+      groupsPending,
+      logType,
+      navigate,
+      queryClient,
+    ]
   )
 
   const handleReset = useCallback(async () => {
@@ -253,6 +295,7 @@ export function CommonLogsFilterBar<TData>(
       }),
       filters: resetFilters,
       logType: LOG_TYPE_ALL_VALUE,
+      groupQuery: '',
     })
 
     await navigate({
@@ -360,12 +403,34 @@ export function CommonLogsFilterBar<TData>(
   )
   const groupFilter = (
     <LogsFilterField>
-      <LogsFilterInput
-        placeholder={t('Group')}
+      <LogGroupFilter
+        options={groupOptions}
+        selected={selectedGroups}
+        query={activeDraft.groupQuery}
+        onQueryChange={(groupQuery) =>
+          setDraft((current) => {
+            const base =
+              current.sourceKey === searchState.sourceKey
+                ? current
+                : searchState
+            return { ...base, groupQuery }
+          })
+        }
+        onSelectionChange={(groups) =>
+          setDraft((current) => {
+            const base =
+              current.sourceKey === searchState.sourceKey
+                ? current
+                : searchState
+            return {
+              ...base,
+              groupQuery: '',
+              filters: { ...base.filters, group: undefined, groups },
+            }
+          })
+        }
+        onSubmit={() => void handleApply(filters)}
         className={sensitiveInputClass}
-        value={filters.group || ''}
-        onChange={(e) => handleChange('group', e.target.value)}
-        onKeyDown={handleKeyDown}
       />
     </LogsFilterField>
   )
@@ -386,6 +451,7 @@ export function CommonLogsFilterBar<TData>(
               sourceKey: searchState.sourceKey,
               filters: base.filters,
               logType: nextLogType,
+              groupQuery: base.groupQuery,
             }
           })
         }}
@@ -480,13 +546,18 @@ export function CommonLogsFilterBar<TData>(
         </>
       }
       mobileFilterCount={
-        [filters.model, filters.group, hasTypeFilter].filter(Boolean).length +
-        expandedFilterCount
+        [
+          filters.model,
+          selectedGroups.length > 0 || !!activeDraft.groupQuery,
+          hasTypeFilter,
+        ].filter(Boolean).length + expandedFilterCount
       }
       hasAdvancedActiveFilters={hasExpandedFilters}
       advancedFilterCount={expandedFilterCount}
       onSearch={() => void handleApply(filters)}
-      searchLoading={fetchingLogs > 0 || (!!filters.group && groupsPending)}
+      searchLoading={
+        fetchingLogs > 0 || (!!activeDraft.groupQuery && groupsPending)
+      }
       onReset={handleReset}
     />
   )

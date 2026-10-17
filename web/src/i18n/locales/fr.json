@@ -4371,6 +4371,7 @@
     "Select models or add custom ones": "Sélectionner des modèles ou en ajouter des personnalisés",
     "Select models to process. Unselected \"add\" models will be ignored.": "Sélectionnez les modèles à traiter. Les modèles « ajout » non sélectionnés seront ignorés.",
     "Select models to run batch tests.": "Sélectionner les modèles pour exécuter les tests par lots.",
+    "Select multiple groups": "Sélectionnez plusieurs groupes",
     "Select or enter color value": "Sélectionner ou saisir une valeur de couleur",
     "Select or enter method identifier": "Sélectionner ou saisir l’identifiant du mode",
     "Select or enter model name": "Sélectionner ou saisir le nom du modèle",

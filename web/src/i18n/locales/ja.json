@@ -4371,6 +4371,7 @@
     "Select models or add custom ones": "モデルを選択するか、カスタムモデルを追加",
     "Select models to process. Unselected \"add\" models will be ignored.": "処理するモデルを選択してください。未選択の「追加」モデルは無視されます。",
     "Select models to run batch tests.": "バッチテストを実行するモデルを選択してください。",
+    "Select multiple groups": "複数のグループを選択できます",
     "Select or enter color value": "色の値を選択または入力",
     "Select or enter method identifier": "決済方法の識別子を選択または入力",
     "Select or enter model name": "モデル名を選択または入力",

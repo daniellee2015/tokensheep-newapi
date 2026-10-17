@@ -4371,6 +4371,7 @@
     "Select models or add custom ones": "Выбрать модели или добавить пользовательские",
     "Select models to process. Unselected \"add\" models will be ignored.": "Выберите модели для обработки. Невыбранные модели «добавить» будут проигнорированы.",
     "Select models to run batch tests.": "Выберите модели для запуска пакетных тестов.",
+    "Select multiple groups": "Можно выбрать несколько групп",
     "Select or enter color value": "Выбрать или ввести значение цвета",
     "Select or enter method identifier": "Выберите или введите идентификатор способа",
     "Select or enter model name": "Выберите или введите имя модели",

@@ -4371,6 +4371,7 @@
     "Select models or add custom ones": "Chọn các mô hình hoặc thêm các mô hình tùy chỉnh",
     "Select models to process. Unselected \"add\" models will be ignored.": "Chọn các mô hình để xử lý. Các mô hình \"thêm\" không được chọn sẽ bị bỏ qua.",
     "Select models to run batch tests.": "Chọn mô hình để chạy kiểm thử hàng loạt.",
+    "Select multiple groups": "Có thể chọn nhiều nhóm",
     "Select or enter color value": "Chọn hoặc nhập giá trị màu",
     "Select or enter method identifier": "Chọn hoặc nhập mã định danh phương thức",
     "Select or enter model name": "Chọn hoặc nhập tên mô hình",

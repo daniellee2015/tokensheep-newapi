@@ -95,6 +95,8 @@ beforeEach(async () => {
   i18next.addResourceBundle('zhCN', 'translation', {
     'group.suffix.stable': '稳定',
     'tier.name.claude-max': 'Claude-Max 旗舰',
+    'tier.name.gemini-ultra': 'Gemini Ultra 按量',
+    'tier.name.gemini-ultra-per-call': 'Gemini Ultra 按次',
   })
   i18next.addResourceBundle('en', 'translation', {
     'group.suffix.stable': 'Stable',
@@ -109,6 +111,8 @@ beforeEach(async () => {
           data: {
             'GPT-Pro-Stable': { desc: '', ratio: 1 },
             'claude-max': { desc: '', ratio: 1 },
+            'gemini-ultra': { desc: '', ratio: 1 },
+            'gemini-ultra-per-call': { desc: '', ratio: 1 },
           },
         },
       }
@@ -146,6 +150,9 @@ afterEach(async () => {
 
 test.each([
   ['GPT-Pro-Stable', 'GPT-Pro-Stable'],
+  ['gpt-pro-stable', 'GPT-Pro-Stable'],
+  ['gPt-pRo 稳定', 'GPT-Pro-Stable'],
+  ['gpt-pro st', 'GPT-Pro-Stable'],
   ['GPT-Pro 稳定', 'GPT-Pro-Stable'],
   ['GPT-Pro Stable', 'GPT-Pro-Stable'],
   ['Claude-Max 旗舰', 'claude-max'],
@@ -155,6 +162,7 @@ test.each([
     const user = userEvent.setup()
     const router = await renderFilters()
     await user.type(screen.getByPlaceholderText('Group'), input)
+    await user.keyboard('{Escape}')
     await user.click(screen.getByRole('button', { name: 'Search' }))
     await waitFor(() =>
       expect(router.state.location.search).toMatchObject({
@@ -190,6 +198,7 @@ test('a translated draft still resolves after switching language and pressing En
   const user = userEvent.setup()
   const router = await renderFilters()
   await user.type(screen.getByPlaceholderText('Group'), 'GPT-Pro 稳定')
+  await user.keyboard('{Escape}')
   await act(() => i18next.changeLanguage('en'))
   await user.keyboard('{Enter}')
   await waitFor(() =>
@@ -201,7 +210,9 @@ test('a historical raw key remains usable when the group catalog fails, and Rese
   const user = userEvent.setup()
   vi.mocked(api.get).mockRejectedValue(new Error('Group catalog unavailable'))
   const router = await renderFilters('/usage-logs/common?group=retired-pool')
-  expect(screen.getByPlaceholderText('Group')).toHaveValue('retired-pool')
+  expect(
+    screen.getByRole('button', { name: 'Remove retired-pool' })
+  ).toBeVisible()
   await waitFor(() =>
     expect(screen.getByRole('button', { name: 'Search' })).toBeEnabled()
   )
@@ -221,6 +232,7 @@ test('administrator searches resolve group names using the full catalog instead 
   useAuthStore.getState().auth.setUser({ id: 2, username: 'admin', role: 10 })
   const router = await renderFilters()
   await user.type(screen.getByPlaceholderText('Group'), 'Claude-Max 旗舰')
+  await user.keyboard('{Escape}')
   await user.click(screen.getByRole('button', { name: 'Search' }))
   await waitFor(() =>
     expect(router.state.location.search.group).toBe('claude-max')
@@ -248,6 +260,7 @@ test('the mobile drawer accepts a translated name without selecting a dropdown i
   const router = await renderFilters()
   await user.click(screen.getByRole('button', { name: 'Filter' }))
   await user.type(await screen.findByPlaceholderText('Group'), 'GPT-Pro 稳定')
+  await user.keyboard('{Escape}')
   await user.click(screen.getByRole('button', { name: 'Search' }))
   await waitFor(() =>
     expect(router.state.location.search.group).toBe('GPT-Pro-Stable')
@@ -272,6 +285,7 @@ test('a translated search waits for the catalog instead of submitting the displa
   })
   const router = await renderFilters()
   await user.type(screen.getByPlaceholderText('Group'), 'GPT-Pro 稳定')
+  await user.keyboard('{Escape}')
   expect(screen.getByRole('button', { name: 'Search' })).toBeDisabled()
   await user.keyboard('{Enter}')
   expect(router.state.location.search.group).toBeUndefined()
@@ -305,8 +319,147 @@ test('an exact raw key takes precedence when another group has the same translat
   })
   const router = await renderFilters()
   await user.type(screen.getByPlaceholderText('Group'), 'GPT-Pro 稳定')
+  await user.keyboard('{Escape}')
   await user.click(screen.getByRole('button', { name: 'Search' }))
   await waitFor(() =>
     expect(router.state.location.search.group).toBe('GPT-Pro 稳定')
+  )
+})
+
+test.each(['gEmInI uLtRa', 'gemini ultra 按次、GEMINI ULTRA 按量'])(
+  'searching %s includes both matching groups in the URL, logs and statistics',
+  async (input) => {
+    const user = userEvent.setup()
+    const router = await renderFilters()
+    await user.type(screen.getByPlaceholderText('Group'), input)
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    await waitFor(() =>
+      expect(router.state.location.search.groups).toEqual(
+        expect.arrayContaining(['gemini-ultra', 'gemini-ultra-per-call'])
+      )
+    )
+    expect(router.state.location.search.group).toBeUndefined()
+    await fetchLogsByCategory({
+      logCategory: 'common',
+      isAdmin: false,
+      page: 1,
+      pageSize: 20,
+      columnFilters: [],
+      searchParams: router.state.location.search,
+    })
+    for (const endpoint of ['/api/log/self?', '/api/log/self/stat?']) {
+      await waitFor(() => {
+        const calls = vi.mocked(api.get).mock.calls.map(([url]) => String(url))
+        expect(
+          calls.some(
+            (url) =>
+              url.startsWith(endpoint) &&
+              new URL(url, 'https://example.test').searchParams.getAll('groups')
+                .length === 2
+          )
+        ).toBe(true)
+      })
+    }
+  }
+)
+
+test('the group picker searches translated names without case sensitivity and supports selecting and removing multiple groups', async () => {
+  const user = userEvent.setup()
+  const router = await renderFilters()
+  const input = screen.getByRole('combobox', { name: 'Group' })
+  await user.type(input, 'GEMINI ULTRA')
+  await user.click(
+    await screen.findByRole('option', { name: /Gemini Ultra 按次/ })
+  )
+  await user.click(
+    await screen.findByRole('option', { name: /Gemini Ultra 按量/ })
+  )
+  await user.keyboard('{Escape}')
+  await user.click(screen.getByRole('button', { name: 'Search' }))
+  await waitFor(() =>
+    expect(router.state.location.search.groups).toEqual(
+      expect.arrayContaining(['gemini-ultra', 'gemini-ultra-per-call'])
+    )
+  )
+  await user.click(
+    screen.getByRole('button', { name: 'Remove Gemini Ultra 按次' })
+  )
+  await user.keyboard('{Escape}')
+  expect(
+    screen.queryByRole('button', { name: 'Remove Gemini Ultra 按次' })
+  ).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Search' }))
+  await waitFor(() =>
+    expect(router.state.location.search).toMatchObject({
+      group: 'gemini-ultra',
+    })
+  )
+  expect(router.state.location.search.groups).toBeUndefined()
+  await user.click(screen.getByRole('button', { name: 'Reset' }))
+  await waitFor(() =>
+    expect(router.state.location.search.group).toBeUndefined()
+  )
+  expect(
+    screen.queryByRole('button', { name: 'Remove Gemini Ultra 按量' })
+  ).not.toBeInTheDocument()
+})
+
+test('clicking Search directly while group suggestions are open preserves the typed filter', async () => {
+  const user = userEvent.setup()
+  const router = await renderFilters()
+  const search = screen.getByRole('button', { name: 'Search' })
+  await user.type(screen.getByPlaceholderText('Group'), 'gpt-pro 稳定')
+  await user.click(search)
+  await waitFor(() =>
+    expect(router.state.location.search.group).toBe('GPT-Pro-Stable')
+  )
+})
+
+test('reopening a multi-group URL restores both chips and Reset removes both URL parameters', async () => {
+  const user = userEvent.setup()
+  const groups = encodeURIComponent(
+    JSON.stringify(['gemini-ultra', 'gemini-ultra-per-call'])
+  )
+  const router = await renderFilters(
+    `/usage-logs/common?groups=${groups}&page=3`
+  )
+  expect(
+    await screen.findByRole('button', { name: 'Remove Gemini Ultra 按量' })
+  ).toBeVisible()
+  expect(
+    screen.getByRole('button', { name: 'Remove Gemini Ultra 按次' })
+  ).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Reset' }))
+  await waitFor(() =>
+    expect(router.state.location.search.groups).toBeUndefined()
+  )
+  expect(router.state.location.search.group).toBeUndefined()
+  expect(router.state.location.search.page).toBe(1)
+})
+
+test('the mobile group picker can select both Gemini billing groups using the keyboard', async () => {
+  const user = userEvent.setup()
+  Object.defineProperty(HTMLElement.prototype, 'setPointerCapture', {
+    configurable: true,
+    value: () => undefined,
+  })
+  const matchMedia = window.matchMedia
+  vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+    ...matchMedia(query),
+    matches: query === '(max-width: 640px)',
+  }))
+  const router = await renderFilters()
+  await user.click(screen.getByRole('button', { name: 'Filter' }))
+  const input = await screen.findByRole('combobox', { name: 'Group' })
+  await user.type(input, 'gemini ultra 按次')
+  await user.keyboard('{ArrowDown}{Enter}')
+  await user.type(input, 'gemini ultra 按量')
+  await user.keyboard('{ArrowDown}{Enter}{Escape}')
+  await user.click(screen.getByRole('button', { name: 'Search' }))
+  await waitFor(() =>
+    expect(router.state.location.search.groups).toEqual(
+      expect.arrayContaining(['gemini-ultra', 'gemini-ultra-per-call'])
+    )
   )
 })

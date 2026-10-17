@@ -171,6 +171,13 @@ export function buildApiParams(config: {
     ...(searchParams.model ? { model_name: String(searchParams.model) } : {}),
     ...(searchParams.token ? { token_name: String(searchParams.token) } : {}),
     ...(searchParams.group ? { group: String(searchParams.group) } : {}),
+    ...(Array.isArray(searchParams.groups) && searchParams.groups.length
+      ? {
+          groups: searchParams.groups.filter(
+            (value): value is string => typeof value === 'string'
+          ),
+        }
+      : {}),
     ...(isAdmin && searchParams.channel
       ? { channel: Number(searchParams.channel) || 0 }
       : {}),

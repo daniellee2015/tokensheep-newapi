@@ -4371,6 +4371,7 @@
     "Select models or add custom ones": "选择模型或添加自定义模型",
     "Select models to process. Unselected \"add\" models will be ignored.": "勾选要处理的模型，未勾选的「新增」模型将作为忽略处理。",
     "Select models to run batch tests.": "选择要运行批量测试的模型。",
+    "Select multiple groups": "可选择多个分组",
     "Select or enter color value": "选择或输入颜色值",
     "Select or enter method identifier": "选择或输入支付方式标识",
     "Select or enter model name": "选择或输入模型名称",
