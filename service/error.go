@@ -203,6 +203,22 @@ const (
 	publicServiceUnavailableMessage = "Service temporarily unavailable"
 )
 
+// IsUpstreamModelUnavailable recognizes CPA's empty model registry response.
+// Both its structured code and specific message are required: generic model
+// validation errors must remain client errors and must not gain retries.
+func IsUpstreamModelUnavailable(err *types.NewAPIError) bool {
+	if err == nil || err.StatusCode != http.StatusBadRequest || err.GetErrorCode() != types.ErrorCode("model_not_found") {
+		return false
+	}
+	upstream, ok := err.RelayError.(types.OpenAIError)
+	if !ok {
+		return false
+	}
+	message := strings.TrimSpace(upstream.Message)
+	const prefix = "unknown provider for model "
+	return strings.HasPrefix(message, prefix) && strings.TrimSpace(strings.TrimPrefix(message, prefix)) != ""
+}
+
 // PublicUpstreamError rebuilds the public envelope. Request error messages
 // preserve provider guidance after filtering operational details; other status
 // classes use gateway messages. Retry and diagnostics use the original error.
@@ -226,6 +242,9 @@ func PublicUpstreamError(upstreamErr *types.NewAPIError) *types.NewAPIError {
 		rawMessage = relayError.Message
 	}
 	statusCode, message, code := publicUpstreamErrorPolicy(upstreamErr.StatusCode, rawMessage)
+	if IsUpstreamModelUnavailable(upstreamErr) {
+		statusCode, message, code = http.StatusServiceUnavailable, publicServiceUnavailableMessage, types.ErrorCodeServiceUnavailable
+	}
 	publicErr := types.NewOpenAIError(errors.New(message), code, statusCode, types.ErrOptionWithSkipRetry())
 	publicErr.SetRetryAfter(upstreamErr.RetryAfter())
 	return publicErr

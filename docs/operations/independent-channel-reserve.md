@@ -2,6 +2,10 @@
 
 2026-10-17。配置项 `IndependentChannelFallback` 是 JSON；默认不存在即关闭。
 
+2026-10-19：兼容原单条对象，也支持规则数组。数组每项保持同样的最多两个主渠道、一个备用限制；启用规则的 group/model 范围不得重叠。Ultra 按量使用主渠道 148 / 161、备用 159；按次使用主渠道 149 / 162、备用 160。分组独立，不会把按次请求切进按量分组；手动停用的渠道不会被重新启用或强制选中。
+
+对配置范围内的请求，CPA 的 HTTP 400 同时满足 `code=model_not_found` 与 `message=unknown provider for model <非空模型>` 时按上游模型暂不可用允许切池。普通 400 仍然不重试；原始 400 和错误内容保留供管理员诊断，最终仍失败时对外返回 503。额度 429 与长 Retry-After 的独立池切换规则继续有效。
+
 ```json
 {"enabled":true,"groups":["gemini-lowprice","gemini-sale","gemini-stable"],"models":["gemini-3-flash","gemini-3.8-flash-high","gemini-3.8-flash","gemini-3.1-flash-lite","gemini-3.7-flash","gemini-3.6-flash"],"primary_channel_ids":[12,140],"reserve_channel_id":146}
 ```

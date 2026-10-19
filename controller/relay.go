@@ -482,6 +482,12 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 			return false
 		}
 		code := openaiErr.StatusCode
+		if service.IsUpstreamModelUnavailable(openaiErr) {
+			// The configured model exists at the gateway, but CPA currently has
+			// no provider for it. Try the next independent pool, keeping the raw
+			// 400 and model_not_found available to administrator diagnostics.
+			code = http.StatusServiceUnavailable
+		}
 		if code == 499 || code == 598 || operation_setting.IsAlwaysSkipRetryCode(openaiErr.GetErrorCode()) {
 			return false
 		}

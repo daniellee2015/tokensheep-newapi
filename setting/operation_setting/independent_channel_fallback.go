@@ -3,6 +3,7 @@ package operation_setting
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 )
@@ -20,10 +21,47 @@ type IndependentChannelFallback struct {
 }
 
 func ValidateIndependentChannelFallback(value string) error {
-	var policy IndependentChannelFallback
-	if err := common.UnmarshalJsonStr(value, &policy); err != nil {
-		return err
+	_, err := parseIndependentChannelFallbackPolicies(value)
+	return err
+}
+
+// parseIndependentChannelFallbackPolicies keeps legacy object configurations
+// valid while allowing separate bounded routes for distinct billing groups.
+func parseIndependentChannelFallbackPolicies(value string) ([]IndependentChannelFallback, error) {
+	var policies []IndependentChannelFallback
+	if strings.HasPrefix(strings.TrimSpace(value), "[") {
+		if err := common.UnmarshalJsonStr(value, &policies); err != nil {
+			return nil, err
+		}
+	} else {
+		var policy IndependentChannelFallback
+		if err := common.UnmarshalJsonStr(value, &policy); err != nil {
+			return nil, err
+		}
+		policies = []IndependentChannelFallback{policy}
 	}
+	seen := make(map[[2]string]bool)
+	for _, policy := range policies {
+		if err := policy.validate(); err != nil {
+			return nil, err
+		}
+		if !policy.Enabled {
+			continue
+		}
+		for _, group := range policy.Groups {
+			for _, model := range policy.Models {
+				scope := [2]string{group, model}
+				if seen[scope] {
+					return nil, fmt.Errorf("independent fallback group/model scopes must not overlap")
+				}
+				seen[scope] = true
+			}
+		}
+	}
+	return policies, nil
+}
+
+func (policy IndependentChannelFallback) validate() error {
 	if !policy.Enabled {
 		return nil
 	}
@@ -51,18 +89,18 @@ func MatchIndependentChannelFallback(group, model string, channelID int) *Indepe
 	common.OptionMapRWMutex.RLock()
 	value := common.OptionMap[IndependentChannelFallbackOption]
 	common.OptionMapRWMutex.RUnlock()
-	if value == "" || ValidateIndependentChannelFallback(value) != nil {
+	if value == "" {
 		return nil
 	}
-	var policy IndependentChannelFallback
-	if common.UnmarshalJsonStr(value, &policy) != nil || !policy.Enabled {
+	policies, err := parseIndependentChannelFallbackPolicies(value)
+	if err != nil {
 		return nil
 	}
-	if !slices.Contains(policy.Groups, group) || !slices.Contains(policy.Models, model) {
-		return nil
+	for _, policy := range policies {
+		if policy.Enabled && slices.Contains(policy.Groups, group) && slices.Contains(policy.Models, model) &&
+			(channelID == policy.ReserveChannelID || slices.Contains(policy.PrimaryChannelIDs, channelID)) {
+			return &policy
+		}
 	}
-	if channelID != policy.ReserveChannelID && !slices.Contains(policy.PrimaryChannelIDs, channelID) {
-		return nil
-	}
-	return &policy
+	return nil
 }
