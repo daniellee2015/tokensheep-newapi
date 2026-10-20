@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import {
   useState,
+  useId,
   useMemo,
   useEffect,
   useCallback,
@@ -57,6 +58,14 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from '@/components/ui/combobox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -74,7 +83,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-
 import { formatGroupName } from '@/lib/group-i18n'
 
 import { useSystemOptions } from '../hooks/use-system-options'
@@ -560,7 +568,8 @@ function GroupPricingTable({
     )
     setPricingState((current) => {
       if (
-        groupPricingSignature(current.rows, current.hidden) === incomingSignature
+        groupPricingSignature(current.rows, current.hidden) ===
+        incomingSignature
       ) {
         return current
       }
@@ -812,6 +821,7 @@ function GroupOverrideRules({
   onChange,
 }: GroupOverrideRulesProps) {
   const { t } = useTranslation()
+  const userGroupInputId = useId()
   const [userGroupDialogOpen, setUserGroupDialogOpen] = useState(false)
   const [userGroupInput, setUserGroupInput] = useState<string | null>(null)
   const [overrideDialogOpen, setOverrideDialogOpen] = useState(false)
@@ -843,6 +853,11 @@ function GroupOverrideRules({
     }))
   }, [groupGroupRatio])
 
+  const userGroupName = userGroupInput?.trim() ?? ''
+  const userGroupExists = groupGroupRatioList.some(
+    (entry) => entry.userGroup === userGroupName
+  )
+
   const emitMap = useCallback(
     (map: Record<string, Record<string, number>>) => {
       onChange('GroupGroupRatio', JSON.stringify(map, null, 2))
@@ -851,15 +866,12 @@ function GroupOverrideRules({
   )
 
   const handleUserGroupSave = useCallback(() => {
-    if (!userGroupInput) return
+    if (!userGroupName || userGroupExists) return
     const map = parseNestedRatioMap(groupGroupRatio)
-    if (!map[userGroupInput]) {
-      map[userGroupInput] = {}
-    }
-    emitMap(map)
+    emitMap({ ...map, [userGroupName]: {} })
     setUserGroupDialogOpen(false)
     setUserGroupInput(null)
-  }, [userGroupInput, groupGroupRatio, emitMap])
+  }, [userGroupName, userGroupExists, groupGroupRatio, emitMap])
 
   const handleUserGroupDelete = useCallback(
     (userGroup: string) => {
@@ -947,6 +959,7 @@ function GroupOverrideRules({
                       <div className='flex items-center gap-2'>
                         <CollapsibleTrigger
                           render={<Button variant='ghost' size='sm' />}
+                          aria-label={`${t('Special ratio rules')} ${userGroupData.userGroup}`}
                         >
                           <ChevronDown className='h-4 w-4' />
                         </CollapsibleTrigger>
@@ -969,6 +982,7 @@ function GroupOverrideRules({
                         <Button
                           variant='ghost'
                           size='sm'
+                          aria-label={`${t('Add ratio override')} ${userGroupData.userGroup}`}
                           onClick={() =>
                             handleOverrideAdd(userGroupData.userGroup)
                           }
@@ -978,6 +992,7 @@ function GroupOverrideRules({
                         <Button
                           variant='ghost'
                           size='sm'
+                          aria-label={`${t('Delete')} ${userGroupData.userGroup}`}
                           onClick={() =>
                             handleUserGroupDelete(userGroupData.userGroup)
                           }
@@ -1090,7 +1105,10 @@ function GroupOverrideRules({
             >
               {t('Cancel')}
             </Button>
-            <Button onClick={handleUserGroupSave} disabled={!userGroupInput}>
+            <Button
+              onClick={handleUserGroupSave}
+              disabled={!userGroupName || userGroupExists}
+            >
               {t('Add')}
             </Button>
           </>
@@ -1098,14 +1116,54 @@ function GroupOverrideRules({
       >
         <div className='space-y-4 py-4'>
           <div className='space-y-2'>
-            <Label>{t('User group name')}</Label>
-            <GroupNameSelect
-              className='w-full'
-              options={registryNames}
+            <Label htmlFor={userGroupInputId}>{t('User group name')}</Label>
+            <Combobox
+              modal={false}
+              items={registryNames}
               value={userGroupInput}
-              placeholder={t('Select a group')}
-              onValueChange={setUserGroupInput}
-            />
+              inputValue={userGroupInput ?? ''}
+              onInputValueChange={(value, details) => {
+                // Keep free text when suggestions close or the Add button takes focus.
+                if (details.reason === 'input-change') setUserGroupInput(value)
+              }}
+              onValueChange={(value) => {
+                if (value !== null) setUserGroupInput(value)
+              }}
+            >
+              <ComboboxInput
+                id={userGroupInputId}
+                showTrigger={false}
+                className='w-full'
+                placeholder={t(
+                  'Select an existing group or enter a new group name'
+                )}
+                onKeyDown={(event) => {
+                  if (
+                    event.key === 'Enter' &&
+                    !event.nativeEvent.isComposing &&
+                    !event.currentTarget.getAttribute('aria-activedescendant')
+                  ) {
+                    event.preventDefault()
+                    handleUserGroupSave()
+                  }
+                }}
+              />
+              <ComboboxContent>
+                <ComboboxList>
+                  {(name: string) => (
+                    <ComboboxItem key={name} value={name}>
+                      {name}
+                    </ComboboxItem>
+                  )}
+                </ComboboxList>
+                <ComboboxEmpty>{t('No matching items')}</ComboboxEmpty>
+              </ComboboxContent>
+            </Combobox>
+            {userGroupExists && (
+              <p role='status' className='text-destructive text-sm'>
+                {t('This user group already has special ratio rules.')}
+              </p>
+            )}
           </div>
         </div>
       </Dialog>
