@@ -966,12 +966,6 @@ function GroupOverrideRules({
                         <span className='font-semibold'>
                           {userGroupData.userGroup}
                         </span>
-                        {!registryNames.includes(userGroupData.userGroup) && (
-                          <AlertTriangle
-                            className='text-destructive h-4 w-4'
-                            aria-label={t('Not in pricing table')}
-                          />
-                        )}
                         <span className='text-muted-foreground text-sm'>
                           {t('{{count}} override', {
                             count: userGroupData.overrides.length,

@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
-import { getGroups as getUserTiers } from '@/features/users/api'
+import { getGroups as getUserGroups } from '@/features/users/api'
 
 import { getGroups as getChannelGroups } from '../../api'
 import { channelsQueryKeys } from '../channel-actions'
@@ -34,7 +34,7 @@ vi.mock('@/lib/api', () => ({
 /**
  * The channel `group` field is matched against GroupRatio keys when a request is
  * routed, so it must be filled from the channel-group namespace. The user
- * editor writes `users.group`, which is a contribution tier. The backend serves
+ * editor writes `users.group`, which is a user identity. The backend serves
  * these from two endpoints on purpose (see the comment above GetGroups in
  * controller/group.go); the channel dropdown has regressed onto the tier
  * endpoint more than once, which silently offers groups no request can select.
@@ -57,16 +57,16 @@ describe('channel group dropdown data source', () => {
     expect(getMock).not.toHaveBeenCalledWith('/api/group/tiers')
   })
 
-  test('user tiers still come from the tier endpoint', async () => {
-    await getUserTiers()
+  test('user identities come from the assignable-user-group endpoint', async () => {
+    await getUserGroups()
 
-    expect(getMock).toHaveBeenCalledWith('/api/group/tiers')
+    expect(getMock).toHaveBeenCalledWith('/api/group/user-groups')
   })
 
   test('the two helpers are not the same function', () => {
     // A re-export alias is how this regressed before: the channel module
     // pointed straight at the user-tier fetcher.
-    expect(getChannelGroups).not.toBe(getUserTiers)
+    expect(getChannelGroups).not.toBe(getUserGroups)
   })
 })
 
@@ -74,7 +74,7 @@ describe('channel group query key', () => {
   test('is namespaced under channels rather than a bare "groups"', () => {
     const key = channelsQueryKeys.groups()
 
-    // A bare ['groups'] key is also used by the user editor; sharing it lets
+    // Sharing a bare groups key between catalogs lets
     // whichever drawer mounts first populate the other one's dropdown from
     // cache, which reproduces the bug even with the endpoint fixed.
     expect(key).not.toEqual(['groups'])

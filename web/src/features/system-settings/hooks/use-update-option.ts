@@ -39,6 +39,14 @@ const STATUS_RELATED_KEYS = new Set([
   'oidc.display_name',
 ])
 
+const USER_GROUP_RELATED_KEYS = new Set([
+  'GroupGroupRatio',
+  'group_ratio_setting.group_group_ratio',
+  'group_ratio_setting.group_special_usable_group',
+  'tokensheep_economy.tier_thresholds',
+  'tokensheep_economy.commercial_groups',
+])
+
 export function useUpdateOption() {
   const queryClient = useQueryClient()
 
@@ -48,6 +56,12 @@ export function useUpdateOption() {
       if (data.success) {
         // Always refresh system-options
         queryClient.invalidateQueries({ queryKey: ['system-options'] })
+
+        if (USER_GROUP_RELATED_KEYS.has(variables.key)) {
+          queryClient.invalidateQueries({
+            queryKey: ['users', 'assignable-groups'],
+          })
+        }
 
         // If updating frontend-display-related config, also refresh status
         if (STATUS_RELATED_KEYS.has(variables.key)) {

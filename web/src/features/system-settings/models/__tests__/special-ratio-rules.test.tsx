@@ -67,6 +67,20 @@ function renderRules(
 }
 
 describe('special ratio user group creation', () => {
+  test('accepts a custom user identity while warning for a missing billing target', async () => {
+    const user = userEvent.setup()
+    renderRules('{"wholesale-ultra":{"missing-billing-group":0.35}}')
+    expect(
+      screen.queryByLabelText('Not in pricing table')
+    ).not.toBeInTheDocument()
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Special ratio rules wholesale-ultra',
+      })
+    )
+    expect(screen.getByLabelText('Not in pricing table')).toBeInTheDocument()
+  })
+
   test('allows adding a custom user group absent from the pricing registry', async () => {
     const user = userEvent.setup()
     const onChange = renderRules('{"vip":{"gemini-ultra":1.5}}')
@@ -145,9 +159,7 @@ describe('special ratio user group creation', () => {
     expect(dialog.getByRole('status')).toHaveTextContent(
       'This user group already has special ratio rules.'
     )
-    expect(
-      dialog.getByRole('button', { name: 'Add' })
-    ).toBeDisabled()
+    expect(dialog.getByRole('button', { name: 'Add' })).toBeDisabled()
     await user.keyboard('{Enter}')
     expect(onChange).not.toHaveBeenCalled()
   })
@@ -169,9 +181,7 @@ describe('special ratio user group creation', () => {
     expect(
       dialog.getByRole('combobox', { name: 'User group name' })
     ).toHaveValue('')
-    expect(
-      dialog.getByRole('button', { name: 'Add' })
-    ).toBeDisabled()
+    expect(dialog.getByRole('button', { name: 'Add' })).toBeDisabled()
   })
 
   test('a custom user group can receive a billing-group override without changing other prices', async () => {
