@@ -31,9 +31,15 @@ func TestWriteRequestErrorPreservesGuidanceAndGatewayRequestID(t *testing.T) {
 		{"Gemini SSE", types.RelayFormatGemini, true},
 		{"Claude SSE", types.RelayFormatClaude, true},
 	}
-	messages := []struct{ name, message string }{
-		{"context", "The input token count exceeds the maximum number of tokens allowed 131072."},
-		{"safety", "request blocked by Gemini API: PROHIBITED_CONTENT"},
+	messages := []struct {
+		name, message string
+		status        int
+	}{
+		{"context", "The input token count exceeds the maximum number of tokens allowed 131072.", http.StatusBadRequest},
+		{"safety", "request blocked by Gemini API: PROHIBITED_CONTENT", http.StatusBadRequest},
+		{"safety forbidden", "request blocked by Gemini API: PROHIBITED_CONTENT", http.StatusForbidden},
+		{"context unprocessable", "The input token count exceeds the maximum number of tokens allowed 131072.", http.StatusUnprocessableEntity},
+		{"supplier bad gateway", "Upstream service temporarily unavailable", http.StatusBadGateway},
 	}
 	for _, format := range formats {
 		for _, message := range messages {
@@ -51,7 +57,7 @@ func TestWriteRequestErrorPreservesGuidanceAndGatewayRequestID(t *testing.T) {
 					Message: message.message + " (request id: inner-id) (request id: outer-id)",
 					Type:    "provider_private_type", Code: "provider_private_code", Param: "private-field",
 					Metadata: []byte(`{"secret":"sk-private-secret","url":"https://internal.example"}`),
-				}, http.StatusBadRequest)
+				}, message.status)
 				public := service.PublicUpstreamError(raw)
 				require.NotNil(t, public)
 				public.SetMessage(common.MessageWithRequestId(common.StripNestedRequestIDs(public.Error()), "gateway-request-id"))
@@ -67,7 +73,7 @@ func TestWriteRequestErrorPreservesGuidanceAndGatewayRequestID(t *testing.T) {
 					assert.Equal(t, http.StatusOK, recorder.Code)
 					assert.Contains(t, recorder.Header().Get("Content-Type"), "text/event-stream")
 				} else {
-					assert.Equal(t, http.StatusBadRequest, recorder.Code)
+					assert.Equal(t, message.status, recorder.Code)
 					assert.Contains(t, recorder.Header().Get("Content-Type"), "application/json")
 				}
 			})

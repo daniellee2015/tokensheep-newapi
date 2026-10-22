@@ -1,6 +1,6 @@
 # New API 上游错误边界与状态码策略
 
-本文档定义 relay 对上游错误的公开策略。2026-10-17 按用户确认的边界修正：**隐藏上游额度、余额、账号池、分组、渠道、价格与内部基础设施信息；内容安全、上下文超限和普通请求校验原因应保留上游具体提示，返回下游及普通用户日志。** 不能仅因为消息来自上游，就统一改成 `Invalid request`。
+本文档定义 relay 对上游错误的公开策略。2026-10-22 按用户确认的边界修正：**隐藏上游额度、余额、账号池、分组、渠道、价格与内部基础设施信息；内容安全、上下文超限和普通请求校验原因应保留上游具体提示，返回下游及普通用户日志。502 应保留状态及可公开的上游说明。** 不能仅因为消息来自上游，就统一改成 `Invalid request` 或 `503 Service temporarily unavailable`。
 
 保留的是错误 `message` 中可公开的请求说明，不是把整个上游错误对象、响应头或原始 HTTP body 原封不动转发。HTTP 状态和协议 envelope 仍按下表处理。
 
@@ -48,24 +48,29 @@
 
 | 上游或渠道映射后的状态 | 下游 HTTP 状态 | 下游 `message` | 下游 `type` / `code` |
 | --- | ---: | --- | --- |
+| 400–599，包含明确的上下文超限或内容安全拒绝原因，且不含私有运维信息 | 保留原状态 | 保留具体拒绝说明，包括 token 上限、安全原因及修改建议 | 4xx：`invalid_request`；5xx：`service_unavailable` |
 | 400、422 | 400 | 请求错误保留上游 message（安全原因码、token 上限、字段与格式说明）；夹带运维信息时返回固定不可用提示；空消息才回退 `Invalid request` | `invalid_request` |
 | 404、405、409、410、413、415 | 400 | 按状态返回本站固定的资源、方法、冲突、过期、大小或格式提示 | `invalid_request` |
 | 429 | 429 | `Rate limit exceeded. Retry later.` | `rate_limit_exceeded` |
-| 401、403、408、500–599（包括 502、503、504）、无效状态及其它状态 | 503 | `Service temporarily unavailable` | `service_unavailable` |
+| 502 | 502 | 保留可公开的上游 message；空消息或夹带运维信息时返回固定不可用提示 | `bad_response_status_code` |
+| 其余 401、403、408、500–599、无效状态及其它状态 | 503 | `Service temporarily unavailable` | `service_unavailable` |
+
+表中规则按顺序匹配。明确拒绝原因优先于通用状态分类；仅提及 safety 服务不可用不属于内容安全拒绝。
 
 Midjourney 的 `23`、`30` 仅映射为 HTTP 429 和固定限流文案，其它非成功 code 映射为 HTTP 503 和固定不可用文案；不返回原 `description`、`result` 或 `properties`。
 
 最终错误 message 只追加一次本站 request id。上游附带的 `(request id: ...)`、`(request-id: ...)` 及上游响应头 request id 不得进入公开响应。
 
-### 请求错误透传边界（2026-10-17 修正）
+### 请求错误透传边界（2026-10-22 修正）
 
 `service/public_request_error.go` 对 400/422 不再统一重写成固定分类文案。
 处理顺序是：取错误 message、移除嵌套上游 request ID、检查是否夹带私有运维信息，
 再保留可公开的原始说明。余额、价格、账号池、分组、渠道、节点或凭据相关内容
 优先过滤，即使同一条消息也包含 safety/context 关键字，仍不能借此绕过边界。
 既有 URL/IP/域名及渠道配置的脱敏规则继续生效。默认全局规则不再把
-“该会话已被网络安全策略屏蔽，请开启新会话”替换为笼统的 `Request rejected`。
-若生产数据库保存了自定义规则，发布时需核对是否仍有这条旧规则；修改源码默认值
+“该会话已被网络安全策略屏蔽，请开启新会话”替换为笼统的 `Request rejected`，
+也不再把 `Upstream` 一词或 `Upstream temporarily unavailable` 改写成 `service`。
+若生产数据库保存了自定义规则，发布时需核对是否仍有这些旧规则；修改源码默认值
 不会自动重写已有数据库配置。
 
 | 上游 message | 下游 message 示例 |
@@ -73,18 +78,21 @@ Midjourney 的 `23`、`30` 仅映射为 HTTP 429 和固定限流文案，其它�
 | `request blocked by Gemini API: PROHIBITED_CONTENT` | 保留该说明及 `PROHIBITED_CONTENT` |
 | `The input token count exceeds the maximum number of tokens allowed 131072.` | 原样保留，包括 `131072` |
 | `The input token count exceeds the maximum number of tokens allowed (1048576).` | 原样保留，包括 `1048576` |
+| `Upstream service temporarily unavailable`（HTTP 502） | 保留原文和 HTTP 502，不再改成 503 |
 | 函数名、工具消息顺序、未知字段、图片格式等校验错误 | 保留上游具体说明，不统一改写为 `Invalid request` |
 | `Request contains an invalid argument.` | 保留；不编造上游没有提供的详细原因 |
 | 无可用账号、分组路由、价格、余额、凭据等内容 | 固定不可用提示，不公开内部细节 |
 
-请求错误保留原文不代表修改所有状态：401/403、429、5xx 等继续使用现有认证、
-限流、资源和服务状态策略。404/405/409/410/413/415 也保持已有状态分类。
-本次不改变重试、自动禁用、收费或状态码映射。
+明确的安全拒绝和上下文超限保留 403、422 或被供应商包装成 5xx 的状态及说明；
+不含此类明确原因的认证、限流、资源错误继续使用表中的通用策略。
+本次不改变重试、自动禁用、收费或渠道配置的状态码映射。
 
 `PublicUpstreamError` 只取协议 message；OpenRouter 等提供商附加到诊断 message
 末尾的 metadata 必须剥离，不随原文保留进入下游。管理员仍保留完整诊断。
 公开 envelope 的 type/code/param/metadata 继续由本站构造。
 最终响应只追加一次本站 request ID；JSON、SSE 和普通错误日志使用相同说明。
+若 SSE 已发送 HTTP 200 和部分数据，HTTP 状态已提交，无法再改为 4xx/5xx；
+此时通过流内错误事件返回说明，不重新启动另一个上游响应流。
 
 ## 各错误出口
 

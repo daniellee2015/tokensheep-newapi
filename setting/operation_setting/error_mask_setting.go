@@ -17,8 +17,7 @@ type ErrorMaskSetting struct {
 }
 
 // Rule ordering matters: whole-sentence patterns run before the single-word
-// fallbacks, otherwise rewriting "upstream" first would break the longer
-// patterns that contain it.
+// fallbacks so operational details are removed before vocabulary is replaced.
 var errorMaskSetting = ErrorMaskSetting{
 	Enabled:         true,
 	FallbackMessage: ErrorMaskFallbackMessage,
@@ -32,7 +31,6 @@ var errorMaskSetting = ErrorMaskSetting{
 		{Pattern: `[Uu]pstream connection was interrupted mid-response after \d+ bytes:\s*`, Replace: "", IsRegex: true},
 		{Pattern: `upstream error: do request failed`, Replace: ErrorMaskFallbackMessage},
 		{Pattern: `[Uu]pstream (rate limit exceeded|rate limited)\.?\s*(Retry later\.?|T)?`, Replace: "Rate limit exceeded. Retry later.", IsRegex: true},
-		{Pattern: `[Uu]pstream temporarily unavailable`, Replace: ErrorMaskFallbackMessage, IsRegex: true},
 
 		// --- Infrastructure and topology ---
 		// Proxy hop, e.g. "socks connect tcp ***:7401->***:443: unknown".
@@ -53,7 +51,6 @@ var errorMaskSetting = ErrorMaskSetting{
 		{Pattern: `号池`, Replace: "service"},
 		{Pattern: `中转`, Replace: "service"},
 		{Pattern: `代理商`, Replace: "service"},
-		{Pattern: `\bupstream\b`, Replace: "service", IsRegex: true, IgnoreCase: true},
 		{Pattern: `\bdistributor\b`, Replace: "router", IsRegex: true, IgnoreCase: true},
 	},
 }

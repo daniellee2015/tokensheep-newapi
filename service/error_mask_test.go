@@ -81,17 +81,15 @@ func TestApplyGlobalErrorMask_RealUpstreamLeaks(t *testing.T) {
 	}
 }
 
-// TestApplyGlobalErrorMask_NoVocabularyLeaks is the backstop for wording the
-// explicit rules do not enumerate: whatever the upstream says, these terms must
-// never reach a downstream caller.
+// TestApplyGlobalErrorMask_NoVocabularyLeaks keeps private routing vocabulary
+// masked. The word "upstream" itself is not private operational information.
 func TestApplyGlobalErrorMask_NoVocabularyLeaks(t *testing.T) {
-	forbidden := []string{"upstream", "Upstream", "凭据", "号池", "中转", "代理商", "distributor"}
+	forbidden := []string{"凭据", "号池", "中转", "代理商", "distributor"}
 
 	inputs := []string{
 		"分组 [free] 无可用凭据（0/247 可用）",
 		"Upstream connection was interrupted mid-response after 512 bytes: upstream rate limited",
 		"upstream error: do request failed",
-		"some brand new upstream wording we never saw before",
 		"渠道凭据耗尽，号池已空",
 		"routed by distributor to fallback",
 	}
@@ -171,6 +169,8 @@ func TestNormalizeMaskedMessage_FallbackOnEmpty(t *testing.T) {
 // does not swallow the 4xx messages a caller needs in order to fix its request.
 func TestApplyGlobalErrorMask_PreservesActionableClientErrors(t *testing.T) {
 	actionable := []string{
+		"Upstream service temporarily unavailable",
+		"Upstream temporarily unavailable",
 		"max_tokens must be less than or equal to 64000",
 		"Requests ending with a model turn are not supported.",
 		"No tool output found for custom tool call call_abc123.",

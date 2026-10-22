@@ -220,8 +220,8 @@ func IsUpstreamModelUnavailable(err *types.NewAPIError) bool {
 }
 
 // PublicUpstreamError rebuilds the public envelope. Request error messages
-// preserve provider guidance after filtering operational details; other status
-// classes use gateway messages. Retry and diagnostics use the original error.
+// and bad-gateway messages preserve provider guidance after filtering private
+// details. Retry and diagnostics use the original error.
 func PublicUpstreamError(upstreamErr *types.NewAPIError) *types.NewAPIError {
 	if upstreamErr == nil {
 		return nil
@@ -284,6 +284,14 @@ func EmbeddedUpstreamError(responseBody []byte) *types.NewAPIError {
 }
 
 func publicUpstreamErrorPolicy(statusCode int, rawMessage string) (int, string, types.ErrorCode) {
+	if statusCode >= http.StatusBadRequest && statusCode <= 599 &&
+		publicRequestRejectionPattern.MatchString(rawMessage) && !privateRequestErrorPattern.MatchString(rawMessage) {
+		code := types.ErrorCodeInvalidRequest
+		if statusCode >= http.StatusInternalServerError {
+			code = types.ErrorCodeServiceUnavailable
+		}
+		return statusCode, publicProviderErrorMessage(rawMessage, publicInvalidRequestMessage), code
+	}
 	switch statusCode {
 	case http.StatusBadRequest,
 		http.StatusNotFound,
@@ -296,6 +304,8 @@ func publicUpstreamErrorPolicy(statusCode int, rawMessage string) (int, string, 
 		return http.StatusBadRequest, publicRequestErrorMessage(statusCode, rawMessage), types.ErrorCodeInvalidRequest
 	case http.StatusTooManyRequests:
 		return http.StatusTooManyRequests, publicRateLimitMessage, types.ErrorCodeRateLimitExceeded
+	case http.StatusBadGateway:
+		return http.StatusBadGateway, publicProviderErrorMessage(rawMessage, publicServiceUnavailableMessage), types.ErrorCodeBadResponseStatusCode
 	default:
 		return http.StatusServiceUnavailable, publicServiceUnavailableMessage, types.ErrorCodeServiceUnavailable
 	}
