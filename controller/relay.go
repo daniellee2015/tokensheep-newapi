@@ -227,10 +227,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
-			if fallbackPolicy != nil && lastRawChannelError != nil {
+			logger.LogError(c, channelErr.Error())
+			// Exhausting fallback candidates does not replace the last actual
+			// upstream failure with a synthetic routing error.
+			if lastRawChannelError != nil {
 				break
 			}
-			logger.LogError(c, channelErr.Error())
 			newAPIError = service.PublicUpstreamError(channelErr)
 			break
 		}
