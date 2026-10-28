@@ -1147,3 +1147,35 @@ func TestAppendToolSurchargeLogInfoWritesOnlyStructuredFields(t *testing.T) {
 	assert.NotContains(t, other, "image_generation_call")
 	assert.NotContains(t, other, "image_generation_call_price")
 }
+
+func TestStreamFailedWithoutOutput(t *testing.T) {
+	mkStatus := func(reason relaycommon.StreamEndReason) *relaycommon.StreamStatus {
+		s := relaycommon.NewStreamStatus()
+		s.SetEndReason(reason, nil)
+		return s
+	}
+
+	tests := []struct {
+		name            string
+		relayInfo       *relaycommon.RelayInfo
+		completionToken int
+		want            bool
+	}{
+		{name: "stream timeout with no output", relayInfo: &relaycommon.RelayInfo{IsStream: true, StreamStatus: mkStatus(relaycommon.StreamEndReasonTimeout)}, completionToken: 0, want: true},
+		{name: "stream EOF without done and no output", relayInfo: &relaycommon.RelayInfo{IsStream: true, StreamStatus: mkStatus(relaycommon.StreamEndReasonEOF)}, completionToken: 0, want: true},
+		{name: "client gone with no output", relayInfo: &relaycommon.RelayInfo{IsStream: true, StreamStatus: mkStatus(relaycommon.StreamEndReasonClientGone)}, completionToken: 0, want: true},
+		{name: "scanner error with no output", relayInfo: &relaycommon.RelayInfo{IsStream: true, StreamStatus: mkStatus(relaycommon.StreamEndReasonScannerErr)}, completionToken: 0, want: true},
+		{name: "clean done with no output still bills prompt", relayInfo: &relaycommon.RelayInfo{IsStream: true, StreamStatus: mkStatus(relaycommon.StreamEndReasonDone)}, completionToken: 0, want: false},
+		{name: "timeout but produced output", relayInfo: &relaycommon.RelayInfo{IsStream: true, StreamStatus: mkStatus(relaycommon.StreamEndReasonTimeout)}, completionToken: 10, want: false},
+		{name: "not streaming", relayInfo: &relaycommon.RelayInfo{IsStream: false}, completionToken: 0, want: false},
+		{name: "nil relay info", relayInfo: nil, completionToken: 0, want: false},
+		{name: "nil stream status", relayInfo: &relaycommon.RelayInfo{IsStream: true, StreamStatus: nil}, completionToken: 0, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			summary := textQuotaSummary{CompletionTokens: tt.completionToken}
+			assert.Equal(t, tt.want, streamFailedWithoutOutput(tt.relayInfo, summary))
+		})
+	}
+}

@@ -76,6 +76,19 @@ func (s *textQuotaSummary) hasBillableUsage() bool {
 	return s.TotalTokens > 0 || !s.ToolCallSurchargeQuota.IsZero()
 }
 
+// streamFailedWithoutOutput reports whether a streaming request ended
+// abnormally (no clean [DONE]) without producing any completion tokens, so its
+// locally-estimated prompt tokens must not be billed.
+func streamFailedWithoutOutput(relayInfo *relaycommon.RelayInfo, summary textQuotaSummary) bool {
+	if relayInfo == nil || !relayInfo.IsStream || relayInfo.StreamStatus == nil {
+		return false
+	}
+	if summary.CompletionTokens > 0 {
+		return false
+	}
+	return relayInfo.StreamStatus.EndReason != relaycommon.StreamEndReasonDone
+}
+
 func cacheWriteTokensTotal(summary textQuotaSummary) int {
 	if summary.CacheCreationTokens5m > 0 || summary.CacheCreationTokens1h > 0 {
 		splitCacheWriteTokens := summary.CacheCreationTokens5m + summary.CacheCreationTokens1h
@@ -420,6 +433,13 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 			tieredResult = tieredRes
 			summary.Quota = composeTieredTextQuota(relayInfo, summary, tieredQuota, tieredRes)
 		}
+	}
+
+	// 流式请求在上游断流/超时且无任何产出时，不应按本地估算的 prompt token 计费，
+	// 而是退还预扣额度（下游无产出，按失败处理）。
+	if streamFailedWithoutOutput(relayInfo, summary) {
+		summary.Quota = 0
+		extraContent = append(extraContent, "上游流中断且无产出，已退还预扣额度")
 	}
 
 	for _, item := range summary.ToolSurchargeItems {
