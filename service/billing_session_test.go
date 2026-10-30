@@ -5,12 +5,20 @@
 package service
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/tokensheep_setting"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,10 +30,8 @@ import (
 //   D. 商业分组 + wallet_first / wallet_only 保持不变
 //   E. UserGroup 空字符串 (context 未设 / cache miss) 走 fail-open
 //
-// 未走 NewBillingSession 端到端路径：那条路径依赖 model.GetUserQuota /
-// HasActiveUserSubscription 等真实 DB 调用，接入本地 sqlite/pg 才能跑。dispatch
-// switch 是纯值查表，只要 pref 值正确，switch 行为不需要复测。测试通过 helper
-// 直接验证 coerce 语义，dispatch 的正确路由由 R17 时期已有的现网测试覆盖。
+// 这些用例只验证 helper 的 coerce 语义；coerce 之后 dispatch 选资金来源的行为
+// 由文件末尾的 TestNewBillingSession_CommercialFundingSource 走 sqlite 端到端覆盖。
 
 func withSavedEconomySetting(t *testing.T) {
 	t.Helper()
@@ -157,4 +163,121 @@ func TestResolveBillingPreference_NilContext_UsesSysLog(t *testing.T) {
 
 	got := resolveBillingPreferenceForCommercial(nil, 100, "retail", "subscription_only")
 	require.Equal(t, "wallet_first", got)
+}
+
+// 商业分组被 coerce 成 wallet_first 后，资金来源必须是钱包：钱包有余额时按钱包
+// 预扣并结算；钱包不足时返回钱包额度不足，不能因为回退到不存在的订阅而报
+// "订阅额度不足或未配置订阅"。生产中商业分组用户（DB 残留 subscription_first）
+// 钱包欠费期间每个请求都拿到订阅错误，真实原因被掩盖。
+// 最后一行是对照：真实持有活跃订阅的 wallet_first 用户仍保留钱包 -> 订阅回退。
+func TestNewBillingSession_CommercialFundingSource(t *testing.T) {
+	const preConsume = 7_008
+
+	tests := []struct {
+		name            string
+		group           string
+		preference      string
+		walletQuota     int
+		withActiveSub   bool
+		settleQuota     int
+		wantSource      string
+		wantErrContains string
+		wantWallet      int
+	}{
+		{
+			name:        "commercial stale subscription_first with funded wallet bills wallet",
+			group:       "wholesale-plus",
+			preference:  "subscription_first",
+			walletQuota: 1_000_000,
+			settleQuota: 10_000,
+			wantSource:  BillingSourceWallet,
+			wantWallet:  990_000,
+		},
+		{
+			name:            "commercial stale subscription_first with wallet in arrears reports wallet shortfall",
+			group:           "wholesale-plus",
+			preference:      "subscription_first",
+			walletQuota:     -71_852,
+			wantErrContains: "用户额度不足",
+			wantWallet:      -71_852,
+		},
+		{
+			name:            "commercial stale subscription_only with wallet below pre-consume reports wallet shortfall",
+			group:           "retail",
+			preference:      "subscription_only",
+			walletQuota:     1_000,
+			wantErrContains: "预扣费额度失败",
+			wantWallet:      1_000,
+		},
+		{
+			name:          "non-commercial wallet_first with active subscription still falls back to subscription",
+			group:         "fan",
+			preference:    "wallet_first",
+			walletQuota:   0,
+			withActiveSub: true,
+			wantSource:    BillingSourceSubscription,
+			wantWallet:    0,
+		},
+	}
+
+	for i, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			truncate(t)
+			withSavedEconomySetting(t)
+
+			userID := 9_100 + i
+			require.NoError(t, model.DB.Create(&model.User{
+				Id:       userID,
+				Username: "billing_session_user",
+				Group:    tc.group,
+				Quota:    tc.walletQuota,
+				Status:   common.UserStatusEnabled,
+			}).Error)
+			if tc.withActiveSub {
+				planID := 9_100 + i
+				require.NoError(t, model.DB.Create(&model.SubscriptionPlan{Id: planID, Title: "test plan", TotalAmount: 1_000_000}).Error)
+				require.NoError(t, model.DB.Create(&model.UserSubscription{
+					UserId:      userID,
+					PlanId:      planID,
+					AmountTotal: 1_000_000,
+					Status:      "active",
+					StartTime:   time.Now().Unix(),
+					EndTime:     time.Now().Add(24 * time.Hour).Unix(),
+				}).Error)
+			}
+
+			relayInfo := &relaycommon.RelayInfo{
+				UserId:          userID,
+				UserGroup:       tc.group,
+				RequestId:       "billing-session-commercial-" + tc.group + "-" + tc.preference,
+				OriginModelName: "gpt-test",
+				IsPlayground:    true,
+				UserSetting:     dto.UserSetting{BillingPreference: tc.preference},
+			}
+
+			session, apiErr := NewBillingSession(stubContext(), relayInfo, preConsume)
+
+			if tc.wantErrContains != "" {
+				require.NotNil(t, apiErr)
+				assert.Nil(t, session)
+				assert.Equal(t, types.ErrorCodeInsufficientUserQuota, apiErr.GetErrorCode())
+				assert.Equal(t, http.StatusForbidden, apiErr.StatusCode)
+				assert.Contains(t, apiErr.Error(), tc.wantErrContains)
+				assert.NotContains(t, apiErr.Error(), "订阅")
+				assert.NotContains(t, apiErr.Error(), "subscription")
+			} else {
+				require.Nil(t, apiErr)
+				require.NotNil(t, session)
+				assert.Equal(t, tc.wantSource, session.funding.Source())
+				assert.Equal(t, tc.wantSource, relayInfo.BillingSource)
+				if tc.settleQuota > 0 {
+					require.NoError(t, session.Settle(tc.settleQuota))
+				}
+			}
+
+			wallet, err := model.GetUserQuota(userID, true)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantWallet, wallet)
+		})
+	}
 }
