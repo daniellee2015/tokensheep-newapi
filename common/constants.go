@@ -220,7 +220,7 @@ var (
 	GlobalWebRateLimitDuration int64
 
 	CriticalRateLimitEnable   bool
-	CriticalRateLimitNum            = 20
+	CriticalRateLimitNum            = 200
 	CriticalRateLimitDuration int64 = 20 * 60
 
 	UploadRateLimitNum            = 10
@@ -231,7 +231,7 @@ var (
 
 	// Per-user search rate limit (applies after authentication, keyed by user ID)
 	SearchRateLimitEnable         = true
-	SearchRateLimitNum            = 10
+	SearchRateLimitNum            = 100
 	SearchRateLimitDuration int64 = 60
 )
 
