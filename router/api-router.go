@@ -321,6 +321,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			groupRoute.GET("/", controller.GetGroups)
 			groupRoute.GET("/tiers", controller.GetTierList)
+			groupRoute.GET("/user-groups", controller.GetAssignableUserGroups)
 		}
 
 		prefillGroupRoute := apiRouter.Group("/prefill_group")

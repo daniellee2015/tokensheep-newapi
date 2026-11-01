@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/samber/lo"
 )
 
@@ -16,15 +17,18 @@ const (
 )
 
 // BillingSetting is managed by config.GlobalConfig.Register.
-// DB keys: billing_setting.billing_mode, billing_setting.billing_expr
+// DB keys: billing_setting.billing_mode, billing_setting.billing_expr,
+// billing_setting.group_model_price.
 type BillingSetting struct {
-	BillingMode map[string]string `json:"billing_mode"`
-	BillingExpr map[string]string `json:"billing_expr"`
+	BillingMode     map[string]string                        `json:"billing_mode"`
+	BillingExpr     map[string]string                        `json:"billing_expr"`
+	GroupModelPrice *types.RWMap[string, map[string]float64] `json:"group_model_price"`
 }
 
 var billingSetting = BillingSetting{
-	BillingMode: make(map[string]string),
-	BillingExpr: make(map[string]string),
+	BillingMode:     make(map[string]string),
+	BillingExpr:     make(map[string]string),
+	GroupModelPrice: types.NewRWMap[string, map[string]float64](),
 }
 
 func init() {

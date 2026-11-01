@@ -123,7 +123,7 @@ func GetChannel(group string, model string, retry int, requestPath string, exclu
 	if len(excludedChannelIDs) > 0 {
 		// Retry selection must exhaust every untried channel at a higher
 		// priority before descending to the next fallback priority.
-		channelQuery = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
+		channelQuery = DB.Where(commonGroupColumn()+" = ? and model = ? and enabled = ?", group, model, true)
 	} else {
 		channelQuery, err = getChannelQuery(group, model, retry)
 		if err != nil {

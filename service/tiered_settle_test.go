@@ -337,7 +337,7 @@ func (s *recordingBillingSettler) Reserve(targetQuota int) error {
 	return nil
 }
 
-func TestPrepareTieredBillingForSelectedGroupUpdatesReservation(t *testing.T) {
+func TestPrepareBillingForSelectedGroupUpdatesReservation(t *testing.T) {
 	const expr = `tier("base", p)`
 	billing := &recordingBillingSettler{preConsumedQuota: 50_000}
 	relayInfo := &relaycommon.RelayInfo{
@@ -357,7 +357,7 @@ func TestPrepareTieredBillingForSelectedGroupUpdatesReservation(t *testing.T) {
 		},
 	}
 
-	require.Nil(t, PrepareTieredBillingForSelectedGroup(nil, relayInfo))
+	require.Nil(t, PrepareBillingForSelectedGroup(nil, relayInfo))
 	require.Equal(t, []int{100_000}, billing.reserveTargets)
 	assert.Equal(t, 100_000, billing.preConsumedQuota)
 	assert.Equal(t, 100_000, relayInfo.FinalPreConsumedQuota)
@@ -365,7 +365,7 @@ func TestPrepareTieredBillingForSelectedGroupUpdatesReservation(t *testing.T) {
 	assert.Equal(t, 100_000, relayInfo.TieredBillingSnapshot.EstimatedQuotaAfterGroup)
 }
 
-func TestPrepareTieredBillingForSelectedGroupStartsBillingAfterFreeGroup(t *testing.T) {
+func TestPrepareBillingForSelectedGroupStartsBillingAfterFreeGroup(t *testing.T) {
 	truncate(t)
 	gin.SetMode(gin.TestMode)
 
@@ -395,7 +395,7 @@ func TestPrepareTieredBillingForSelectedGroupStartsBillingAfterFreeGroup(t *test
 	}
 	ctx, _ := gin.CreateTestContext(nil)
 
-	require.Nil(t, PrepareTieredBillingForSelectedGroup(ctx, relayInfo))
+	require.Nil(t, PrepareBillingForSelectedGroup(ctx, relayInfo))
 	require.NotNil(t, relayInfo.Billing)
 	assert.False(t, relayInfo.PriceData.FreeModel, "FreeModel must be cleared after switching to a paid group")
 	assert.Equal(t, 100_000, relayInfo.FinalPreConsumedQuota)
@@ -407,7 +407,7 @@ func TestPrepareTieredBillingForSelectedGroupStartsBillingAfterFreeGroup(t *test
 	assert.Equal(t, 400_000, userQuota)
 }
 
-func TestPrepareTieredBillingForSelectedGroupPaidToFreeKeepsFreeModelFalse(t *testing.T) {
+func TestPrepareBillingForSelectedGroupPaidToFreeKeepsFreeModelFalse(t *testing.T) {
 	const expr = `tier("base", p)`
 	billing := &recordingBillingSettler{preConsumedQuota: 50_000}
 	relayInfo := &relaycommon.RelayInfo{
@@ -427,7 +427,7 @@ func TestPrepareTieredBillingForSelectedGroupPaidToFreeKeepsFreeModelFalse(t *te
 		},
 	}
 
-	require.Nil(t, PrepareTieredBillingForSelectedGroup(nil, relayInfo))
+	require.Nil(t, PrepareBillingForSelectedGroup(nil, relayInfo))
 
 	// Pre-consume did happen under the paid group, so FreeModel stays false;
 	// settlement already yields 0 for GroupRatio == 0 and the session refunds.
@@ -436,7 +436,7 @@ func TestPrepareTieredBillingForSelectedGroupPaidToFreeKeepsFreeModelFalse(t *te
 	assert.Equal(t, 50_000, relayInfo.FinalPreConsumedQuota)
 }
 
-func TestPrepareTieredBillingForSelectedGroupTopUpArrearsAllowsNegativeBalance(t *testing.T) {
+func TestPrepareBillingForSelectedGroupTopUpArrearsAllowsNegativeBalance(t *testing.T) {
 	truncate(t)
 
 	const userID = 701
@@ -471,7 +471,7 @@ func TestPrepareTieredBillingForSelectedGroupTopUpArrearsAllowsNegativeBalance(t
 	}
 	relayInfo.Billing = session
 
-	require.Nil(t, PrepareTieredBillingForSelectedGroup(nil, relayInfo))
+	require.Nil(t, PrepareBillingForSelectedGroup(nil, relayInfo))
 
 	// Full reservation recorded; wallet charged the full delta into arrears.
 	assert.Equal(t, 100_000, session.GetPreConsumedQuota())
@@ -544,7 +544,7 @@ func TestTryTieredSettleUsesFinalGroupAfterRetry(t *testing.T) {
 				},
 			}
 
-			require.Nil(t, PrepareTieredBillingForSelectedGroup(nil, relayInfo))
+			require.Nil(t, PrepareBillingForSelectedGroup(nil, relayInfo))
 			ok, quota, result := TryTieredSettle(relayInfo, billingexpr.TokenParams{P: 1_000_000})
 
 			require.True(t, ok)

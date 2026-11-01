@@ -156,13 +156,11 @@ export async function resetUserTwoFA(id: number): Promise<ApiResponse> {
 }
 
 /**
- * Get the list of user tiers for the admin user-editor drop-down.
- * The value assigned to users.group must be a tier (free / supporter /
- * fan / bestie / vip / ...), never a channel-side pricing group like
- * gpt-mix or image. See controller/group.go GetTierList.
+ * Get user identities, including custom pricing and visibility groups.
+ * Channel billing targets and subscription tiers have separate catalogs.
  */
 export async function getGroups(): Promise<ApiResponse<string[]>> {
-  const res = await api.get('/api/group/tiers')
+  const res = await api.get('/api/group/user-groups')
   return res.data
 }
 

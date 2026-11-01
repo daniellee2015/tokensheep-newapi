@@ -22,6 +22,7 @@ For commercial licensing, please contact support@quantumnous.com
 import type { RequestRuleTrace } from '@/features/pricing/lib/billing-expr'
 
 import type { UsageLog } from './data/schema'
+import type { LogTimePreset } from './lib/time-range'
 // ============================================================================
 // Log Category Types
 // ============================================================================
@@ -39,6 +40,7 @@ export type LogCategory = 'common' | 'drawing' | 'task'
  * Common filters (shared across all log types)
  */
 export interface CommonFilters {
+  timeRange?: LogTimePreset
   startTime?: Date
   endTime?: Date
   channel?: string
@@ -51,6 +53,7 @@ export interface CommonLogFilters extends CommonFilters {
   model?: string
   token?: string
   group?: string
+  groups?: string[]
   username?: string
   requestId?: string
   upstreamRequestId?: string
@@ -188,6 +191,12 @@ export interface LogOtherData {
   audio_ratio?: number
   audio_completion_ratio?: number
   frt?: number
+  frt_metric?: string
+  frt_event_ms?: number
+  first_text_ms?: number
+  first_thinking_ms?: number
+  first_tool_ms?: number
+  upstream_first_content_ms?: number
   // Tiered (expression-based) billing fields, set by backend when
   // billing_mode === 'tiered_expr'. expr_b64 is the base64-encoded billing
   // expression; the matched tier and request-rule traces come from the actual
@@ -322,6 +331,7 @@ export interface GetLogsParams {
   end_timestamp?: number
   channel?: number
   group?: string
+  groups?: string[]
   request_id?: string
   upstream_request_id?: string
 }
@@ -346,6 +356,7 @@ export interface GetLogStatsParams {
   end_timestamp?: number
   channel?: number
   group?: string
+  groups?: string[]
   request_id?: string
   upstream_request_id?: string
 }

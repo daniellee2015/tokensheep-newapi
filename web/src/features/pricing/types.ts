@@ -28,6 +28,8 @@ export type PricingVendor = {
 }
 
 export type PricingModel = {
+  /** Distinct group billing schedules for this public model. */
+  pricing_variants?: PricingModel[]
   id: number
   model_name: string
   description?: string

@@ -34,7 +34,10 @@ import {
   getDynamicPricingSummary,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
-import { isTokenBasedModel } from '../lib/model-helpers'
+import {
+  getModelPricingVariants,
+  isTokenBasedModel,
+} from '../lib/model-helpers'
 import {
   formatPrice,
   formatRequestPrice,
@@ -42,6 +45,7 @@ import {
 } from '../lib/price'
 import type { PricingModel, TokenUnit } from '../types'
 import { ModelBillingModeBadge } from './model-billing-mode-badge'
+import { ModelPriceSummary } from './model-price-summary'
 
 // ----------------------------------------------------------------------------
 // Pricing Table Columns
@@ -114,6 +118,9 @@ export function usePricingColumns(
       ),
       cell: ({ row }) => {
         const model = row.original
+        if (getModelPricingVariants(model).length > 1) {
+          return <ModelPriceSummary model={model} {...options} />
+        }
         const dynamicSummary = getDynamicPricingSummary(model, {
           tokenUnit,
           showRechargePrice,
@@ -242,7 +249,12 @@ export function usePricingColumns(
       id: 'cached_price',
       header: t('Cached'),
       cell: ({ row }) => {
-        const model = row.original
+        const model = getModelPricingVariants(row.original).find(
+          isTokenBasedModel
+        )
+        if (!model) {
+          return <span className='text-muted-foreground/30 text-xs'>—</span>
+        }
         const dynamicSummary = getDynamicPricingSummary(model, {
           tokenUnit,
           showRechargePrice,

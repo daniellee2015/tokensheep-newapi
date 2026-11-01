@@ -46,7 +46,6 @@ interface LogsFilterToolbarProps<TData> {
   mobileFilterCount?: number
   stats?: ReactNode
   actionStart?: ReactNode
-  hasActiveFilters: boolean
   hasAdvancedActiveFilters?: boolean
   advancedFilterCount?: number
   searchLoading?: boolean
@@ -224,7 +223,6 @@ export function LogsFilterToolbar<TData>(props: LogsFilterToolbarProps<TData>) {
                 type='button'
                 variant='outline'
                 onClick={handleMobileReset}
-                disabled={!props.hasActiveFilters}
               >
                 {t('Reset')}
               </Button>
@@ -271,12 +269,7 @@ export function LogsFilterToolbar<TData>(props: LogsFilterToolbarProps<TData>) {
         {props.stats}
         <div className='ms-auto flex flex-wrap items-center justify-end gap-1.5 sm:gap-2'>
           {props.actionStart}
-          <Button
-            type='button'
-            variant='outline'
-            onClick={props.onReset}
-            disabled={!props.hasActiveFilters}
-          >
+          <Button type='button' variant='outline' onClick={props.onReset}>
             {t('Reset')}
           </Button>
           <Button

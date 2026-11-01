@@ -105,10 +105,10 @@ func TestPublicUpstreamErrorUsesOnlyGatewayControlledFields(t *testing.T) {
 		publicMessage  string
 		publicCode     types.ErrorCode
 	}{
-		{name: "bad request", upstreamStatus: http.StatusBadRequest, publicStatus: http.StatusBadRequest, publicMessage: "Invalid request", publicCode: types.ErrorCodeInvalidRequest},
+		{name: "bad request", upstreamStatus: http.StatusBadRequest, publicStatus: http.StatusBadRequest, publicMessage: publicServiceUnavailableMessage, publicCode: types.ErrorCodeInvalidRequest},
 		{name: "upstream authentication", upstreamStatus: http.StatusUnauthorized, publicStatus: http.StatusServiceUnavailable, publicMessage: "Service temporarily unavailable", publicCode: types.ErrorCodeServiceUnavailable},
 		{name: "rate limit", upstreamStatus: http.StatusTooManyRequests, publicStatus: http.StatusTooManyRequests, publicMessage: "Rate limit exceeded. Retry later.", publicCode: types.ErrorCodeRateLimitExceeded},
-		{name: "bad gateway", upstreamStatus: http.StatusBadGateway, publicStatus: http.StatusServiceUnavailable, publicMessage: "Service temporarily unavailable", publicCode: types.ErrorCodeServiceUnavailable},
+		{name: "bad gateway", upstreamStatus: http.StatusBadGateway, publicStatus: http.StatusBadGateway, publicMessage: "Service temporarily unavailable", publicCode: types.ErrorCodeBadResponseStatusCode},
 		{name: "invalid status", upstreamStatus: 0, publicStatus: http.StatusServiceUnavailable, publicMessage: "Service temporarily unavailable", publicCode: types.ErrorCodeServiceUnavailable},
 	}
 
@@ -148,8 +148,8 @@ func TestPublicUpstreamTaskErrorDropsOriginalError(t *testing.T) {
 
 	public := PublicUpstreamTaskError(upstream)
 
-	require.Equal(t, http.StatusServiceUnavailable, public.StatusCode)
-	require.Equal(t, "service_unavailable", public.Code)
+	require.Equal(t, http.StatusBadGateway, public.StatusCode)
+	require.Equal(t, "bad_response_status_code", public.Code)
 	require.Equal(t, "Service temporarily unavailable", public.Message)
 	require.EqualError(t, public.Error, "Service temporarily unavailable")
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -80,6 +81,7 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	other["model_price"] = modelPrice
 	other["user_group_ratio"] = userGroupRatio
 	other["frt"] = float64(relayInfo.FirstResponseTime.UnixMilli() - relayInfo.StartTime.UnixMilli())
+	appendStreamContentTiming(relayInfo, other)
 	if relayInfo.ReasoningEffort != "" {
 		other["reasoning_effort"] = relayInfo.ReasoningEffort
 	}
@@ -318,6 +320,39 @@ func InjectTieredBillingInfo(other map[string]interface{}, relayInfo *relaycommo
 		other["matched_tier"] = result.MatchedTier
 		if len(result.RequestRules) > 0 {
 			other["request_rules"] = result.RequestRules
+		}
+	}
+}
+
+// Keep the legacy event time for diagnostics, while semantic FRT is measured at
+// the downstream flush boundary. Missing content is -1 (N/A), never a start event.
+func appendStreamContentTiming(info *relaycommon.RelayInfo, other map[string]interface{}) {
+	if info == nil || !info.IsStream {
+		return
+	}
+	other["frt_metric"] = "upstream_first_event"
+	snapshot := info.ContentTiming.Snapshot()
+	timeline := snapshot.Downstream
+	if !timeline.Supported || timeline.Unknown {
+		return
+	}
+	latency := func(at time.Time) float64 {
+		if at.IsZero() || at.Before(info.StartTime) {
+			return -1
+		}
+		return float64(at.Sub(info.StartTime).Milliseconds())
+	}
+	other["frt_event_ms"] = other["frt"]
+	other["frt_metric"] = "downstream_first_content"
+	other["frt"] = latency(timeline.FirstContent())
+	for key, at := range map[string]time.Time{
+		"first_text_ms":             timeline.FirstText,
+		"first_thinking_ms":         timeline.FirstThinking,
+		"first_tool_ms":             timeline.FirstTool,
+		"upstream_first_content_ms": snapshot.Upstream.FirstContent(),
+	} {
+		if !at.IsZero() {
+			other[key] = latency(at)
 		}
 	}
 }

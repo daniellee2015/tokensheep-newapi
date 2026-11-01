@@ -90,6 +90,7 @@ type RelayInfo struct {
 	TokenUnlimited    bool
 	StartTime         time.Time
 	FirstResponseTime time.Time
+	ContentTiming     *StreamContentTiming
 	isFirstResponse   bool
 	//SendLastReasoningResponse bool
 	IsStream               bool
@@ -160,6 +161,8 @@ type RelayInfo struct {
 	// Auto-group retries refresh its group-dependent fields before each attempt
 	// and again before settlement. Non-nil only when billing mode is "tiered_expr".
 	TieredBillingSnapshot *billingexpr.BillingSnapshot
+	// Preserve the frozen expression while a retry uses a group per-call price.
+	TieredBillingFallback *billingexpr.BillingSnapshot
 	BillingRequestInput   *billingexpr.RequestInput
 
 	Request dto.Request
@@ -546,6 +549,8 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 		info.RequestURLPath = strings.TrimPrefix(info.RequestURLPath, "/pg")
 		info.RequestURLPath = "/v1" + info.RequestURLPath
 	}
+
+	info.EnsureContentTiming(c)
 
 	userSetting, ok := common.GetContextKeyType[dto.UserSetting](c, constant.ContextKeyUserSetting)
 	if ok {

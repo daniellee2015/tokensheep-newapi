@@ -2,6 +2,9 @@ package constant
 
 type ContextKey string
 
+// ContextKeyStreamContentTiming holds request-scoped stream timing observations.
+const ContextKeyStreamContentTiming ContextKey = "stream_content_timing"
+
 const (
 	ContextKeyTokenCountMeta  ContextKey = "token_count_meta"
 	ContextKeyPromptTokens    ContextKey = "prompt_tokens"

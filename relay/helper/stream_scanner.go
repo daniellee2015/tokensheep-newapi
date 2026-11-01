@@ -80,6 +80,8 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		return
 	}
 
+	info.EnsureContentTiming(c)
+
 	// 无条件新建 StreamStatus
 	info.StreamStatus = relaycommon.NewStreamStatus()
 
@@ -267,6 +269,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				// model-output timeout indefinitely.
 				ticker.Reset(streamingTimeout)
 				info.SetFirstResponseTime()
+				info.ContentTiming.Observe(data, false, time.Now())
 				info.ReceivedResponseCount++
 
 				select {

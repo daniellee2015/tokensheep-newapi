@@ -40,8 +40,12 @@ export function buildSearchParams(
   logCategory: LogCategory
 ): Record<string, unknown> {
   const baseParams: Record<string, unknown> = {
-    ...(filters.startTime && { startTime: filters.startTime.getTime() }),
-    ...(filters.endTime && { endTime: filters.endTime.getTime() }),
+    ...(filters.timeRange
+      ? { timeRange: filters.timeRange }
+      : {
+          ...(filters.startTime && { startTime: filters.startTime.getTime() }),
+          ...(filters.endTime && { endTime: filters.endTime.getTime() }),
+        }),
     ...(filters.channel && { channel: filters.channel }),
   }
 
@@ -53,6 +57,7 @@ export function buildSearchParams(
         ...(commonFilters.model && { model: commonFilters.model }),
         ...(commonFilters.token && { token: commonFilters.token }),
         ...(commonFilters.group && { group: commonFilters.group }),
+        ...(commonFilters.groups?.length && { groups: commonFilters.groups }),
         ...(commonFilters.username && { username: commonFilters.username }),
         ...(commonFilters.requestId && { requestId: commonFilters.requestId }),
         ...(commonFilters.upstreamRequestId && {

@@ -200,22 +200,49 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		RequestPath: c.Request.URL.Path,
 		Retry:       common.GetPointer(0),
 	}
+	retryLimit := common.RetryTimes
+	fallbackPolicy := operation_setting.MatchIndependentChannelFallback(relayInfo.UsingGroup, relayInfo.OriginModelName, c.GetInt("channel_id"))
+	if _, pinned := c.Get("specific_channel_id"); pinned {
+		fallbackPolicy = nil
+	}
+	if relayFormat == types.RelayFormatOpenAIRealtime {
+		fallbackPolicy = nil
+	}
+	if fallbackPolicy != nil {
+		retryParam.IndependentFallback = fallbackPolicy
+		retryParam.TokenGroup = relayInfo.UsingGroup
+		retryLimit = len(fallbackPolicy.PrimaryChannelIDs)
+		if c.GetInt("channel_id") == fallbackPolicy.ReserveChannelID {
+			retryLimit = 0
+		}
+		c.Set("independent_channel_fallback", fallbackPolicy)
+	}
 	var lastChannelError *types.ChannelError
 	var lastRawChannelError *types.NewAPIError
 	relayInfo.RetryIndex = 0
 	relayInfo.LastError = nil
 
-	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+	for ; retryParam.GetRetry() <= retryLimit; retryParam.IncreaseRetry() {
+		previousGroup := relayInfo.UsingGroup
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
 			logger.LogError(c, channelErr.Error())
+			// Exhausting fallback candidates does not replace the last actual
+			// upstream failure with a synthetic routing error.
+			if lastRawChannelError != nil {
+				break
+			}
 			newAPIError = service.PublicUpstreamError(channelErr)
 			break
 		}
 		addUsedChannel(c, channel.Id)
 		retryParam.ExcludeChannel(channel.Id)
-		if billingErr := service.PrepareTieredBillingForSelectedGroup(c, relayInfo); billingErr != nil {
+		if err := helper.RefreshModelPriceForGroup(c, relayInfo, previousGroup, tokens, meta); err != nil {
+			newAPIError = types.NewErrorWithStatusCode(err, types.ErrorCodeModelPriceError, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+			break
+		}
+		if billingErr := service.PrepareBillingForSelectedGroup(c, relayInfo); billingErr != nil {
 			newAPIError = billingErr
 			break
 		}
@@ -249,7 +276,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			lastRawChannelError = rawChannelError
 			newAPIError = service.PublicUpstreamError(rawChannelError)
 			logger.LogWarn(c, rawChannelError.Error())
-			if c.Request.Context().Err() == nil && retryParam.GetRetry() < common.RetryTimes {
+			if c.Request.Context().Err() == nil && retryParam.GetRetry() < retryLimit &&
+				(fallbackPolicy == nil || channel.Id != fallbackPolicy.ReserveChannelID) {
 				continue
 			}
 			break
@@ -281,7 +309,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		lastChannelError = channelError
 		lastRawChannelError = rawChannelError
 
-		willRetry := !c.Writer.Written() && shouldRetry(c, rawChannelError, common.RetryTimes-retryParam.GetRetry())
+		willRetry := !c.Writer.Written() && shouldRetry(c, rawChannelError, retryLimit-retryParam.GetRetry())
 		processChannelError(c, *channelError, rawChannelError)
 		newAPIError = service.PublicUpstreamError(rawChannelError)
 
@@ -443,6 +471,32 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	}
 	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		return false
+	}
+	if configured, exists := c.Get("independent_channel_fallback"); exists {
+		policy, ok := configured.(*operation_setting.IndependentChannelFallback)
+		if !ok || policy == nil || c.Writer.Written() || (c.Request != nil && c.Request.Context().Err() != nil) || retryTimes <= 0 || types.IsSkipRetryError(openaiErr) {
+			return false
+		}
+		if _, pinned := c.Get("specific_channel_id"); pinned {
+			return false
+		}
+		if c.GetInt("channel_id") == policy.ReserveChannelID {
+			return false
+		}
+		code := openaiErr.StatusCode
+		if service.IsUpstreamModelUnavailable(openaiErr) {
+			// The configured model exists at the gateway, but CPA currently has
+			// no provider for it. Try the next independent pool, keeping the raw
+			// 400 and model_not_found available to administrator diagnostics.
+			code = http.StatusServiceUnavailable
+		}
+		if code == 499 || code == 598 || operation_setting.IsAlwaysSkipRetryCode(openaiErr.GetErrorCode()) {
+			return false
+		}
+		// Retry-After belongs to the failed independent pool; never wait out a
+		// depleted pool's reset before trying a different declared capacity pool.
+		// Keep request errors and the established timeout exclusions terminal.
+		return operation_setting.ShouldRetryByStatusCode(code)
 	}
 	if types.IsChannelError(openaiErr) {
 		return true

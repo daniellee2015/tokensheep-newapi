@@ -25,6 +25,12 @@ import {
   type StatusVariant,
 } from '@/components/status-badge'
 import {
+  Popover,
+  PopoverContent,
+  PopoverTitle,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -34,7 +40,9 @@ import { formatUseTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { getFirstResponseTimeColor, getResponseTimeColor } from '../lib/format'
+import { timingSeconds, type StreamTimingMetadata } from '../lib/timing'
 import type { LogOtherData } from '../types'
+import { StreamTimingDetails } from './stream-timing-details'
 
 /**
  * Softened fills for the full-height timing bar. The bar sits directly beside
@@ -54,6 +62,7 @@ interface TimingMetricsCellProps {
   useTimeSec: number
   completionTokens: number
   frtMs?: number
+  timing?: StreamTimingMetadata
   isStream: boolean
   className?: string
   /**
@@ -69,8 +78,13 @@ export function TimingMetricsCell(props: TimingMetricsCellProps) {
   const { t } = useTranslation()
   const indicator = props.indicator ?? 'bar'
   const showFirstToken = props.isStream
-  const firstTokenSeconds =
-    props.frtMs != null && props.frtMs > 0 ? props.frtMs / 1000 : null
+  const firstTokenSeconds = timingSeconds(props.frtMs)
+  let metricLabel = t('Legacy timing')
+  if (props.timing?.frt_metric === 'downstream_first_content') {
+    metricLabel = t('First content')
+  } else if (props.timing?.frt_metric === 'upstream_first_event') {
+    metricLabel = t('First event')
+  }
   const firstTokenVariant: StatusVariant =
     firstTokenSeconds == null
       ? 'neutral'
@@ -79,30 +93,47 @@ export function TimingMetricsCell(props: TimingMetricsCellProps) {
     props.useTimeSec,
     props.completionTokens
   )
-  const firstTokenLabel =
+  let firstTokenLabel =
     firstTokenSeconds == null ? t('N/A') : formatUseTime(firstTokenSeconds)
+  if (
+    props.timing?.frt_metric === 'downstream_first_content' &&
+    props.frtMs === -1
+  ) {
+    firstTokenLabel = t('No content')
+  }
   const totalTimeLabel = formatUseTime(props.useTimeSec)
 
   const labels = (
     <div className='flex min-h-8 min-w-0 flex-col justify-center gap-0.5 text-xs leading-tight'>
       {showFirstToken && (
-        <div className='flex items-baseline gap-1.5'>
-          {indicator === 'dot' && (
+        <Popover>
+          <PopoverTrigger
+            aria-label={t('Timing details')}
+            className='flex items-baseline gap-1.5 rounded-sm text-left focus-visible:outline-2 focus-visible:outline-offset-2'
+          >
+            {indicator === 'dot' && (
+              <span
+                aria-hidden
+                className={cn(
+                  'size-1.5 shrink-0 rounded-full',
+                  dotColorMap[firstTokenVariant]
+                )}
+              />
+            )}
+            <span className='text-muted-foreground shrink-0'>
+              {metricLabel}
+            </span>
             <span
-              aria-hidden
-              className={cn(
-                'size-1.5 shrink-0 rounded-full',
-                dotColorMap[firstTokenVariant]
-              )}
-            />
-          )}
-          <span className='text-muted-foreground shrink-0'>
-            {t('First token')}
-          </span>
-          <span className={cn('tabular-nums', textColorMap[firstTokenVariant])}>
-            {firstTokenLabel}
-          </span>
-        </div>
+              className={cn('tabular-nums', textColorMap[firstTokenVariant])}
+            >
+              {firstTokenLabel}
+            </span>
+          </PopoverTrigger>
+          <PopoverContent align='start' className='max-w-[calc(100vw-2rem)]'>
+            <PopoverTitle>{t('Timing details')}</PopoverTitle>
+            <StreamTimingDetails frtMs={props.frtMs} timing={props.timing} />
+          </PopoverContent>
+        </Popover>
       )}
       <div className='flex items-baseline gap-1.5'>
         {indicator === 'dot' && (
@@ -203,7 +234,11 @@ export function StreamTpsCell(props: StreamTpsCellProps) {
           </TooltipProvider>
         )}
       </span>
-      <span className='text-muted-foreground/60 px-0.5 tabular-nums'>
+      <span
+        className='text-muted-foreground/60 px-0.5 tabular-nums'
+        aria-label={t('End-to-end output rate')}
+        title={t('Output tokens / total duration; not model generation speed.')}
+      >
         {tpsLabel}
       </span>
     </div>

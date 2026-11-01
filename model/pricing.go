@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"sync"
@@ -54,7 +55,7 @@ var (
 
 	// 缓存映射：模型名 -> 启用分组 / 计费类型
 	modelEnableGroups     = make(map[string][]string)
-	modelQuotaTypeMap     = make(map[string]int)
+	modelQuotaTypeMap     = make(map[string][]int)
 	modelEnableGroupsLock = sync.RWMutex{}
 )
 
@@ -373,6 +374,28 @@ func updatePricing() {
 			pricing.Tags = meta.Tags
 			pricing.VendorID = meta.VendorID
 		}
+		// One public model can use token billing in one group and a fixed
+		// request price in another. Keep each price's groups attached to it.
+		groupPrices := make(map[float64][]string)
+		globalGroups := make([]string, 0, len(pricing.EnableGroup))
+		for _, group := range pricing.EnableGroup {
+			if price, ok := billing_setting.GetGroupModelPrice(group, model); ok {
+				groupPrices[price] = append(groupPrices[price], group)
+			} else {
+				globalGroups = append(globalGroups, group)
+			}
+		}
+		for price, priceGroups := range groupPrices {
+			groupPricing := pricing
+			groupPricing.EnableGroup = priceGroups
+			groupPricing.QuotaType = 1
+			groupPricing.ModelPrice = price
+			pricingMap = append(pricingMap, groupPricing)
+		}
+		if len(globalGroups) == 0 {
+			continue
+		}
+		pricing.EnableGroup = globalGroups
 		modelPrice, findPrice := ratio_setting.GetModelPrice(model, false)
 		if findPrice {
 			pricing.ModelPrice = modelPrice
@@ -417,10 +440,12 @@ func updatePricing() {
 	// 刷新缓存映射，供高并发快速查询
 	modelEnableGroupsLock.Lock()
 	modelEnableGroups = make(map[string][]string)
-	modelQuotaTypeMap = make(map[string]int)
+	modelQuotaTypeMap = make(map[string][]int)
 	for _, p := range pricingMap {
-		modelEnableGroups[p.ModelName] = p.EnableGroup
-		modelQuotaTypeMap[p.ModelName] = p.QuotaType
+		modelEnableGroups[p.ModelName] = append(modelEnableGroups[p.ModelName], p.EnableGroup...)
+		if !slices.Contains(modelQuotaTypeMap[p.ModelName], p.QuotaType) {
+			modelQuotaTypeMap[p.ModelName] = append(modelQuotaTypeMap[p.ModelName], p.QuotaType)
+		}
 	}
 	modelEnableGroupsLock.Unlock()
 

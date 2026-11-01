@@ -24,6 +24,7 @@ import {
   ENDPOINT_TYPES,
 } from '../constants'
 import type { PricingModel } from '../types'
+import { getModelPricingVariants, groupPricingModels } from './model-helpers'
 
 // ----------------------------------------------------------------------------
 // Filter Utilities
@@ -146,13 +147,16 @@ export function filterAndSortModels(
     sortBy: string
   }
 ): PricingModel[] {
-  let result = filterBySearch(models, filters.search)
+  let result = filterBySearch(
+    models.flatMap(getModelPricingVariants),
+    filters.search
+  )
   result = filterByVendor(result, filters.vendor)
   result = filterByGroup(result, filters.group)
   result = filterByQuotaType(result, filters.quotaType)
   result = filterByEndpointType(result, filters.endpointType)
   result = filterByTag(result, filters.tag)
-  result = sortModels(result, filters.sortBy)
+  result = sortModels(groupPricingModels(result), filters.sortBy)
 
   return result
 }
@@ -183,7 +187,7 @@ export function extractAllTags(models: PricingModel[]): string[] {
     }
   })
 
-  return Array.from(tagSet).sort((a, b) => a.localeCompare(b))
+  return [...tagSet].sort((a, b) => a.localeCompare(b))
 }
 
 /**

@@ -25,13 +25,14 @@ import { Button } from '@/components/ui/button'
 import { getPerfMetricsSummary } from '@/features/performance-metrics/api'
 
 import { DEFAULT_PRICING_PAGE_SIZE, DEFAULT_TOKEN_UNIT } from '../constants'
+import { getPricingModelKey } from '../lib/model-helpers'
 import type { PricingModel, TokenUnit } from '../types'
 import { ModelCard } from './model-card'
 import type { ModelPerfBadgeData } from './model-perf-badge'
 
 export interface ModelCardGridProps {
   models: PricingModel[]
-  onModelClick: (modelName: string) => void
+  onModelClick: (pricingKey: string) => void
   priceRate?: number
   usdExchangeRate?: number
   tokenUnit?: TokenUnit
@@ -76,7 +77,7 @@ export function ModelCardGrid(props: ModelCardGridProps) {
       <div className='grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 lg:grid-cols-3'>
         {pagedModels.map((model) => (
           <ModelCard
-            key={model.id ?? model.model_name}
+            key={getPricingModelKey(model)}
             model={model}
             tokenUnit={tokenUnit}
             priceRate={props.priceRate}
@@ -84,7 +85,7 @@ export function ModelCardGrid(props: ModelCardGridProps) {
             showRechargePrice={props.showRechargePrice}
             selectedGroup={props.selectedGroup}
             perf={perfMap.get(model.model_name || '')}
-            onClick={() => props.onModelClick(model.model_name || '')}
+            onClick={() => props.onModelClick(getPricingModelKey(model))}
           />
         ))}
       </div>

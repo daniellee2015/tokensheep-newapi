@@ -33,7 +33,7 @@ func ShouldCopyUpstreamHeader(c *gin.Context, k string, v []string) bool {
 		"x-request-id",
 		"openai-request-id",
 		"anthropic-request-id":
-		if c != nil && len(v) > 0 {
+		if c != nil && len(v) > 0 && v[0] != "" && c.GetString(common.UpstreamRequestIdKey) == "" {
 			c.Set(common.UpstreamRequestIdKey, v[0])
 		}
 		return false

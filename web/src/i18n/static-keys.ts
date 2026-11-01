@@ -53,6 +53,10 @@ export const STATIC_I18N_KEYS = [
   'Drawing task polling',
 
   // Pricing constants
+  // Channel group descriptions returned by UserUsableGroups.
+  'GPT special pricing. Advanced models have reduced intelligence; speed and stability vary.',
+  'Occasional intelligence degradation; only gpt-6-astra retains full intelligence.',
+  'Pro Max: stable, fast, and full intelligence. gpt-6-astra, gpt-6-sol, and gpt-6.1-sol retain full intelligence.',
   'Name',
   'Price: Low to High',
   'Price: High to Low',

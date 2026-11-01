@@ -471,13 +471,22 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		return tryWallet()
 	case "wallet_first":
 		session, err := tryWallet()
-		if err != nil {
-			if err.GetErrorCode() == types.ErrorCodeInsufficientUserQuota {
-				return trySubscription()
-			}
+		if err == nil {
+			return session, nil
+		}
+		if err.GetErrorCode() != types.ErrorCodeInsufficientUserQuota {
 			return nil, err
 		}
-		return session, nil
+		// 钱包不足时仅在持有活跃订阅时回退订阅；否则保留钱包额度不足错误，
+		// 避免商业分组等无订阅用户收到 "未配置订阅" 而掩盖真实原因。
+		hasSub, subCheckErr := model.HasActiveUserSubscription(relayInfo.UserId)
+		if subCheckErr != nil {
+			return nil, types.NewError(subCheckErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
+		}
+		if !hasSub {
+			return nil, err
+		}
+		return trySubscription()
 	case "subscription_first":
 		fallthrough
 	default:

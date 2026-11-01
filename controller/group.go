@@ -2,6 +2,8 @@ package controller
 
 import (
 	"net/http"
+	"sort"
+	"strings"
 
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
@@ -15,9 +17,8 @@ import (
 // GetGroups returns every key in GroupRatio — the full "channel-side"
 // pricing-group registry that channel editors, tag editors and channel
 // list filters need to enumerate. Matches the upstream new-api behavior;
-// tier-only listing is served by GetTierList on /api/group/tiers so the
-// two admin drop-downs (user-editor vs channel-editor) never share a
-// namespace by accident.
+// user identities and subscription tiers have separate endpoints so admin
+// user and channel editors never share a namespace by accident.
 func GetGroups(c *gin.Context) {
 	groupNames := make([]string, 0)
 	for groupName := range ratio_setting.GetGroupRatioCopy() {
@@ -31,9 +32,9 @@ func GetGroups(c *gin.Context) {
 }
 
 // GetTierList returns the list of USER TIER names (free + every key in
-// TierThresholds), consumed by the admin user-editor and subscription-plan
-// drop-downs where the value written to users.group must be a tier — not
-// a channel-side pricing group. Tier names come from
+// TierThresholds), consumed by the subscription-plan drop-down. Custom
+// admin-assigned user identities are served by GetAssignableUserGroups.
+// Tier names come from
 // `tokensheep_economy.tier_thresholds`; `free` is always included as the
 // default fallback tier.
 func GetTierList(c *gin.Context) {
@@ -48,6 +49,39 @@ func GetTierList(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data":    names,
+	})
+}
+
+// GetAssignableUserGroups includes custom user identities declared by pricing
+// and visibility rules. Their billing targets belong to a separate namespace;
+// assigning a user group must not require creating a contribution tier.
+func GetAssignableUserGroups(c *gin.Context) {
+	names := map[string]struct{}{"free": {}}
+	for name := range tokensheep_setting.GetTierThresholdsCopy() {
+		names[name] = struct{}{}
+	}
+	for name := range tokensheep_setting.CommercialGroups() {
+		names[name] = struct{}{}
+	}
+	ratios := ratio_setting.GetGroupRatioSetting()
+	for name := range ratios.GroupGroupRatio.ReadAll() {
+		names[name] = struct{}{}
+	}
+	for name := range ratios.GroupSpecialUsableGroup.ReadAll() {
+		names[name] = struct{}{}
+	}
+	groups := make([]string, 0, len(names))
+	for name := range names {
+		if strings.TrimSpace(name) != "" && name != "free" && name != "auto" {
+			groups = append(groups, name)
+		}
+	}
+	sort.Strings(groups)
+	groups = append([]string{"free"}, groups...)
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    groups,
 	})
 }
 

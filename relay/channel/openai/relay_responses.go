@@ -108,7 +108,11 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			sr.Stop(streamErr)
 			return
 		}
-		sendResponsesStreamData(c, streamResponse, data)
+		if err := helper.ResponseChunkData(c, streamResponse, data); err != nil {
+			streamErr = types.NewError(err, types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
+			sr.Stop(streamErr)
+			return
+		}
 		switch streamResponse.Type {
 		case "response.completed", "response.done":
 			if streamResponse.Response != nil {
@@ -173,6 +177,19 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	})
 	if streamErr != nil {
 		return nil, streamErr
+	}
+	if info.StreamStatus != nil {
+		switch info.StreamStatus.EndReason {
+		case relaycommon.StreamEndReasonTimeout,
+			relaycommon.StreamEndReasonScannerErr,
+			relaycommon.StreamEndReasonPanic,
+			relaycommon.StreamEndReasonPingFail:
+			err := info.StreamStatus.EndError
+			if err == nil {
+				err = fmt.Errorf("upstream responses stream ended abnormally: %s", info.StreamStatus.EndReason)
+			}
+			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+		}
 	}
 
 	if usage.CompletionTokens == 0 {

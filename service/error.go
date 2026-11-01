@@ -203,16 +203,48 @@ const (
 	publicServiceUnavailableMessage = "Service temporarily unavailable"
 )
 
-// PublicUpstreamError replaces every upstream-controlled field with a value
-// defined by this gateway. Known request failures select a fixed, actionable
-// message; no provider text is interpolated. Retry, channel health and operator
-// diagnostics must use the original error before calling this function.
+// IsUpstreamModelUnavailable recognizes CPA's empty model registry response.
+// Both its structured code and specific message are required: generic model
+// validation errors must remain client errors and must not gain retries.
+func IsUpstreamModelUnavailable(err *types.NewAPIError) bool {
+	if err == nil || err.StatusCode != http.StatusBadRequest || err.GetErrorCode() != types.ErrorCode("model_not_found") {
+		return false
+	}
+	upstream, ok := err.RelayError.(types.OpenAIError)
+	if !ok {
+		return false
+	}
+	message := strings.TrimSpace(upstream.Message)
+	const prefix = "unknown provider for model "
+	return strings.HasPrefix(message, prefix) && strings.TrimSpace(strings.TrimPrefix(message, prefix)) != ""
+}
+
+// PublicUpstreamError rebuilds the public envelope. Request error messages
+// and bad-gateway messages preserve provider guidance after filtering private
+// details. Retry and diagnostics use the original error.
 func PublicUpstreamError(upstreamErr *types.NewAPIError) *types.NewAPIError {
 	if upstreamErr == nil {
 		return nil
 	}
 
-	statusCode, message, code := publicUpstreamErrorPolicy(upstreamErr.StatusCode, upstreamErr.Error())
+	// Error() may append provider metadata for diagnostics. Only the actual
+	// message may be preserved in a public request error.
+	rawMessage := upstreamErr.Error()
+	switch relayError := upstreamErr.RelayError.(type) {
+	case types.OpenAIError:
+		rawMessage = relayError.Message
+		if len(relayError.Metadata) > 0 {
+			// WithOpenAIError appends OpenRouter metadata to the diagnostic
+			// message. Remove that exact suffix, not arbitrary user text.
+			rawMessage = strings.TrimSuffix(rawMessage, " ("+string(relayError.Metadata)+")")
+		}
+	case types.ClaudeError:
+		rawMessage = relayError.Message
+	}
+	statusCode, message, code := publicUpstreamErrorPolicy(upstreamErr.StatusCode, rawMessage)
+	if IsUpstreamModelUnavailable(upstreamErr) {
+		statusCode, message, code = http.StatusServiceUnavailable, publicServiceUnavailableMessage, types.ErrorCodeServiceUnavailable
+	}
 	publicErr := types.NewOpenAIError(errors.New(message), code, statusCode, types.ErrOptionWithSkipRetry())
 	publicErr.SetRetryAfter(upstreamErr.RetryAfter())
 	return publicErr
@@ -252,6 +284,14 @@ func EmbeddedUpstreamError(responseBody []byte) *types.NewAPIError {
 }
 
 func publicUpstreamErrorPolicy(statusCode int, rawMessage string) (int, string, types.ErrorCode) {
+	if statusCode >= http.StatusBadRequest && statusCode <= 599 &&
+		publicRequestRejectionPattern.MatchString(rawMessage) && !privateRequestErrorPattern.MatchString(rawMessage) {
+		code := types.ErrorCodeInvalidRequest
+		if statusCode >= http.StatusInternalServerError {
+			code = types.ErrorCodeServiceUnavailable
+		}
+		return statusCode, publicProviderErrorMessage(rawMessage, publicInvalidRequestMessage), code
+	}
 	switch statusCode {
 	case http.StatusBadRequest,
 		http.StatusNotFound,
@@ -264,6 +304,8 @@ func publicUpstreamErrorPolicy(statusCode int, rawMessage string) (int, string, 
 		return http.StatusBadRequest, publicRequestErrorMessage(statusCode, rawMessage), types.ErrorCodeInvalidRequest
 	case http.StatusTooManyRequests:
 		return http.StatusTooManyRequests, publicRateLimitMessage, types.ErrorCodeRateLimitExceeded
+	case http.StatusBadGateway:
+		return http.StatusBadGateway, publicProviderErrorMessage(rawMessage, publicServiceUnavailableMessage), types.ErrorCodeBadResponseStatusCode
 	default:
 		return http.StatusServiceUnavailable, publicServiceUnavailableMessage, types.ErrorCodeServiceUnavailable
 	}
