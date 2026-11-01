@@ -72,7 +72,6 @@ import {
   getTieredBillingSummary,
   hasAnyCacheTokens,
   isViolationFeeLog,
-  getFirstResponseTimeColor,
   getResponseTimeColor,
   getReasoningEffortVariant,
   renderAuditContent,
@@ -83,6 +82,7 @@ import {
   isTimingLogType,
 } from '../../lib/utils'
 import { USAGE_BILLING_PATH, type LogOtherData } from '../../types'
+import { StreamTimingDetails } from '../stream-timing-details'
 
 // Maps a channel-update changed-field token (as recorded by the backend audit)
 // to its i18n label key for display in the audit details.
@@ -717,26 +717,20 @@ export function DetailsDialog(props: DetailsDialogProps) {
                   )}
                 >
                   {formatUseTime(props.log.use_time)}
-                  {props.log.is_stream &&
-                    other?.frt != null &&
-                    other.frt > 0 && (
-                      <span
-                        className={cn(
-                          'font-normal',
-                          timingTextColorClass(
-                            getFirstResponseTimeColor(other.frt / 1000)
-                          )
-                        )}
-                      >
-                        {' '}
-                        (FRT: {formatUseTime(other.frt / 1000)})
-                      </span>
-                    )}
                 </span>
               }
             />
           )}
         </div>
+
+        {showTiming && props.log.is_stream && (
+          <DetailSection label={t('Timing details')}>
+            <StreamTimingDetails
+              frtMs={other?.frt}
+              timing={other ?? undefined}
+            />
+          </DetailSection>
+        )}
 
         {/* Request conversion (admin only, not for refund) */}
         {showConversion && (

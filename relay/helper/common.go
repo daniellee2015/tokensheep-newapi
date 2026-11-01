@@ -4,6 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
+
+	"github.com/QuantumNous/new-api/constant"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -59,39 +63,49 @@ func SetEventStreamHeaders(c *gin.Context) {
 }
 
 func ClaudeData(c *gin.Context, resp dto.ClaudeResponse) error {
-	if requestContextDone(c) {
-		return nil
-	}
-
 	jsonData, err := common.Marshal(resp)
 	if err != nil {
-		common.SysError("error marshalling stream response: " + err.Error())
-	} else {
-		c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
-		c.Render(-1, common.CustomEvent{Data: "data: " + string(jsonData)})
+		return fmt.Errorf("error marshalling stream response: %w", err)
 	}
-	_ = FlushWriter(c)
-	return nil
+	return namedEventData(c, resp.Type, string(jsonData), false)
 }
 
-func ClaudeChunkData(c *gin.Context, resp dto.ClaudeResponse, data string) {
-	if requestContextDone(c) {
-		return
-	}
-
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("data: %s\n", data)})
-	_ = FlushWriter(c)
+func ClaudeChunkData(c *gin.Context, resp dto.ClaudeResponse, data string) error {
+	return namedEventData(c, resp.Type, data, true)
 }
 
 func ResponseChunkData(c *gin.Context, resp dto.ResponsesStreamResponse, data string) error {
+	return namedEventData(c, resp.Type, data, false)
+}
+
+// Preserve each protocol's existing framing while returning the first failed
+// write. Gin stores Render failures in c.Errors; Flush alone cannot detect them.
+func namedEventData(c *gin.Context, event, data string, extraNewline bool) error {
+	if c == nil || c.Writer == nil {
+		return errors.New("context or writer is nil")
+	}
 	if requestContextDone(c) {
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
 
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("data: %s", data)})
-	return FlushWriter(c)
+	errorsBefore := len(c.Errors)
+	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", event)})
+	if len(c.Errors) > errorsBefore {
+		return c.Errors[errorsBefore].Err
+	}
+	wireData := "data: " + data
+	if extraNewline {
+		wireData += "\n"
+	}
+	c.Render(-1, common.CustomEvent{Data: wireData})
+	if len(c.Errors) > errorsBefore {
+		return c.Errors[errorsBefore].Err
+	}
+	err := FlushWriter(c)
+	if err == nil {
+		observeFlushedStreamContent(c, data, errorsBefore)
+	}
+	return err
 }
 
 func StringData(c *gin.Context, str string) error {
@@ -103,8 +117,18 @@ func StringData(c *gin.Context, str string) error {
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
 
+	errorsBefore := len(c.Errors)
 	c.Render(-1, common.CustomEvent{Data: "data: " + str})
-	return FlushWriter(c)
+	// Gin records renderer errors on the context rather than returning them.
+	// A successful Flush cannot turn a failed payload write into a success.
+	if len(c.Errors) > errorsBefore {
+		return c.Errors[errorsBefore].Err
+	}
+	err := FlushWriter(c)
+	if err == nil {
+		observeFlushedStreamContent(c, str, errorsBefore)
+	}
+	return err
 }
 
 func PingData(c *gin.Context) error {
@@ -223,5 +247,20 @@ func GenerateFinalUsageResponse(id string, createAt int64, model string, usage d
 		SystemFingerprint: nil,
 		Choices:           make([]dto.ChatCompletionsStreamResponseChoice, 0),
 		Usage:             &usage,
+	}
+}
+
+// Observe after successful downstream flush; never count an upstream chunk that
+// the protocol adapter suppressed, or a failed write, as delivered content.
+func observeFlushedStreamContent(c *gin.Context, data string, errorsBefore int) {
+	if c == nil || len(c.Errors) != errorsBefore || requestContextDone(c) {
+		return
+	}
+	v, ok := c.Get(string(constant.ContextKeyStreamContentTiming))
+	if !ok {
+		return
+	}
+	if timing, ok := v.(*relaycommon.StreamContentTiming); ok {
+		timing.Observe(data, true, time.Now())
 	}
 }

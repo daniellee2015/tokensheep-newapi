@@ -717,6 +717,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             useTimeSec={useTime}
             completionTokens={log.completion_tokens}
             frtMs={other?.frt}
+            timing={other ?? undefined}
             isStream={log.is_stream}
           />
         )

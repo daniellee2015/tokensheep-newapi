@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/channel/openrouter"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert"
@@ -118,6 +119,7 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	var toolCount int
 	var usage = &dto.Usage{}
 	var lastStreamData string
+	var lastStreamDataSent bool
 	var secondLastStreamData string // 存储倒数第二个stream data，用于音频模型
 	seenStreamToolCalls := make(map[string]struct{})
 	var streamFunctionCallNames []string
@@ -125,6 +127,12 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 
 	// 检查是否为音频模型
 	isAudioModel := strings.Contains(strings.ToLower(model), "audio")
+	// Native Chat content is already usable when it arrives. Only metadata and
+	// terminal/usage frames need the existing last-frame handling. Keep audio
+	// and protocol/think-to-content conversion on their original paths.
+	flushNativeContent := info.RelayFormat == types.RelayFormatOpenAI &&
+		info.RelayMode == relayconstant.RelayModeChatCompletions && !isAudioModel &&
+		!info.ChannelSetting.ForceFormat && !info.ChannelSetting.ThinkingToContent
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		var errorResponse dto.OpenAITextResponse
@@ -135,10 +143,11 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 				return
 			}
 		}
-		if lastStreamData != "" {
+		if lastStreamData != "" && !lastStreamDataSent {
 			if err := HandleStreamFormat(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent); err != nil {
-				common.SysLog("error handling stream format: " + err.Error())
-				sr.Error(err)
+				streamErr = types.NewError(err, types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
+				sr.Stop(streamErr)
+				return
 			}
 		}
 		if len(data) > 0 {
@@ -148,14 +157,38 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			}
 
 			lastStreamData = data
+			lastStreamDataSent = false
 			collectStreamFunctionCallNames(data, seenStreamToolCalls, &streamFunctionCallNames)
 			if err := processTokenData(info.RelayMode, data, &responseTextBuilder, &toolCount); err != nil {
 				logger.LogError(c, "error processing stream token data: "+err.Error())
 				sr.Error(err)
 			}
+			if flushNativeContent {
+				var chunk dto.ChatCompletionsStreamResponse
+				if err := common.UnmarshalJsonStr(data, &chunk); err == nil && chunk.Usage == nil {
+					hasContent, hasTerminal := false, false
+					for _, choice := range chunk.Choices {
+						hasTerminal = hasTerminal || choice.FinishReason != nil
+						hasContent = hasContent || choice.Delta.GetContentString() != "" || choice.Delta.GetReasoningContent() != ""
+						for _, tool := range choice.Delta.ToolCalls {
+							hasContent = hasContent || tool.Function.Name != "" || tool.Function.Arguments != ""
+						}
+					}
+					if hasContent && !hasTerminal {
+						// Send the original JSON, preserving reasoning and unknown
+						// extension fields; never reconstruct it from the DTO.
+						if err := HandleStreamFormat(c, info, data, false, false); err != nil {
+							streamErr = types.NewError(err, types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
+							sr.Stop(streamErr)
+							return
+						}
+						lastStreamDataSent = true
+					}
+				}
+			}
 		}
 	})
-	if streamErr != nil {
+	if streamErr != nil && !isClientStreamCancellation(c, streamErr) {
 		return nil, streamErr
 	}
 
@@ -184,9 +217,11 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		logger.LogError(c, fmt.Sprintf("error handling last response: %s, lastStreamData: [%s]", err.Error(), lastStreamData))
 	}
 
-	if info.RelayFormat == types.RelayFormatOpenAI {
-		if shouldSendLastResp {
-			_ = sendStreamData(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent)
+	if info.RelayFormat == types.RelayFormatOpenAI && c.Request.Context().Err() == nil {
+		if shouldSendLastResp && !lastStreamDataSent {
+			if err := sendStreamData(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent); err != nil {
+				return nil, types.NewError(err, types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
+			}
 		}
 	}
 
@@ -200,8 +235,40 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	for _, name := range streamFunctionCallNames {
 		info.CountBillableToolCall(dto.BuildInCallFunctionCall, name)
 	}
+	if c.Request.Context().Err() != nil {
+		return usage, nil
+	}
 
-	HandleFinalResponse(c, info, lastStreamData, responseId, createAt, model, systemFingerprint, usage, containStreamUsage)
+	if flushNativeContent {
+		// Check native final usage/DONE writes as well as content writes;
+		// cancellation retains already-reported usage without more delivery.
+		if info.ShouldIncludeUsage && !containStreamUsage {
+			finalUsage := helper.GenerateFinalUsageResponse(responseId, createAt, model, *usage)
+			finalUsage.SetSystemFingerprint(systemFingerprint)
+			if err := helper.ObjectData(c, finalUsage); err != nil {
+				if isClientStreamCancellation(c, err) {
+					info.StreamStatus.RecordError(err.Error())
+					return usage, nil
+				}
+				return nil, types.NewError(err, types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
+			}
+		}
+		if err := helper.StringData(c, "[DONE]"); err != nil {
+			if isClientStreamCancellation(c, err) {
+				info.StreamStatus.RecordError(err.Error())
+				return usage, nil
+			}
+			return nil, types.NewError(err, types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
+		}
+	} else {
+		if err := HandleFinalResponse(c, info, lastStreamData, responseId, createAt, model, systemFingerprint, usage, containStreamUsage); err != nil {
+			info.StreamStatus.RecordError(err.Error())
+			if isClientStreamCancellation(c, err) {
+				return usage, nil
+			}
+			return nil, types.NewError(err, types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
+		}
+	}
 
 	return usage, nil
 }

@@ -23,7 +23,11 @@ func TestShouldCopyUpstreamHeaderUsesPublicAllowlist(t *testing.T) {
 	require.False(t, ShouldCopyUpstreamHeader(c, "request-id", []string{"req_upstream"}))
 	require.Equal(t, "req_upstream", c.GetString(common.UpstreamRequestIdKey))
 	require.False(t, ShouldCopyUpstreamHeader(c, common.RequestIdKey, []string{"internal-upstream-id"}))
-	require.Equal(t, "internal-upstream-id", c.GetString(common.UpstreamRequestIdKey))
+	// A later header on this response must not replace the selected trace ID.
+	require.Equal(t, "req_upstream", c.GetString(common.UpstreamRequestIdKey))
+	legacy, _ := gin.CreateTestContext(httptest.NewRecorder())
+	require.False(t, ShouldCopyUpstreamHeader(legacy, common.RequestIdKey, []string{"internal-upstream-id"}))
+	require.Equal(t, "internal-upstream-id", legacy.GetString(common.UpstreamRequestIdKey))
 
 	response := &http.Response{Header: http.Header{"Content-Type": []string{"application/json"}}}
 	require.True(t, ShouldCopyUpstreamHeader(c, "Content-Type", response.Header.Values("Content-Type")))
