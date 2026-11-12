@@ -162,7 +162,25 @@ func ClaudeMessagesRequestToOpenAIChat(claudeRequest dto.ClaudeRequest, info con
 					}
 					mediaMessages = append(mediaMessages, message)
 				case "image":
-					imageData := fmt.Sprintf("data:%s;base64,%s", mediaMsg.Source.MediaType, mediaMsg.Source.Data)
+					if mediaMsg.Source == nil {
+						continue
+					}
+					// A URL source must stay a URL. OpenAI image_url can carry it,
+					// and the next converter (Gemini/Claude) downloads it itself.
+					// Rebuilding it as a data URI lost the image and sent garbage
+					// like "data:;base64,%!s(<nil>)" upstream.
+					if mediaMsg.Source.Url != "" {
+						mediaMessages = append(mediaMessages, dto.MediaContent{
+							Type:     "image_url",
+							ImageUrl: &dto.MessageImageUrl{Url: mediaMsg.Source.Url},
+						})
+						continue
+					}
+					data := kitutil.Interface2String(mediaMsg.Source.Data)
+					if data == "" {
+						continue
+					}
+					imageData := fmt.Sprintf("data:%s;base64,%s", mediaMsg.Source.MediaType, data)
 					mediaMessage := dto.MediaContent{
 						Type:     "image_url",
 						ImageUrl: &dto.MessageImageUrl{Url: imageData},

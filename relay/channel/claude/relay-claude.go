@@ -471,6 +471,7 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 
 	claudeRequest.Prompt = ""
 	claudeRequest.Messages = claudeMessages
+	service.NormalizeClaudeRequestImages(c, &claudeRequest)
 	return &claudeRequest, nil
 }
 
