@@ -99,6 +99,7 @@ func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayIn
 	} else {
 		c.Set("request_model", request.Model)
 	}
+	service.NormalizeClaudeRequestImages(c, request)
 	vertexClaudeReq := copyRequest(request, anthropicVersion)
 	return vertexClaudeReq, nil
 }

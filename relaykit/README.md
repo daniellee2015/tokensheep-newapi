@@ -47,6 +47,7 @@ go get github.com/QuantumNous/new-api/relaykit@latest
 | `relaykit/dto` | 各协议的请求、响应、流式事件和 usage DTO |
 | `relaykit/types` | 协议格式、错误、文件来源及共享类型 |
 | `relaykit/relayconvert` | 请求、响应和流式转换入口 |
+| `relaykit/media` | 媒体兼容层（Claude 图片 media_type 归一化、转码与降级） |
 | `relaykit/relayconvert/convmeta` | 与宿主实现解耦的转换上下文和选项 |
 | `relaykit/reasonmap` | 不同协议之间的结束原因映射 |
 

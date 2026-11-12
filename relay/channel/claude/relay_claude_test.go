@@ -804,3 +804,94 @@ func TestRequestOpenAI2ClaudeMessage_NewClaudeThinkingAliasUsesAdaptiveHighEffor
 	require.Nil(t, claudeRequest.TopP)
 	require.Nil(t, claudeRequest.TopK)
 }
+
+func TestRequestOpenAI2ClaudeMessageNormalizesClaudeImageMediaType(t *testing.T) {
+	jpegData := base64.StdEncoding.EncodeToString([]byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00})
+	request := dto.GeneralOpenAIRequest{
+		Model: "claude-sonnet-4-5",
+		Messages: []dto.Message{
+			{
+				Role: "user",
+				Content: []any{
+					map[string]any{"type": "text", "text": "what is this"},
+					map[string]any{
+						"type":      "image_url",
+						"image_url": map[string]any{"url": "data:image/jpg;base64," + jpegData},
+					},
+				},
+			},
+		},
+	}
+
+	claudeRequest, err := RequestOpenAI2ClaudeMessage(nil, request)
+
+	require.NoError(t, err)
+	require.Len(t, claudeRequest.Messages, 1)
+	content, ok := claudeRequest.Messages[0].Content.([]dto.ClaudeMediaMessage)
+	require.True(t, ok)
+	require.Len(t, content, 2)
+	require.Equal(t, "image", content[1].Type)
+	require.NotNil(t, content[1].Source)
+	require.Equal(t, "image/jpeg", content[1].Source.MediaType)
+	require.Equal(t, jpegData, content[1].Source.Data)
+}
+
+func TestRequestOpenAI2ClaudeMessageDropsUnsupportedImageFormat(t *testing.T) {
+	avifData := base64.StdEncoding.EncodeToString(append([]byte{0x00, 0x00, 0x00, 0x1C}, []byte("ftypavif")...))
+	request := dto.GeneralOpenAIRequest{
+		Model: "claude-sonnet-4-5",
+		Messages: []dto.Message{
+			{
+				Role: "user",
+				Content: []any{
+					map[string]any{
+						"type":      "image_url",
+						"image_url": map[string]any{"url": "data:image/avif;base64," + avifData},
+					},
+				},
+			},
+		},
+	}
+
+	claudeRequest, err := RequestOpenAI2ClaudeMessage(nil, request)
+
+	require.NoError(t, err)
+	require.Len(t, claudeRequest.Messages, 1)
+	content, ok := claudeRequest.Messages[0].Content.([]dto.ClaudeMediaMessage)
+	require.True(t, ok)
+	require.Len(t, content, 1)
+	require.Equal(t, "text", content[0].Type)
+	require.NotNil(t, content[0].Text)
+	require.Contains(t, *content[0].Text, "image omitted")
+}
+
+func TestServiceNormalizeClaudeRequestImagesRewritesClaudeImageMediaType(t *testing.T) {
+	jpegData := base64.StdEncoding.EncodeToString([]byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00})
+	request := &dto.ClaudeRequest{
+		Model: "claude-sonnet-4-5",
+		Messages: []dto.ClaudeMessage{
+			{
+				Role: "user",
+				Content: []any{
+					map[string]any{
+						"type": "image",
+						"source": map[string]any{
+							"type":       "base64",
+							"media_type": "image/jpg",
+							"data":       jpegData,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	service.NormalizeClaudeRequestImages(nil, request)
+
+	content, ok := request.Messages[0].Content.([]any)
+	require.True(t, ok)
+	source, ok := content[0].(map[string]any)["source"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "image/jpeg", source["media_type"])
+	require.Equal(t, jpegData, source["data"])
+}

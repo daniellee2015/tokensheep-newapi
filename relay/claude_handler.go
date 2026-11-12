@@ -171,6 +171,9 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 		}
+		if claudeConvertedRequest, ok := convertedRequest.(*dto.ClaudeRequest); ok {
+			service.NormalizeClaudeRequestImages(c, claudeConvertedRequest)
+		}
 		relaycommon.AppendRequestConversionFromRequest(info, convertedRequest)
 		jsonData, err := common.Marshal(convertedRequest)
 		if err != nil {

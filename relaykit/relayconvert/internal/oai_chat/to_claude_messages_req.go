@@ -7,6 +7,7 @@ import (
 
 	"context"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/media"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert/convmeta"
 	relaymedia "github.com/QuantumNous/new-api/relaykit/relayconvert/internal/media"
 	sharedclaude "github.com/QuantumNous/new-api/relaykit/relayconvert/internal/shared/claude"
@@ -391,6 +392,9 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 
 	claudeRequest.Prompt = ""
 	claudeRequest.Messages = claudeMessages
+	for _, note := range media.NormalizeClaudeRequestImages(&claudeRequest) {
+		kitutil.LogInfo("claude image media compatibility: " + note)
+	}
 	// Checked last so every injection path (default hook, thinking adapter
 	// floor) has had its chance to satisfy the required field.
 	if claudeRequest.MaxTokens == nil {
